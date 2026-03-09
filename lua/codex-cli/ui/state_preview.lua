@@ -20,9 +20,9 @@ local Preview = {}
 Preview.__index = Preview
 
 local status_hl = {
-  ["session alive"] = "String",
-  ["session stopped"] = "WarningMsg",
-  ["offline"] = "Comment",
+  ["session alive"] = "@diff.plus",
+  ["session stopped"] = "ErrorMsg",
+  ["offline"] = "@error",
   ["true"] = "@boolean",
   ["false"] = "@boolean",
   ["nil"] = "@constant",
@@ -71,58 +71,59 @@ local function append_field(self, lines, label, value)
   })
 end
 
+---@param project? CodexCli.Project
+---@return string
+local function project_name(project)
+  return project and project.name or "none"
+end
+
+---@param target CodexCli.App.TargetSnapshot
+---@return string
+local function target_label(target)
+  if target.kind == "project" then
+    return ("project:%s"):format(target.project.name)
+  end
+  return ("free:%s"):format(target.cwd)
+end
+
+---@param project_state CodexCli.App.ProjectStateSnapshot
+---@return string
+local function project_status(project_state)
+  local parts = { project_state.working }
+  if project_state.session_active then
+    parts[#parts + 1] = "tracked"
+  end
+  if project_state.window_open_in_active_tab then
+    parts[#parts + 1] = "visible"
+  end
+  return table.concat(parts, ", ")
+end
+
 ---@param self CodexCli.StatePreview
 ---@param lines CodexCli.StatePreviewLine[]
 ---@param project_state CodexCli.App.ProjectStateSnapshot
 local function append_project_state(self, lines, project_state)
-  push_line(self, lines, string.format("> %s", project_state.project.name), "item")
+  push_line(self, lines, string.format("> %s  %s", project_state.project.name, project_status(project_state)), "item")
   append_field(self, lines, "  root", project_state.project.root)
-  append_field(self, lines, "  session_active", project_state.session_active)
-  append_field(self, lines, "  window_in_active_tab", project_state.window_open_in_active_tab)
-  append_field(self, lines, "  codex_working", project_state.working)
-  append_field(self, lines, "  model", project_state.model)
-  append_field(self, lines, "  context", project_state.context)
-  append_field(self, lines, "  usage_events", project_state.usage_events)
 end
 
 ---@param self CodexCli.StatePreview
 ---@param lines CodexCli.StatePreviewLine[]
 ---@param target CodexCli.App.TargetSnapshot
 local function append_target(self, lines, target)
-  append_field(self, lines, "kind", target.kind)
-  if target.kind == "project" then
-    append_field(self, lines, "project_name", target.project.name)
-    append_field(self, lines, "project_root", target.project.root)
-    return
-  end
-
-  append_field(self, lines, "cwd", target.cwd)
-end
-
----@param self CodexCli.StatePreview
----@param lines CodexCli.StatePreviewLine[]
----@param session CodexCli.Terminal.SessionSnapshot
-local function append_session(self, lines, session)
-  push_line(self, lines, string.format("> %s", session.key), "item")
-  append_field(self, lines, "  kind", session.kind)
-  append_field(self, lines, "  title", session.title)
-  append_field(self, lines, "  cwd", session.cwd)
-  append_field(self, lines, "  project_root", session.project_root)
-  append_field(self, lines, "  buf", session.buf)
-  append_field(self, lines, "  buffer_valid", session.buffer_valid)
-  append_field(self, lines, "  job_id", session.job_id)
-  append_field(self, lines, "  running", session.running)
+  append_field(self, lines, "target", target_label(target))
 end
 
 ---@param self CodexCli.StatePreview
 ---@param lines CodexCli.StatePreviewLine[]
 ---@param tab CodexCli.Tab.StateSnapshot
 local function append_tab(self, lines, tab)
-  push_line(self, lines, string.format("> tab %d", tab.tabpage), "item")
-  append_field(self, lines, "  active_project_root", tab.active_project_root)
-  append_field(self, lines, "  has_visible_window", tab.has_visible_window)
-  append_field(self, lines, "  window_id", tab.window_id)
-  append_field(self, lines, "  session_key", tab.session_key)
+  local active = tab.active_project_root or "none"
+  local showing = tab.session_key or "none"
+  push_line(self, lines, string.format("> tab %d  active=%s  showing=%s", tab.tabpage, active, showing), "item")
+  if tab.window_id ~= nil then
+    append_field(self, lines, "  window", tab.window_id)
+  end
 end
 
 ---@param config CodexCli.Config.Values
@@ -311,24 +312,21 @@ function Preview:render(snapshot)
 
   ---@type CodexCli.StatePreviewLine[]
   local lines = {}
-  push_line(self, lines, "Current", "section")
-  append_field(self, lines, "current_tab", snapshot.current_tab.tabpage)
-  append_field(self, lines, "current_path", snapshot.current_path)
-  append_field(self, lines, "active_project_name", snapshot.active_project and snapshot.active_project.name or nil)
-  append_field(self, lines, "active_project_root", snapshot.active_project and snapshot.active_project.root or nil)
-  append_field(self, lines, "detected_project_name", snapshot.detected_project and snapshot.detected_project.name or nil)
-  append_field(self, lines, "detected_project_root", snapshot.detected_project and snapshot.detected_project.root or nil)
-
-  push_line(self, lines, "", "blank")
-  push_line(self, lines, "Resolved Target", "section")
+  push_line(self, lines, "Focus", "section")
+  append_field(self, lines, "tab", snapshot.current_tab.tabpage)
+  append_field(self, lines, "path", snapshot.current_path)
+  append_field(self, lines, "active", project_name(snapshot.active_project))
+  append_field(self, lines, "detected", project_name(snapshot.detected_project))
   append_target(self, lines, snapshot.resolved_target)
 
   push_line(self, lines, "", "blank")
-  push_line(self, lines, "Current Tab State", "section")
-  append_tab(self, lines, snapshot.current_tab)
+  push_line(self, lines, "Current Tab", "section")
+  append_field(self, lines, "visible", snapshot.current_tab.has_visible_window)
+  append_field(self, lines, "session", snapshot.current_tab.session_key or "none")
+  append_field(self, lines, "window", snapshot.current_tab.window_id or "none")
 
   push_line(self, lines, "", "blank")
-  push_line(self, lines, "Per-Project State", "section")
+  push_line(self, lines, "Projects", "section")
   if #snapshot.project_states == 0 then
     push_line(self, lines, "> none", "item")
   else
@@ -338,17 +336,7 @@ function Preview:render(snapshot)
   end
 
   push_line(self, lines, "", "blank")
-  push_line(self, lines, "Tracked Sessions", "section")
-  if #snapshot.sessions == 0 then
-    push_line(self, lines, "> none", "item")
-  else
-    for _, session in ipairs(snapshot.sessions) do
-      append_session(self, lines, session)
-    end
-  end
-
-  push_line(self, lines, "", "blank")
-  push_line(self, lines, "Tab States", "section")
+  push_line(self, lines, "Tabs", "section")
   if #snapshot.tabs == 0 then
     push_line(self, lines, "> none", "item")
   else
