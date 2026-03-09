@@ -7,8 +7,10 @@ local TabManager = require("codex-cli.tab.manager")
 local TerminalManager = require("codex-cli.terminal.manager")
 local ui = require("codex-cli.ui.select")
 local StatePreview = require("codex-cli.ui.state_preview")
+local QueueWorkspace = require("codex-cli.ui.queue_workspace")
 local fs = require("codex-cli.util.fs")
 local notify = require("codex-cli.util.notify")
+local Queue = require("codex-cli.workspace.queue")
 
 ---@class CodexCli.App
 ---@field config CodexCli.Config
@@ -18,6 +20,8 @@ local notify = require("codex-cli.util.notify")
 ---@field tabs CodexCli.TabManager
 ---@field terminals CodexCli.TerminalManager
 ---@field state_preview CodexCli.StatePreview
+---@field queue CodexCli.Workspace.Queue
+---@field queue_workspace CodexCli.QueueWorkspace
 ---@field group? integer
 
 ---@class CodexCli.App.StateSnapshot
@@ -43,6 +47,10 @@ local App = {}
 App.__index = App
 
 local singleton ---@type CodexCli.App?
+local PREVIOUS_QUEUE = {
+  queued = "planned",
+  history = "queued",
+}
 
 ---@return CodexCli.App
 function App.instance()
@@ -67,8 +75,11 @@ function App:setup(opts)
   self.picker = Picker.new(self.registry)
   self.terminals = self.terminals or TerminalManager.new(values)
   self.state_preview = self.state_preview or StatePreview.new(values)
+  self.queue = self.queue or Queue.new(values.storage.workspaces_dir)
+  self.queue_workspace = self.queue_workspace or QueueWorkspace.new(self, values)
   self.terminals:update_config(values)
   self.state_preview:update_config(values)
+  self.queue_workspace:update_config(values)
   Commands.register()
   self:setup_autocmds()
   self:refresh_state_preview()
@@ -244,10 +255,339 @@ end
 
 function App:refresh_state_preview()
   self.state_preview:refresh(self)
+  if self.queue_workspace then
+    self.queue_workspace:refresh()
+  end
 end
 
 function App:toggle_state_preview()
   self.state_preview:toggle(self)
+end
+
+---@param project CodexCli.Project
+---@return boolean
+function App:is_project_session_running(project)
+  return self.terminals:is_project_session_running(project.root)
+end
+
+---@return CodexCli.Project[]
+function App:projects_for_queue_workspace()
+  local projects = self.registry:list()
+  table.sort(projects, function(left, right)
+    local left_running = self:is_project_session_running(left)
+    local right_running = self:is_project_session_running(right)
+    if left_running ~= right_running then
+      return left_running
+    end
+    return left.name:lower() < right.name:lower()
+  end)
+  return projects
+end
+
+---@param project CodexCli.Project
+---@return CodexCli.ProjectQueueSummary
+function App:queue_summary(project)
+  return self.queue:summary(project, self:is_project_session_running(project))
+end
+
+---@param project CodexCli.Project
+---@return CodexCli.TerminalSession?
+function App:activate_project_session(project)
+  local session = self.terminals:ensure_project_session(project)
+  if not session then
+    return
+  end
+  self:activate_project(project.root)
+  notify.notify(("Activated Codex session for %s"):format(project.name))
+  return session
+end
+
+---@param project CodexCli.Project
+function App:open_project_workspace_target(project)
+  self:activate_project(project.root)
+
+  local readme = fs.find_readme(project.root)
+  if readme then
+    vim.cmd.edit(vim.fn.fnameescape(readme))
+  end
+
+  local state = self:current_tab()
+  local session = self.terminals:ensure_project_session(project)
+  if not session then
+    self:refresh_state_preview()
+    return
+  end
+
+  self.terminals:show_in_tab(state, session)
+  self:refresh_state_preview()
+end
+
+---@param opts? { project?: CodexCli.Project, project_value?: string }
+---@return CodexCli.Project?
+function App:resolve_todo_project(opts)
+  opts = opts or {}
+  local project = opts.project
+  if not project and opts.project_value then
+    project = self.registry:find_by_name_or_root(opts.project_value)
+  end
+  if project then
+    return project
+  end
+
+  local state = self:current_tab()
+  local target = self:resolve_target(state)
+  if target.kind == "project" then
+    return target.project
+  end
+end
+
+---@param target_project CodexCli.Project?
+---@param callback fun(project: CodexCli.Project)
+function App:pick_or_run_todo_project(target_project, callback)
+  if target_project then
+    callback(target_project)
+    return
+  end
+  self.picker:pick({ prompt = "Select project for todo" }, function(project)
+    if project then
+      callback(project)
+    end
+  end)
+end
+
+---@param target_project CodexCli.Project
+function App:prompt_for_todo(target_project)
+  ui.input({
+    prompt = ("Todo title for %s"):format(target_project.name),
+  }, function(title)
+    title = title and vim.trim(title) or ""
+    if title == "" then
+      return
+    end
+
+    ui.input({
+      prompt = "Todo details (optional)",
+    }, function(details)
+      self:add_project_todo(target_project, {
+        title = title,
+        details = details,
+      })
+    end)
+  end)
+end
+
+---@param project CodexCli.Project
+---@param item CodexCli.QueueItem
+---@return boolean
+function App:dispatch_queue_item(project, item)
+  local session = self.terminals:ensure_project_session(project)
+  if not session then
+    notify.warn(("Could not start a Codex session for %s"):format(project.name))
+    return false
+  end
+  if not session:send(item.prompt) then
+    return false
+  end
+  return true
+end
+
+---@param project CodexCli.Project
+---@param spec { title: string, details?: string }
+function App:add_project_todo(project, spec)
+  local title = vim.trim(spec.title or "")
+  if title == "" then
+    notify.warn("Todo title is required")
+    return
+  end
+
+  self.queue:add_todo(project, {
+    title = title,
+    details = spec.details,
+  })
+  notify.notify(("Added todo to %s: %s"):format(project.name, title))
+  self:refresh_state_preview()
+end
+
+---@param project CodexCli.Project
+---@param item_id string
+function App:advance_queue_item(project, item_id)
+  local item = nil ---@type CodexCli.QueueItem?
+  local next_queue = self.queue:advance(project, item_id)
+  if not next_queue then
+    notify.warn("Item cannot be moved further")
+    return
+  end
+  if next_queue == "queued" then
+    _, _, item = self.queue:find_item(project, item_id)
+    if item then
+      self:dispatch_queue_item(project, item)
+    end
+  end
+  self:refresh_state_preview()
+end
+
+---@param project CodexCli.Project
+---@param item_id string
+---@param opts? { copy?: boolean }
+function App:rewind_queue_item(project, item_id, opts)
+  opts = opts or {}
+  local queue_name, _, item = self.queue:find_item(project, item_id)
+  local previous_queue = queue_name and PREVIOUS_QUEUE[queue_name] or nil
+  if not previous_queue or not item then
+    notify.warn("Item cannot be moved back")
+    return
+  end
+
+  if opts.copy then
+    local copied = self.queue:put_item(project, previous_queue, item, {
+      copy = true,
+      clear_history = queue_name == "history",
+    })
+    if copied and previous_queue == "queued" then
+      self:dispatch_queue_item(project, copied)
+    end
+  else
+    local taken = self.queue:take_item(project, item_id)
+    if not taken then
+      notify.warn("Queue item not found")
+      return
+    end
+    local moved = self.queue:put_item(project, previous_queue, item, {
+      clear_history = queue_name == "history",
+    })
+    if moved and previous_queue == "queued" then
+      self:dispatch_queue_item(project, moved)
+    end
+  end
+
+  self:refresh_state_preview()
+end
+
+---@param project CodexCli.Project
+---@param item_id string
+---@param target_project CodexCli.Project
+---@param opts? { target_queue?: CodexCli.QueueName, copy?: boolean }
+function App:move_queue_item_to_project(project, item_id, target_project, opts)
+  opts = opts or {}
+  local queue_name, _, item = self.queue:find_item(project, item_id)
+  local target_queue = opts.target_queue or queue_name
+  if not queue_name or not target_queue or not item then
+    notify.warn("Queue item not found")
+    return
+  end
+
+  if not opts.copy then
+    local taken = self.queue:take_item(project, item_id)
+    if not taken then
+      notify.warn("Queue item not found")
+      return
+    end
+  end
+
+  local moved = self.queue:put_item(target_project, target_queue, item, {
+    copy = true,
+    clear_history = queue_name == "history" and target_queue ~= "history",
+  })
+  if not moved then
+    notify.warn("Failed to move queue item")
+    return
+  end
+
+  if target_queue == "queued" then
+    self:dispatch_queue_item(target_project, moved)
+  end
+  notify.notify(("Moved '%s' to %s"):format(item.title, target_project.name))
+  self:refresh_state_preview()
+end
+
+---@param project CodexCli.Project
+---@param item_id string
+function App:delete_queue_item(project, item_id)
+  if not self.queue:delete_item(project, item_id) then
+    notify.warn("Queue item not found")
+    return
+  end
+  self:refresh_state_preview()
+end
+
+---@param opts? { project?: CodexCli.Project, project_value?: string }
+function App:add_todo(opts)
+  self:pick_or_run_todo_project(self:resolve_todo_project(opts), function(project)
+    self:prompt_for_todo(project)
+  end)
+end
+
+---@param opts? { project?: CodexCli.Project, project_value?: string }
+function App:add_error_todo(opts)
+  local screenshot_dir = self.config:get().error_prompt.screenshot_dir
+  local latest_screenshot = screenshot_dir and fs.latest_file(screenshot_dir) or nil
+
+  self:pick_or_run_todo_project(self:resolve_todo_project(opts), function(project)
+    local sources = {} ---@type { label: string, value: string }[]
+    if latest_screenshot then
+      sources[#sources + 1] = {
+        label = ("Use latest screenshot (%s)"):format(fs.basename(latest_screenshot)),
+        value = "screenshot",
+      }
+    end
+    sources[#sources + 1] = {
+      label = "Paste error message",
+      value = "message",
+    }
+
+    ui.select(sources, {
+      prompt = ("Error prompt source for %s"):format(project.name),
+      format_item = function(item)
+        return item.label
+      end,
+    }, function(choice)
+      if not choice then
+        return
+      end
+
+      ui.input({
+        prompt = "Short error summary (optional)",
+      }, function(summary)
+        summary = summary and vim.trim(summary) or ""
+        local title = summary ~= "" and ("Investigate runtime error: " .. summary) or "Investigate runtime error"
+
+        local function add_from_details(source_details)
+          self:add_project_todo(project, {
+            title = title,
+            details = table.concat({
+              "Investigate the runtime failure reported by the user.",
+              source_details,
+              "Explain the cause, implement a fix, and mention any follow-up validation that should be run.",
+            }, "\n\n"),
+          })
+        end
+
+        if choice.value == "screenshot" and latest_screenshot then
+          add_from_details(
+            ("Use screenshot file `%s` from the configured screenshot directory `%s` as the main artifact."):format(
+              fs.basename(latest_screenshot),
+              screenshot_dir
+            )
+          )
+          return
+        end
+
+        ui.input({
+          prompt = "Paste the error message",
+        }, function(message)
+          message = message and vim.trim(message) or ""
+          if message == "" then
+            return
+          end
+          add_from_details(("Error message:\n```\n%s\n```"):format(message))
+        end)
+      end)
+    end)
+  end)
+end
+
+function App:open_queue_workspace()
+  self.queue_workspace:open()
 end
 
 ---@param root string
@@ -441,6 +781,7 @@ function App:remove_project(value)
     end
 
     self.registry:remove(project.root)
+    self.queue:delete_workspace(project.root)
     self.terminals:destroy_project_session(project.root)
     self.tabs:clear_project(project.root)
     self.terminals:detach_session(project.root, self.tabs:list())

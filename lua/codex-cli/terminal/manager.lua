@@ -94,6 +94,29 @@ function Manager:update_project_identity(project)
   session:update_identity(spec)
 end
 
+---@param root string
+---@return CodexCli.TerminalSession?
+function Manager:project_session(root)
+  return self.project_sessions[root]
+end
+
+---@param root string
+---@return boolean
+function Manager:is_project_session_running(root)
+  local session = self:project_session(root)
+  return session ~= nil and session:is_running() or false
+end
+
+---@param project CodexCli.Project
+---@return CodexCli.TerminalSession?
+function Manager:ensure_project_session(project)
+  local session = self:get_session({
+    kind = "project",
+    project = project,
+  })
+  return session
+end
+
 ---@param buf number
 ---@return CodexCli.TerminalSession?
 function Manager:session_by_buf(buf)

@@ -162,6 +162,9 @@ require("codex-cli").setup({
   state_preview = {
     width = 48,
   },
+  error_prompt = {
+    screenshot_dir = "~/screenshots",
+  },
 })
 ```
 
@@ -176,6 +179,9 @@ The exact command surface may still change, but the expected workflow is centere
 - `:CodexProjectSelect`
 - `:CodexProjectAdd`
 - `:CodexProjectRemove`
+- `:CodexQueueWorkspace`
+- `:CodexTodoAdd`
+- `:CodexTodoError`
 - `:CodexPromptExpand`
 
 ## Proposed Architecture

@@ -53,4 +53,18 @@ function M.clear_active_project()
   app():clear_active_project()
 end
 
+function M.open_queue_workspace()
+  app():open_queue_workspace()
+end
+
+---@param opts? { project_value?: string }
+function M.add_todo(opts)
+  app():add_todo(opts)
+end
+
+---@param opts? { project_value?: string }
+function M.add_error_todo(opts)
+  app():add_error_todo(opts)
+end
+
 return M

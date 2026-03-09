@@ -50,6 +50,12 @@ function M.basename(path)
   return vim.fs.basename(M.normalize(path))
 end
 
+---@param ...
+---@return string
+function M.join(...)
+  return M.normalize(table.concat({ ... }, "/"))
+end
+
 ---@param path string
 ---@return string
 function M.cwd_for_path(path)
@@ -115,6 +121,58 @@ function M.write_json(path, value)
   local file = assert(io.open(path, "w"))
   file:write(vim.json.encode(value))
   file:close()
+end
+
+---@param path string
+function M.remove(path)
+  vim.fn.delete(M.normalize(path), "rf")
+end
+
+---@param root string
+---@return string?
+function M.find_readme(root)
+  root = M.normalize(root)
+  local names = {
+    "README.md",
+    "README.txt",
+    "README.rst",
+    "README",
+    "readme.md",
+    "readme.txt",
+    "readme.rst",
+    "readme",
+  }
+
+  for _, name in ipairs(names) do
+    local candidate = M.join(root, name)
+    if M.is_file(candidate) then
+      return candidate
+    end
+  end
+end
+
+---@param dir string
+---@return string?
+function M.latest_file(dir)
+  dir = M.normalize(dir)
+  if not M.is_dir(dir) then
+    return
+  end
+
+  local entries = vim.fn.readdir(dir)
+  local newest_path ---@type string?
+  local newest_time = -1
+  for _, entry in ipairs(entries) do
+    local path = M.join(dir, entry)
+    local stat = M.stat(path)
+    if stat and stat.type == "file" and stat.mtime and stat.mtime.sec then
+      if stat.mtime.sec > newest_time then
+        newest_time = stat.mtime.sec
+        newest_path = path
+      end
+    end
+  end
+  return newest_path
 end
 
 return M

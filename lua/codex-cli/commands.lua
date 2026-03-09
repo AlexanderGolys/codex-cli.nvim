@@ -48,6 +48,28 @@ function M.register()
   vim.api.nvim_create_user_command("CodexProjectClear", function()
     require("codex-cli").clear_active_project()
   end, { desc = "Clear the active Codex project for the current tab" })
+
+  vim.api.nvim_create_user_command("CodexQueueWorkspace", function()
+    require("codex-cli").open_queue_workspace()
+  end, { desc = "Open Codex project queue workspace" })
+
+  vim.api.nvim_create_user_command("CodexTodoAdd", function(command)
+    require("codex-cli").add_todo({
+      project_value = command.args ~= "" and command.args or nil,
+    })
+  end, {
+    desc = "Add a todo prompt to a project's planned queue",
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("CodexTodoError", function(command)
+    require("codex-cli").add_error_todo({
+      project_value = command.args ~= "" and command.args or nil,
+    })
+  end, {
+    desc = "Add an error-investigation todo prompt",
+    nargs = "?",
+  })
 end
 
 return M

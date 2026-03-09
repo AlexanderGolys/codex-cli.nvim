@@ -165,6 +165,25 @@ function Session:destroy()
   self.buf = nil
 end
 
+---@param text string
+---@return boolean
+function Session:send(text)
+  text = vim.trim(text or "")
+  if text == "" then
+    return false
+  end
+  if not self:ensure_started() or not self.job_id then
+    return false
+  end
+
+  local ok = pcall(vim.fn.chansend, self.job_id, text .. "\n")
+  if not ok then
+    notify.error(("Failed to send prompt to Codex session at %s"):format(self.cwd))
+    return false
+  end
+  return true
+end
+
 ---@param spec CodexCli.TerminalSession.Spec
 function Session:update_identity(spec)
   self.key = spec.key

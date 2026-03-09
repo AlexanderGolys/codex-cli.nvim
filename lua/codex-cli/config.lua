@@ -1,5 +1,6 @@
 ---@class CodexCli.Config.Storage
 ---@field projects_file string
+---@field workspaces_dir string
 
 ---@class CodexCli.Config.Terminal
 ---@field win snacks.win.Config|{}
@@ -16,12 +17,23 @@
 ---@field col integer
 ---@field winblend integer
 
+---@class CodexCli.Config.QueueWorkspace
+---@field width number
+---@field height number
+---@field project_width number
+---@field footer_height integer
+
+---@class CodexCli.Config.ErrorPrompt
+---@field screenshot_dir? string
+
 ---@class CodexCli.Config.Values
 ---@field codex_cmd string[]
 ---@field storage CodexCli.Config.Storage
 ---@field terminal CodexCli.Config.Terminal
 ---@field project_detection CodexCli.Config.ProjectDetection
 ---@field state_preview CodexCli.Config.StatePreview
+---@field queue_workspace CodexCli.Config.QueueWorkspace
+---@field error_prompt CodexCli.Config.ErrorPrompt
 
 ---@class CodexCli.Config
 ---@field values CodexCli.Config.Values
@@ -32,6 +44,7 @@ local defaults = {
   codex_cmd = { "bash", "-lc", "codex" },
   storage = {
     projects_file = vim.fn.stdpath("data") .. "/codex-cli/projects.json",
+    workspaces_dir = vim.fn.stdpath("data") .. "/codex-cli/workspaces",
   },
   terminal = {
     win = {
@@ -50,6 +63,15 @@ local defaults = {
     row = 1,
     col = 2,
     winblend = 18,
+  },
+  queue_workspace = {
+    width = 0.8,
+    height = 0.7,
+    project_width = 0.34,
+    footer_height = 3,
+  },
+  error_prompt = {
+    screenshot_dir = nil,
   },
 }
 
