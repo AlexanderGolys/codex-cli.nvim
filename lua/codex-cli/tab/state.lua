@@ -8,6 +8,7 @@
 ---@class CodexCli.TabState.Snapshot
 ---@field tabpage number
 ---@field active_project_root? string
+---@field prompted_project boolean
 ---@field has_visible_window boolean
 ---@field session_key? string
 ---@field window_id? integer
@@ -53,6 +54,14 @@ function State:mark_prompted_project()
   self.prompted_project = true
 end
 
+---@param snapshot { active_project_root?: string, prompted_project?: boolean }
+function State:restore(snapshot)
+  self.active_project_root = snapshot.active_project_root
+  self.prompted_project = snapshot.prompted_project == true
+  self.session_key = nil
+  self.window = nil
+end
+
 ---@param window? snacks.win
 ---@param session_key? string
 function State:set_window(window, session_key)
@@ -83,6 +92,7 @@ function State:snapshot()
   return {
     tabpage = self.tabpage,
     active_project_root = self.active_project_root,
+    prompted_project = self.prompted_project == true,
     has_visible_window = self:has_visible_window(),
     session_key = self.session_key,
     window_id = self:has_visible_window() and self.window.win or nil,

@@ -26,6 +26,23 @@
 ---@class CodexCli.Config.ErrorPrompt
 ---@field screenshot_dir? string
 
+---@class CodexCli.Config.PromptPickerHighlights
+---@field todo_title string
+---@field error_title string
+---@field visual_title string
+---@field adjustment_title string
+---@field refactor_title string
+---@field idea_title string
+---@field explain_title string
+---@field prompt_text string
+
+---@class CodexCli.Config.PromptPicker
+---@field highlights CodexCli.Config.PromptPickerHighlights
+
+---@class CodexCli.Config.PromptExecution
+---@field relative_dir string
+---@field poll_ms integer
+
 ---@class CodexCli.Config.Values
 ---@field codex_cmd string[]
 ---@field storage CodexCli.Config.Storage
@@ -34,6 +51,8 @@
 ---@field state_preview CodexCli.Config.StatePreview
 ---@field queue_workspace CodexCli.Config.QueueWorkspace
 ---@field error_prompt CodexCli.Config.ErrorPrompt
+---@field prompt_picker CodexCli.Config.PromptPicker
+---@field prompt_execution CodexCli.Config.PromptExecution
 
 ---@class CodexCli.Config
 ---@field values CodexCli.Config.Values
@@ -72,6 +91,22 @@ local defaults = {
   },
   error_prompt = {
     screenshot_dir = nil,
+  },
+  prompt_picker = {
+    highlights = {
+      todo_title = "WarningMsg",
+      error_title = "DiagnosticError",
+      visual_title = "Special",
+      adjustment_title = "Constant",
+      refactor_title = "String",
+      idea_title = "PreProc",
+      explain_title = "Type",
+      prompt_text = "Directory",
+    },
+  },
+  prompt_execution = {
+    relative_dir = ".codex-cli/prompt-executions",
+    poll_ms = 5000,
   },
 }
 

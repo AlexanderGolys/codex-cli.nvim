@@ -4,6 +4,12 @@ Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration fo
 
 The goal is to make Codex feel like a persistent editor-native tool instead of a disposable shell command: one Codex session per project, one ephemeral free session outside projects, tab-local project selection, and prompt helpers that can translate Neovim state into text Codex can understand.
 
+Project prompts can be staged through a queue with three states:
+
+- `planned`: captured but not ready to run yet
+- `queued`: ready to implement, but dispatched only when explicitly requested
+- `history`: completed items with an execution receipt summary
+
 ## Status
 
 Design and scaffold phase.
@@ -30,7 +36,7 @@ A project is defined as:
 
 The plugin will provide:
 
-- add/remove project managemennt
+- add/remove project management
 - project lookup by current file or working directory
 - persistent project storage
 - a Snacks picker for switching the active project
@@ -136,6 +142,13 @@ Using `lazy.nvim`:
   },
   opts = {
     codex_cmd = { "codex" },
+    prompt_picker = {
+      highlights = {
+        todo_title = "WarningMsg",
+        error_title = "DiagnosticError",
+        prompt_text = "Directory",
+      },
+    },
   },
 }
 ```
@@ -182,6 +195,8 @@ The exact command surface may still change, but the expected workflow is centere
 - `:CodexQueueWorkspace`
 - `:CodexTodoAdd`
 - `:CodexTodoError`
+- `:CodexTodoImplement`
+- `:CodexTodoImplementAll`
 - `:CodexPromptExpand`
 
 ## Proposed Architecture

@@ -62,4 +62,20 @@ function Manager:snapshot()
   return ret
 end
 
+---@param snapshots { active_project_root?: string, prompted_project?: boolean }[]
+function Manager:restore(snapshots)
+  self:cleanup()
+  snapshots = snapshots or {}
+
+  local tabpages = vim.api.nvim_list_tabpages()
+  table.sort(tabpages, function(left, right)
+    return left < right
+  end)
+
+  for index, tabpage in ipairs(tabpages) do
+    local snapshot = snapshots[index] or {}
+    self:get(tabpage):restore(snapshot)
+  end
+end
+
 return Manager

@@ -23,4 +23,66 @@ function M.get_root(path)
   end
 end
 
+---@param root string
+---@param short? boolean
+---@return string?
+function M.head_commit(root, short)
+  if not root or root == "" then
+    return
+  end
+
+  local args = { "git", "-C", root, "rev-parse" }
+  if short then
+    args[#args + 1] = "--short"
+  end
+  args[#args + 1] = "HEAD"
+
+  local result = vim.system(args, { text = true }):wait()
+  if result.code ~= 0 then
+    return
+  end
+
+  local output = vim.trim(result.stdout or "")
+  return output ~= "" and output or nil
+end
+
+---@param url string
+---@return string?
+local function repo_name_from_url(url)
+  url = vim.trim(url or "")
+  if url == "" then
+    return
+  end
+
+  url = url:gsub("/+$", "")
+  local name = url:match("([^/:]+)%.git$") or url:match("([^/:]+)$")
+  if not name or name == "" then
+    return
+  end
+  return name
+end
+
+---@param root string
+---@return string?
+function M.remote_name(root)
+  if not root or root == "" then
+    return
+  end
+
+  local commands = {
+    { "git", "-C", root, "config", "--get", "remote.origin.url" },
+    { "git", "-C", root, "remote", "get-url", "origin" },
+  }
+
+  for _, args in ipairs(commands) do
+    local result = vim.system(args, { text = true }):wait()
+    if result.code == 0 then
+      local name = repo_name_from_url(result.stdout or "")
+      if name then
+        return name
+      end
+    end
+  end
+end
+
 return M

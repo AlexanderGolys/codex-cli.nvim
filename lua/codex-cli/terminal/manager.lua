@@ -242,4 +242,64 @@ function Manager:snapshot()
   return ret
 end
 
+---@return CodexCli.TerminalSession.Spec[]
+function Manager:persistence_specs()
+  local specs = {} ---@type CodexCli.TerminalSession.Spec[]
+
+  local roots = vim.tbl_keys(self.project_sessions)
+  table.sort(roots)
+  for _, root in ipairs(roots) do
+    local session = self.project_sessions[root]
+    if session and session:is_running() then
+      specs[#specs + 1] = {
+        key = session.key,
+        kind = session.kind,
+        cwd = session.cwd,
+        title = session.title,
+        cmd = vim.deepcopy(session.cmd),
+        project_root = session.project_root,
+        header_enabled = session.header_enabled,
+      }
+    end
+  end
+
+  if self.free_session and self.free_session:is_running() then
+    specs[#specs + 1] = {
+      key = self.free_session.key,
+      kind = self.free_session.kind,
+      cwd = self.free_session.cwd,
+      title = self.free_session.title,
+      cmd = vim.deepcopy(self.free_session.cmd),
+      project_root = self.free_session.project_root,
+      header_enabled = self.free_session.header_enabled,
+    }
+  end
+
+  return specs
+end
+
+---@param specs CodexCli.TerminalSession.Spec[]
+function Manager:restore_specs(specs)
+  specs = specs or {}
+
+  for _, root in ipairs(vim.tbl_keys(self.project_sessions)) do
+    self:destroy_project_session(root)
+  end
+  if self.free_session then
+    self.free_session:destroy()
+    self.free_session = nil
+  end
+
+  for _, spec in ipairs(specs) do
+    local session = Session.new(spec)
+    if session:ensure_started() then
+      if spec.kind == "project" and spec.project_root then
+        self.project_sessions[spec.project_root] = session
+      elseif spec.kind == "free" then
+        self.free_session = session
+      end
+    end
+  end
+end
+
 return Manager

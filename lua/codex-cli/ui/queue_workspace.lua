@@ -1,11 +1,20 @@
 local ui = require("codex-cli.ui.select")
+local Extmark = require("codex-cli.ui.extmark")
+local TextBlock = require("codex-cli.ui.text_block")
+local ui_win = require("codex-cli.ui.win")
 local notify = require("codex-cli.util.notify")
+local Category = require("codex-cli.prompt.category")
 
 ---@class CodexCli.QueueWorkspace.QueueRow
 ---@field kind "header"|"item"|"preview"
 ---@field text string
 ---@field queue? CodexCli.QueueName
 ---@field item? CodexCli.QueueItem
+
+---@class CodexCli.QueueWorkspace.ProjectRow
+---@field kind "item"|"detail"
+---@field text string
+---@field project? CodexCli.Project
 
 ---@class CodexCli.QueueWorkspace
 ---@field app CodexCli.App
@@ -20,6 +29,8 @@ local notify = require("codex-cli.util.notify")
 ---@field project_index integer
 ---@field queue_index integer
 ---@field projects CodexCli.Project[]
+---@field project_rows CodexCli.QueueWorkspace.ProjectRow[]
+---@field project_item_rows integer[]
 ---@field queue_rows CodexCli.QueueWorkspace.QueueRow[]
 ---@field queue_item_rows integer[]
 local Workspace = {}
@@ -27,7 +38,9 @@ Workspace.__index = Workspace
 
 local MAIN_ZINDEX = 55
 local FOOTER_ZINDEX = 56
-local highlights_ready = false
+local PROJECT_NS = vim.api.nvim_create_namespace("codex-cli-queue-projects")
+local QUEUE_NS = vim.api.nvim_create_namespace("codex-cli-queue-items")
+local FOOTER_NS = vim.api.nvim_create_namespace("codex-cli-queue-footer")
 local QUEUE_LABELS = {
   planned = "Planned",
   queued = "Queued",
@@ -61,6 +74,12 @@ local function prompt_queue_label(queue_name)
 end
 
 ---@param item CodexCli.QueueItem
+---@return CodexCli.PromptCategory
+local function prompt_item_kind(item)
+  return Category.get(item.kind).id
+end
+
+---@param item CodexCli.QueueItem
 ---@return string[]
 local function prompt_preview_lines(item)
   local preview = {} ---@type string[]
@@ -77,43 +96,193 @@ local function prompt_preview_lines(item)
   return preview
 end
 
-local function ensure_highlights()
-  if highlights_ready then
-    return
+---@param item CodexCli.QueueItem
+---@return string
+local function history_suffix(item)
+  local parts = {} ---@type string[]
+  if item.history_summary and item.history_summary ~= "" then
+    parts[#parts + 1] = item.history_summary
   end
-  highlights_ready = true
+  if item.history_commit and item.history_commit ~= "" then
+    parts[#parts + 1] = item.history_commit
+  end
+  return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
+end
 
+---@param name string
+---@return integer?
+local function hl_fg(name)
+  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+  return ok and hl and hl.fg or nil
+end
+
+---@param config CodexCli.Config.Values
+local function ensure_highlights(config)
+  local picker_hl = config.prompt_picker.highlights
+  local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
+  local selection_bg = visual.bg or hl_fg("Visual")
+  local active_border_fg = hl_fg("Identifier") or hl_fg("FloatBorder")
+  local inactive_border_fg = hl_fg("Comment") or hl_fg("FloatBorder")
   vim.api.nvim_set_hl(0, "CodexCliQueueProjectActive", {
-    fg = vim.api.nvim_get_hl(0, { name = "Directory", link = false }).fg,
+    fg = hl_fg("Directory"),
     bold = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueProjectInactive", {
-    fg = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg,
+    fg = hl_fg("Comment"),
     italic = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueCounts", {
-    fg = vim.api.nvim_get_hl(0, { name = "Identifier", link = false }).fg,
+    fg = hl_fg("Identifier"),
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueHeader", {
-    fg = vim.api.nvim_get_hl(0, { name = "Title", link = false }).fg,
+    fg = hl_fg("Title"),
     bold = true,
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueItem", {
-    fg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg,
+    fg = hl_fg("Normal"),
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueItemMuted", {
-    fg = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg,
+    fg = hl_fg("Comment"),
     default = true,
   })
   vim.api.nvim_set_hl(0, "CodexCliQueueFooter", {
-    fg = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg,
+    fg = hl_fg("Comment"),
     default = true,
   })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerTodoTitle", {
+    fg = hl_fg(picker_hl.todo_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerErrorTitle", {
+    fg = hl_fg(picker_hl.error_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerVisualTitle", {
+    fg = hl_fg(picker_hl.visual_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerAdjustmentTitle", {
+    fg = hl_fg(picker_hl.adjustment_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerRefactorTitle", {
+    fg = hl_fg(picker_hl.refactor_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerIdeaTitle", {
+    fg = hl_fg(picker_hl.idea_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerExplainTitle", {
+    fg = hl_fg(picker_hl.explain_title),
+    bold = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliPromptPickerPromptText", {
+    fg = hl_fg(picker_hl.prompt_text),
+  })
+  vim.api.nvim_set_hl(0, "CodexCliQueueSelection", {
+    bg = selection_bg,
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliQueueActiveBorder", {
+    fg = active_border_fg,
+    bold = true,
+    default = true,
+  })
+  vim.api.nvim_set_hl(0, "CodexCliQueueInactiveBorder", {
+    fg = inactive_border_fg,
+    default = true,
+  })
+end
+
+---@param items CodexCli.QueueItem[]
+---@return table<CodexCli.PromptCategory, integer>
+local function queue_kind_counts(items)
+  local counts = {} ---@type table<CodexCli.PromptCategory, integer>
+  for _, item in ipairs(items) do
+    local kind = prompt_item_kind(item)
+    counts[kind] = (counts[kind] or 0) + 1
+  end
+  return counts
+end
+
+---@param timestamp? integer
+---@return string
+local function format_timestamp(timestamp)
+  if not timestamp or timestamp <= 0 then
+    return "-"
+  end
+  return os.date("%Y-%m-%d %H:%M", timestamp)
+end
+
+---@param languages CodexCli.ProjectDetails.LanguageStat[]
+---@return string
+local function format_languages(languages)
+  if #languages == 0 then
+    return "-"
+  end
+
+  local parts = {} ---@type string[]
+  local max_items = 3
+  for index, language in ipairs(languages) do
+    if index > max_items then
+      break
+    end
+    parts[#parts + 1] = ("%s %d%%"):format(language.name, language.percent)
+  end
+  if #languages > max_items then
+    parts[#parts + 1] = ("+%d"):format(#languages - max_items)
+  end
+  return table.concat(parts, ", ")
+end
+
+---@param value? number
+---@return string
+local function format_avg_lines(value)
+  if not value then
+    return "-"
+  end
+  return ("%.1f"):format(value)
+end
+
+---@param app CodexCli.App
+---@param summary CodexCli.ProjectQueueSummary
+---@return string[]
+local function project_detail_lines(app, summary)
+  local details = app:project_details(summary.project)
+  return {
+    ("    Files:%d  Avg LOC:%s  Remote:%s  Codex:%s"):format(
+      details.file_count,
+      format_avg_lines(details.avg_code_lines_per_file),
+      details.remote_name or "-",
+      format_timestamp(details.last_codex_activity_at)
+    ),
+    ("    Lang:%s  Mod:%s"):format(
+      format_languages(details.languages),
+      format_timestamp(details.last_file_modified_at)
+    ),
+  }
+end
+
+---@param item CodexCli.QueueItem
+---@return string
+local function prompt_title_highlight(item)
+  local id = prompt_item_kind(item)
+  local map = {
+    todo = "CodexCliPromptPickerTodoTitle",
+    error = "CodexCliPromptPickerErrorTitle",
+    visual = "CodexCliPromptPickerVisualTitle",
+    adjustment = "CodexCliPromptPickerAdjustmentTitle",
+    refactor = "CodexCliPromptPickerRefactorTitle",
+    idea = "CodexCliPromptPickerIdeaTitle",
+    explain = "CodexCliPromptPickerExplainTitle",
+  }
+  return map[id] or map.todo
 end
 
 ---@param app CodexCli.App
@@ -127,6 +296,8 @@ function Workspace.new(app, config)
   self.project_index = 1
   self.queue_index = 1
   self.projects = {}
+  self.project_rows = {}
+  self.project_item_rows = {}
   self.queue_rows = {}
   self.queue_item_rows = {}
   return self
@@ -181,12 +352,13 @@ function Workspace:open()
     return
   end
 
-  ensure_highlights()
+  ensure_highlights(self.config)
   self:ensure_buffers()
 
   local row, col, project_width, queue_width, height, footer_height = self:layout()
-  self.project_win = vim.api.nvim_open_win(self.project_buf, true, {
-    relative = "editor",
+  self.project_win = ui_win.open({
+    buf = self.project_buf,
+    enter = true,
     row = row,
     col = col,
     width = project_width,
@@ -195,9 +367,10 @@ function Workspace:open()
     border = "rounded",
     title = " Projects ",
     zindex = MAIN_ZINDEX,
-  })
-  self.queue_win = vim.api.nvim_open_win(self.queue_buf, false, {
-    relative = "editor",
+  }).win
+  self.queue_win = ui_win.open({
+    buf = self.queue_buf,
+    enter = false,
     row = row,
     col = col + project_width + 1,
     width = queue_width,
@@ -206,9 +379,10 @@ function Workspace:open()
     border = "rounded",
     title = " Queue ",
     zindex = MAIN_ZINDEX,
-  })
-  self.footer_win = vim.api.nvim_open_win(self.footer_buf, false, {
-    relative = "editor",
+  }).win
+  self.footer_win = ui_win.open({
+    buf = self.footer_buf,
+    enter = false,
     row = row + height + 1,
     col = col,
     width = project_width + queue_width + 1,
@@ -217,7 +391,7 @@ function Workspace:open()
     border = "rounded",
     title = " Actions ",
     zindex = FOOTER_ZINDEX,
-  })
+  }).win
 
   self:configure_windows()
   self:attach_keymaps()
@@ -245,6 +419,7 @@ function Workspace:configure_windows()
   if win_valid(self.footer_win) then
     vim.wo[self.footer_win].cursorline = false
   end
+  self:update_window_highlights()
 end
 
 function Workspace:close()
@@ -306,6 +481,15 @@ function Workspace:attach_keymaps()
     map(buf, "a", function()
       self:add_todo()
     end)
+    map(buf, "e", function()
+      self:edit_queue_item()
+    end)
+    map(buf, "i", function()
+      self:implement_queue_item()
+    end)
+    map(buf, "I", function()
+      self:implement_queued_items()
+    end)
     map(buf, "m", function()
       self:move_queue_item()
     end)
@@ -339,7 +523,22 @@ function Workspace:set_focus(focus)
   self:apply_focus()
 end
 
+function Workspace:update_window_highlights()
+  local function apply(win, active)
+    if not win_valid(win) then
+      return
+    end
+    local border = active and "CodexCliQueueActiveBorder" or "CodexCliQueueInactiveBorder"
+    vim.wo[win].winhl = ("NormalFloat:NormalFloat,FloatBorder:%s"):format(border)
+  end
+
+  apply(self.project_win, self.focus == "projects")
+  apply(self.queue_win, self.focus == "queue")
+  apply(self.footer_win, false)
+end
+
 function Workspace:apply_focus()
+  self:update_window_highlights()
   local win = self.focus == "projects" and self.project_win or self.queue_win
   if win_valid(win) then
     vim.api.nvim_set_current_win(win)
@@ -354,7 +553,7 @@ end
 
 function Workspace:update_cursor()
   if win_valid(self.project_win) then
-    local row = clamp(self.project_index, #self.projects)
+    local row = self.project_item_rows[self.project_index] or 1
     vim.api.nvim_win_set_cursor(self.project_win, { row, 0 })
   end
   if win_valid(self.queue_win) then
@@ -387,6 +586,7 @@ end
 
 ---@param initial? boolean
 function Workspace:refresh(initial)
+  ensure_highlights(self.config)
   if not self:is_open() then
     return
   end
@@ -409,11 +609,13 @@ function Workspace:refresh(initial)
 end
 
 function Workspace:render_projects()
-  local lines = {}
+  self.project_rows = {}
+  self.project_item_rows = {}
+  local block = TextBlock.new()
   for _, project in ipairs(self.projects) do
     local summary = self.app:queue_summary(project)
     local prefix = summary.session_running and "●" or "//"
-    lines[#lines + 1] = string.format(
+    local title = string.format(
       "%s %s  P:%d Q:%d H:%d",
       prefix,
       project.name,
@@ -421,33 +623,45 @@ function Workspace:render_projects()
       summary.counts.queued,
       summary.counts.history
     )
-  end
-
-  if #lines == 0 then
-    lines = { "No projects configured" }
-  end
-
-  vim.bo[self.project_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(self.project_buf, 0, -1, false, lines)
-  vim.bo[self.project_buf].modifiable = false
-
-  local ns = vim.api.nvim_create_namespace("codex-cli-queue-projects")
-  vim.api.nvim_buf_clear_namespace(self.project_buf, ns, 0, -1)
-  for index, project in ipairs(self.projects) do
-    local hl = self.app:is_project_session_running(project) and "CodexCliQueueProjectActive"
-      or "CodexCliQueueProjectInactive"
-    vim.api.nvim_buf_set_extmark(self.project_buf, ns, index - 1, 0, {
-      end_col = #lines[index],
-      hl_group = hl,
-    })
-    local counts_start = lines[index]:find("P:")
+    self.project_rows[#self.project_rows + 1] = {
+      kind = "item",
+      text = title,
+      project = project,
+    }
+    self.project_item_rows[#self.project_item_rows + 1] = #self.project_rows
+    local item_hl = summary.session_running and "CodexCliQueueProjectActive" or "CodexCliQueueProjectInactive"
+    local item_extmarks = {
+      Extmark.inline(0, 0, #title, item_hl),
+    }
+    local counts_start = title:find("P:")
     if counts_start then
-      vim.api.nvim_buf_set_extmark(self.project_buf, ns, index - 1, counts_start - 1, {
-        end_col = #lines[index],
-        hl_group = "CodexCliQueueCounts",
+      item_extmarks[#item_extmarks + 1] = Extmark.inline(0, counts_start - 1, #title, "CodexCliQueueCounts")
+    end
+    block:append_line(title, item_extmarks)
+
+    for _, detail in ipairs(project_detail_lines(self.app, summary)) do
+      self.project_rows[#self.project_rows + 1] = {
+        kind = "detail",
+        text = detail,
+        project = project,
+      }
+      block:append_line(detail, {
+        Extmark.inline(0, 0, #detail, "CodexCliQueueItemMuted"),
       })
     end
   end
+
+  if block:is_empty() then
+    block:append_line("No projects configured")
+  end
+
+  local selected_row = self.project_item_rows[self.project_index]
+  if selected_row then
+    local end_row = math.min(selected_row + 2, block:line_count())
+    block:add_extmarks(Extmark.block(selected_row - 1, end_row, "CodexCliQueueSelection"))
+  end
+
+  block:render(self.project_buf, PROJECT_NS)
 end
 
 function Workspace:render_queue()
@@ -455,19 +669,22 @@ function Workspace:render_queue()
   self.queue_rows = {}
   self.queue_item_rows = {}
 
-  local lines = {} ---@type string[]
+  local block = TextBlock.new()
   if not project then
-    lines = { "No project selected" }
+    block:append_line("No project selected")
   else
     local summary = self.app:queue_summary(project)
     for _, queue_name in ipairs({ "planned", "queued", "history" }) do
       local items = summary.queues[queue_name]
+      local header_text = string.format("%s (%d)", prompt_queue_label(queue_name), #items)
       self.queue_rows[#self.queue_rows + 1] = {
         kind = "header",
-        text = string.format("%s (%d)", prompt_queue_label(queue_name), #items),
+        text = header_text,
         queue = queue_name,
       }
-      lines[#lines + 1] = self.queue_rows[#self.queue_rows].text
+      block:append_line(header_text, {
+        Extmark.inline(0, 0, #header_text, "CodexCliQueueHeader"),
+      })
 
       if #items == 0 then
         self.queue_rows[#self.queue_rows + 1] = {
@@ -475,18 +692,29 @@ function Workspace:render_queue()
           text = "  (empty)",
           queue = queue_name,
         }
-        lines[#lines + 1] = "  (empty)"
+        block:append_line("  (empty)", {
+          Extmark.inline(0, 0, #"  (empty)", "CodexCliQueueItem"),
+        })
       else
         for _, item in ipairs(items) do
-          local suffix = queue_name == "history" and ("  [" .. (item.history_summary or "done") .. "]") or ""
+          local suffix = queue_name == "history" and history_suffix(item) or ""
+          local item_text = "  " .. item.title .. suffix
+          local title_text = "  " .. item.title
           self.queue_rows[#self.queue_rows + 1] = {
             kind = "item",
-            text = "  " .. item.title .. suffix,
+            text = item_text,
             queue = queue_name,
             item = item,
           }
-          lines[#lines + 1] = "  " .. item.title .. suffix
           self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
+          local item_extmarks = {
+            Extmark.inline(0, 0, #title_text, prompt_title_highlight(item)),
+          }
+          if #item_text > #title_text then
+            item_extmarks[#item_extmarks + 1] =
+              Extmark.inline(0, #title_text, #item_text, "CodexCliQueueItemMuted")
+          end
+          block:append_line(item_text, item_extmarks)
 
           for _, preview in ipairs(prompt_preview_lines(item)) do
             self.queue_rows[#self.queue_rows + 1] = {
@@ -495,12 +723,14 @@ function Workspace:render_queue()
               queue = queue_name,
               item = item,
             }
-            lines[#lines + 1] = preview
+            block:append_line(preview, {
+              Extmark.inline(0, 0, #preview, "CodexCliPromptPickerPromptText"),
+            })
           end
         end
       end
 
-      lines[#lines + 1] = ""
+      block:append_line("")
       self.queue_rows[#self.queue_rows + 1] = {
         kind = "header",
         text = "",
@@ -514,41 +744,34 @@ function Workspace:render_queue()
     self.queue_index = clamp(self.queue_index, #self.queue_item_rows)
   end
 
-  vim.bo[self.queue_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(self.queue_buf, 0, -1, false, lines)
-  vim.bo[self.queue_buf].modifiable = false
-
-  local ns = vim.api.nvim_create_namespace("codex-cli-queue-items")
-  vim.api.nvim_buf_clear_namespace(self.queue_buf, ns, 0, -1)
-  for row, item in ipairs(self.queue_rows) do
-    if item.text ~= "" then
-      local hl = item.kind == "header" and "CodexCliQueueHeader"
-        or (item.kind == "item" and "CodexCliQueueItem" or "CodexCliQueueItemMuted")
-      vim.api.nvim_buf_set_extmark(self.queue_buf, ns, row - 1, 0, {
-        end_col = #item.text,
-        hl_group = hl,
-      })
+  local selected_row = self.queue_item_rows[self.queue_index]
+  if selected_row then
+    local item = self.queue_rows[selected_row]
+    if item and item.item then
+      local last_row = selected_row
+      while self.queue_rows[last_row + 1] and self.queue_rows[last_row + 1].item == item.item do
+        last_row = last_row + 1
+      end
+      block:add_extmarks(Extmark.block(selected_row - 1, last_row, "CodexCliQueueSelection"))
     end
   end
+
+  block:render(self.queue_buf, QUEUE_NS)
 end
 
 function Workspace:render_footer()
   local lines = {
     "Focus: h/l or ←/→   Move: j/k or ↑/↓   Enter: open README + terminal   A/X: start/stop session",
-    "a: add todo   m/M: move forward/back   p: move project   H/L: prev/next project   d: delete item   D: delete project   q: close",
+    "Active pane border shows focus   a: add todo   e: edit prompt   i/I: implement one/all queued   q: close",
+    "m/M: move forward/back   p: move project   H/L: prev/next project   d/D: delete item/project   Ctrl-S: save body",
   }
-  vim.bo[self.footer_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(self.footer_buf, 0, -1, false, lines)
-  vim.bo[self.footer_buf].modifiable = false
-
-  local ns = vim.api.nvim_create_namespace("codex-cli-queue-footer")
-  vim.api.nvim_buf_clear_namespace(self.footer_buf, ns, 0, -1)
-  for row, line in ipairs(lines) do
-    vim.api.nvim_buf_set_extmark(self.footer_buf, ns, row - 1, 0, {
-      end_col = #line,
-      hl_group = "CodexCliQueueFooter",
+  local block = TextBlock.new()
+  for _, line in ipairs(lines) do
+    block:append_line(line, {
+      Extmark.inline(0, 0, #line, "CodexCliQueueFooter"),
     })
   end
+  block:render(self.footer_buf, FOOTER_NS)
 end
 
 function Workspace:activate_selected_project()
@@ -605,7 +828,7 @@ function Workspace:add_todo()
       return
     end
 
-    ui.input({
+    ui.multiline_input({
       prompt = "Todo details (optional)",
     }, function(details)
       self.app:add_project_todo(project, {
@@ -616,6 +839,63 @@ function Workspace:add_todo()
       self:refresh()
     end)
   end)
+end
+
+function Workspace:edit_queue_item()
+  local project = self:selected_project()
+  local item = self:selected_queue_item()
+  if not project or not item then
+    notify.warn("No queue item selected")
+    return
+  end
+
+  ui.input({
+    prompt = ("Edit title for %s"):format(project.name),
+    default = item.title,
+  }, function(title)
+    title = title and vim.trim(title) or ""
+    if title == "" then
+      return
+    end
+
+    ui.multiline_input({
+      prompt = "Edit details (optional)",
+      default = item.details or "",
+    }, function(details)
+      self.app:edit_queue_item(project, item.id, {
+        title = title,
+        details = details,
+      })
+      self:refresh()
+    end)
+  end)
+end
+
+function Workspace:implement_queue_item()
+  local project = self:selected_project()
+  local item, queue_name = self:selected_queue_item()
+  if not project or not item then
+    notify.warn("No queue item selected")
+    return
+  end
+  if queue_name ~= "queued" then
+    notify.warn("Select an item from the queued section")
+    return
+  end
+
+  self.app:implement_queue_item(project, item.id)
+  self:refresh()
+end
+
+function Workspace:implement_queued_items()
+  local project = self:selected_project()
+  if not project then
+    notify.warn("No project selected")
+    return
+  end
+
+  self.app:implement_queued_items(project)
+  self:refresh()
 end
 
 function Workspace:move_queue_item()

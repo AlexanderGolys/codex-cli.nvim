@@ -124,6 +124,34 @@ function M.write_json(path, value)
 end
 
 ---@param path string
+---@param content string
+function M.write_file(path, content)
+  M.ensure_dir(M.dirname(path))
+  local file = assert(io.open(path, "wb"))
+  file:write(content)
+  file:close()
+end
+
+---@param source string
+---@param destination string
+---@return boolean
+function M.copy_file(source, destination)
+  if not M.is_file(source) then
+    return false
+  end
+
+  local input = io.open(source, "rb")
+  if not input then
+    return false
+  end
+
+  local content = input:read("*a")
+  input:close()
+  M.write_file(destination, content)
+  return true
+end
+
+---@param path string
 function M.remove(path)
   vim.fn.delete(M.normalize(path), "rf")
 end
