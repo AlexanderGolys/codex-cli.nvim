@@ -315,6 +315,12 @@ function Workspace:attach_keymaps()
     map(buf, "p", function()
       self:move_queue_item_to_project()
     end)
+    map(buf, "H", function()
+      self:move_queue_item_to_adjacent_project(-1)
+    end)
+    map(buf, "L", function()
+      self:move_queue_item_to_adjacent_project(1)
+    end)
     map(buf, "d", function()
       self:delete_queue_item()
     end)
@@ -529,7 +535,7 @@ end
 function Workspace:render_footer()
   local lines = {
     "Focus: h/l or ←/→   Move: j/k or ↑/↓   Enter: open README + terminal   A/X: start/stop session",
-    "a: add todo   m/M: move forward/back   p: move project   d: delete item   D: delete project   q: close",
+    "a: add todo   m/M: move forward/back   p: move project   H/L: prev/next project   d: delete item   D: delete project   q: close",
   }
   vim.bo[self.footer_buf].modifiable = true
   vim.api.nvim_buf_set_lines(self.footer_buf, 0, -1, false, lines)
@@ -666,39 +672,94 @@ function Workspace:move_queue_item_to_project()
     return
   end
 
-  self.app.picker:pick({
-    prompt = ("Move '%s' to project"):format(item.title),
-  }, function(target_project)
-    if not target_project then
-      return
-    end
+  local current_index = self.project_index
+  self:close()
+  vim.schedule(function()
+    self.app.picker:pick({
+      prompt = ("Move '%s' to project"):format(item.title),
+    }, function(target_project)
+      if not target_project then
+        self:open()
+        self.project_index = current_index
+        self:refresh()
+        return
+      end
 
-    local function move_to_project(copy)
-      self.app:move_queue_item_to_project(project, item.id, target_project, {
-        copy = copy,
-      })
-      self.queue_index = 1
-      self:refresh()
-    end
-
-    if queue_name == "history" then
-      ui.select({
-        { label = "Move history item", copy = false },
-        { label = "Duplicate history item", copy = true },
-      }, {
-        prompt = ("Transfer '%s' to %s"):format(item.title, target_project.name),
-        format_item = function(choice)
-          return choice.label
-        end,
-      }, function(choice)
-        if choice then
-          move_to_project(choice.copy)
+      self:prompt_move_to_project(project, item, queue_name, target_project, function()
+        for index, candidate in ipairs(self.app:projects_for_queue_workspace()) do
+          if candidate.root == target_project.root then
+            self.project_index = index
+            break
+          end
         end
+        self.queue_index = 1
+        self:open()
+        self:refresh()
       end)
-      return
-    end
+    end)
+  end)
+end
 
-    move_to_project(false)
+---@param project CodexCli.Project
+---@param item CodexCli.QueueItem
+---@param queue_name CodexCli.QueueName
+---@param target_project CodexCli.Project
+---@param on_complete fun()
+function Workspace:prompt_move_to_project(project, item, queue_name, target_project, on_complete)
+  local function move_to_project(copy)
+    self.app:move_queue_item_to_project(project, item.id, target_project, {
+      copy = copy,
+    })
+    on_complete()
+  end
+
+  if queue_name == "history" then
+    ui.select({
+      { label = "Move history item", copy = false },
+      { label = "Duplicate history item", copy = true },
+    }, {
+      prompt = ("Transfer '%s' to %s"):format(item.title, target_project.name),
+      format_item = function(choice)
+        return choice.label
+      end,
+    }, function(choice)
+      if not choice then
+        on_complete()
+        return
+      end
+      move_to_project(choice.copy)
+    end)
+    return
+  end
+
+  move_to_project(false)
+end
+
+---@param delta integer
+function Workspace:move_queue_item_to_adjacent_project(delta)
+  local project = self:selected_project()
+  local item, queue_name = self:selected_queue_item()
+  if not project or not item or not queue_name then
+    notify.warn("No queue item selected")
+    return
+  end
+
+  local target_index = self.project_index + delta
+  if target_index < 1 or target_index > #self.projects then
+    notify.warn("No adjacent project in that direction")
+    return
+  end
+
+  local target_project = self.projects[target_index]
+  if not target_project or target_project.root == project.root then
+    notify.warn("No adjacent project in that direction")
+    return
+  end
+
+  self:prompt_move_to_project(project, item, queue_name, target_project, function()
+    self.project_index = target_index
+    self.queue_index = 1
+    self:refresh()
   end)
 end
 

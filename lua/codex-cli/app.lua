@@ -662,12 +662,6 @@ function App:select_project()
     end,
   }, function(project)
     state:set_active_project(project and project.root or nil)
-
-    if not state:has_visible_window() then
-      self:refresh_state_preview()
-      return
-    end
-
     local target = self:resolve_target(state)
     local session, replaced_key = self.terminals:get_session(target)
     if replaced_key then

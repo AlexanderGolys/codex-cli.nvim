@@ -1,5 +1,6 @@
 ---@class codex-cli
 local M = {}
+M.lualine = require("codex-cli.lualine")
 
 local function app()
   return require("codex-cli.app").instance()

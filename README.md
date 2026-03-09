@@ -262,6 +262,33 @@ Manual runtime checks should focus on:
 - tab-local active-project behavior
 - prompt expansion edge cases for diagnostics, quickfix items, and ranges
 
+## Lualine
+
+The plugin exposes a small helper for lualine components:
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_c = {
+      function()
+        return require("codex-cli").lualine.project_name({
+          prefix = "Codex:",
+        })
+      end,
+    },
+  },
+})
+```
+
+For tabline usage you can pass a specific tabpage and optionally fall back to the detected project:
+
+```lua
+require("codex-cli").lualine.project_name({
+  tabpage = vim.api.nvim_get_current_tabpage(),
+  include_detected = true,
+})
+```
+
 ## Roadmap
 
 ### Phase 1
