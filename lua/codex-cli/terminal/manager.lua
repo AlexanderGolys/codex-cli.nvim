@@ -42,6 +42,7 @@ function Manager:session_spec(target)
       title = string.format("Codex: %s", target.project.name),
       cmd = vim.deepcopy(self.config.codex_cmd),
       project_root = target.project.root,
+      header_enabled = false,
     }
   end
 
@@ -51,6 +52,7 @@ function Manager:session_spec(target)
     cwd = target.cwd,
     title = string.format("Codex: %s", target.cwd),
     cmd = vim.deepcopy(self.config.codex_cmd),
+    header_enabled = true,
   }
 end
 
@@ -76,6 +78,44 @@ function Manager:destroy_project_session(root)
   end
   session:destroy()
   self.project_sessions[root] = nil
+end
+
+---@param project CodexCli.Project
+function Manager:update_project_identity(project)
+  local session = self.project_sessions[project.root]
+  if not session then
+    return
+  end
+
+  local spec = self:session_spec({
+    kind = "project",
+    project = project,
+  })
+  session:update_identity(spec)
+end
+
+---@param buf number
+---@return CodexCli.TerminalSession?
+function Manager:session_by_buf(buf)
+  if self.free_session and self.free_session.buf == buf then
+    return self.free_session
+  end
+
+  for _, session in pairs(self.project_sessions) do
+    if session.buf == buf then
+      return session
+    end
+  end
+end
+
+---@param buf number
+---@return boolean|nil
+function Manager:toggle_header_for_buf(buf)
+  local session = self:session_by_buf(buf)
+  if not session then
+    return
+  end
+  return session:toggle_header()
 end
 
 ---@param target CodexCli.TerminalTarget
@@ -164,6 +204,19 @@ function Manager:detach_session(session_key, states)
       state:hide_window()
     end
   end
+end
+
+---@return CodexCli.TerminalSession.Snapshot[]
+function Manager:snapshot()
+  local ret = {} ---@type CodexCli.TerminalSession.Snapshot[]
+
+  local roots = vim.tbl_keys(self.project_sessions)
+  table.sort(roots)
+  for _, root in ipairs(roots) do
+    ret[#ret + 1] = self.project_sessions[root]:snapshot()
+  end
+
+  return ret
 end
 
 return Manager

@@ -30,7 +30,7 @@ A project is defined as:
 
 The plugin will provide:
 
-- add/remove project management
+- add/remove project managemennt
 - project lookup by current file or working directory
 - persistent project storage
 - a Snacks picker for switching the active project
@@ -159,6 +159,9 @@ require("codex-cli").setup({
   project_detection = {
     auto_suggest_git_root = true,
   },
+  state_preview = {
+    width = 48,
+  },
 })
 ```
 
@@ -169,6 +172,7 @@ Final option names may shift slightly, but the behavior above is the target.
 The exact command surface may still change, but the expected workflow is centered around commands like:
 
 - `:CodexToggle`
+- `:CodexStateToggle`
 - `:CodexProjectSelect`
 - `:CodexProjectAdd`
 - `:CodexProjectRemove`
@@ -235,6 +239,14 @@ Recommended validation while implementing:
 nvim --headless "+lua require('codex-cli').setup()" +qa
 nvim --headless "+lua print(vim.inspect(require('codex-cli')))" +qa
 ```
+
+For an isolated runtime with only `lazy.nvim`, `snacks.nvim`, and this plugin loaded:
+
+```bash
+./bin/codex-nvim-clean
+```
+
+That launcher uses [dev/nvim/init.lua](/home/flux/nvim-plugins/codex-cli/dev/nvim/init.lua) and repo-local XDG cache/data/state directories so it does not load your normal Neovim config.
 
 Manual runtime checks should focus on:
 

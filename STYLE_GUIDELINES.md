@@ -62,3 +62,8 @@ They are the default style rules for all code in this repository.
 - Cross-cutting helpers belong under `lua/codex-cli/util/`.
 - UI adapters for Snacks belong under `lua/codex-cli/ui/`.
 - Avoid mixing prompt-generation features into project/session modules.
+- Do not use `goto` in any language used in this repository.
+- Do not introduce magic constants. Numeric literals must be one of:
+  - obvious protocol/Neovim sentinel values (`0`, `1`, `-1`) used directly with APIs,
+  - documented defaults in centralized config,
+  - named local/module-level constants with descriptive identifiers.

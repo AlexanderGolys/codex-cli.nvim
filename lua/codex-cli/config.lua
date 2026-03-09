@@ -8,11 +8,20 @@
 ---@class CodexCli.Config.ProjectDetection
 ---@field auto_suggest_git_root boolean
 
+---@class CodexCli.Config.StatePreview
+---@field min_width integer
+---@field max_width integer
+---@field max_height integer # Non-positive values mean "use full available height".
+---@field row integer
+---@field col integer
+---@field winblend integer
+
 ---@class CodexCli.Config.Values
 ---@field codex_cmd string[]
 ---@field storage CodexCli.Config.Storage
 ---@field terminal CodexCli.Config.Terminal
 ---@field project_detection CodexCli.Config.ProjectDetection
+---@field state_preview CodexCli.Config.StatePreview
 
 ---@class CodexCli.Config
 ---@field values CodexCli.Config.Values
@@ -33,6 +42,14 @@ local defaults = {
   },
   project_detection = {
     auto_suggest_git_root = true,
+  },
+  state_preview = {
+    min_width = 36,
+    max_width = 72,
+    max_height = 0,
+    row = 1,
+    col = 2,
+    winblend = 18,
   },
 }
 

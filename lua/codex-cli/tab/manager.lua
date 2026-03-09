@@ -48,4 +48,18 @@ function Manager:clear_project(root)
   end
 end
 
+---@return CodexCli.TabState.Snapshot[]
+function Manager:snapshot()
+  local states = self:list()
+  table.sort(states, function(left, right)
+    return left.tabpage < right.tabpage
+  end)
+
+  local ret = {} ---@type CodexCli.TabState.Snapshot[]
+  for _, state in ipairs(states) do
+    ret[#ret + 1] = state:snapshot()
+  end
+  return ret
+end
+
 return Manager

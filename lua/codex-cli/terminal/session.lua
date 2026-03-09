@@ -7,6 +7,7 @@ local notify = require("codex-cli.util.notify")
 ---@field title string
 ---@field cmd string[]
 ---@field project_root? string
+---@field header_enabled? boolean
 
 ---@class CodexCli.TerminalSession
 ---@field key string
@@ -15,8 +16,20 @@ local notify = require("codex-cli.util.notify")
 ---@field title string
 ---@field cmd string[]
 ---@field project_root? string
+---@field header_enabled boolean
 ---@field buf? number
 ---@field job_id? integer
+
+---@class CodexCli.TerminalSession.Snapshot
+---@field key string
+---@field kind 'project'|'free'
+---@field cwd string
+---@field title string
+---@field project_root? string
+---@field buf? integer
+---@field buffer_valid boolean
+---@field job_id? integer
+---@field running boolean
 local Session = {}
 Session.__index = Session
 
@@ -31,7 +44,44 @@ end
 ---@param spec CodexCli.TerminalSession.Spec
 ---@return CodexCli.TerminalSession
 function Session.new(spec)
-  return setmetatable(vim.deepcopy(spec), Session)
+  spec = vim.deepcopy(spec)
+  if spec.header_enabled == nil then
+    spec.header_enabled = spec.kind == "free"
+  end
+  return setmetatable(spec, Session)
+end
+
+function Session:header_text()
+  if self.kind == "free" then
+    return ("[Codex CLI] %s"):format(self.cwd)
+  end
+  return ("[Codex CLI] %s"):format(self.title)
+end
+
+function Session:sync_header()
+  if not self:buf_valid() then
+    return
+  end
+
+  if self.header_enabled then
+    local header = self:header_text()
+    local existing = vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1]
+    if existing ~= header then
+      vim.api.nvim_buf_set_lines(self.buf, 0, 1, false, { header })
+    end
+    return
+  end
+
+  local existing = vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1]
+  if existing and existing:find("^%[Codex CLI%]") then
+    vim.api.nvim_buf_set_lines(self.buf, 0, 1, false, {})
+  end
+end
+
+function Session:toggle_header()
+  self.header_enabled = not self.header_enabled
+  self:sync_header()
+  return self.header_enabled
 end
 
 ---@return boolean
@@ -61,6 +111,7 @@ function Session:update_buffer_state()
     cwd = self.cwd,
     project_root = self.project_root,
   }
+  self:sync_header()
 end
 
 function Session:ensure_started()
@@ -122,7 +173,26 @@ function Session:update_identity(spec)
   self.title = spec.title
   self.cmd = vim.deepcopy(spec.cmd)
   self.project_root = spec.project_root
+  if spec.header_enabled ~= nil then
+    self.header_enabled = spec.header_enabled
+  end
   self:update_buffer_state()
+end
+
+---@return CodexCli.TerminalSession.Snapshot
+function Session:snapshot()
+  local buffer_valid = self:buf_valid()
+  return {
+    key = self.key,
+    kind = self.kind,
+    cwd = self.cwd,
+    title = self.title,
+    project_root = self.project_root,
+    buf = self.buf,
+    buffer_valid = buffer_valid,
+    job_id = self.job_id,
+    running = self:is_running(),
+  }
 end
 
 return Session

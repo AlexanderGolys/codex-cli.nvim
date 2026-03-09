@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNTIME_ROOT="$ROOT/.cache/codex-cli-minimal"
+
+mkdir -p \
+  "$RUNTIME_ROOT/cache" \
+  "$RUNTIME_ROOT/data" \
+  "$RUNTIME_ROOT/state"
+
+export XDG_CACHE_HOME="$RUNTIME_ROOT/cache"
+export XDG_DATA_HOME="$RUNTIME_ROOT/data"
+export XDG_STATE_HOME="$RUNTIME_ROOT/state"
+
+exec nvim -u "$ROOT/dev/nvim/init.lua" "$@"
