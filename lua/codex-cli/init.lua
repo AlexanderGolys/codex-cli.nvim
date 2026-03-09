@@ -1,23 +1,43 @@
+---@class codex-cli
 local M = {}
 
-local config = {
-  terminal_cmd = "snacks",
-  terminal_height = 0.4,
-  auto_context = true,
-}
+local function app()
+  return require("codex-cli.app").instance()
+end
 
+---@param opts? CodexCli.Config.Values|{}
 function M.setup(opts)
-  config = vim.tbl_deep_extend("force", config, opts or {})
+  app():setup(opts)
+end
+
+function M.register()
+  require("codex-cli.commands").register()
+end
+
+function M.toggle()
+  app():toggle()
 end
 
 function M.open_terminal()
-  -- TBD: Integrate with snacks terminal
-  vim.notify("codex-cli: open_terminal not yet implemented", vim.log.levels.INFO)
+  app():toggle()
 end
 
-function M.generate_prompt()
-  -- TBD: Generate prompt from buffer, diagnostics, quickfix
-  vim.notify("codex-cli: generate_prompt not yet implemented", vim.log.levels.INFO)
+function M.select_project()
+  app():select_project()
+end
+
+---@param opts? { name?: string, root?: string }
+function M.add_project(opts)
+  app():add_project(opts)
+end
+
+---@param value? string
+function M.remove_project(value)
+  app():remove_project(value)
+end
+
+function M.clear_active_project()
+  app():clear_active_project()
 end
 
 return M
