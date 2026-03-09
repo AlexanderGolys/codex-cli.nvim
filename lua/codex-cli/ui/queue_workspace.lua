@@ -2,7 +2,7 @@ local ui = require("codex-cli.ui.select")
 local notify = require("codex-cli.util.notify")
 
 ---@class CodexCli.QueueWorkspace.QueueRow
----@field kind "header"|"item"
+---@field kind "header"|"item"|"preview"
 ---@field text string
 ---@field queue? CodexCli.QueueName
 ---@field item? CodexCli.QueueItem
@@ -58,6 +58,23 @@ end
 
 local function prompt_queue_label(queue_name)
   return QUEUE_LABELS[queue_name] or queue_name
+end
+
+---@param item CodexCli.QueueItem
+---@return string[]
+local function prompt_preview_lines(item)
+  local preview = {} ---@type string[]
+  local lines = vim.split(item.prompt or "", "\n", { plain = true })
+  for _, line in ipairs(lines) do
+    line = vim.trim(line)
+    if line ~= "" then
+      preview[#preview + 1] = "    " .. line
+    end
+    if #preview >= 3 then
+      break
+    end
+  end
+  return preview
 end
 
 local function ensure_highlights()
@@ -283,6 +300,9 @@ function Workspace:attach_keymaps()
     map(buf, "A", function()
       self:activate_selected_project()
     end)
+    map(buf, "X", function()
+      self:deactivate_selected_project()
+    end)
     map(buf, "a", function()
       self:add_todo()
     end)
@@ -461,6 +481,16 @@ function Workspace:render_queue()
           }
           lines[#lines + 1] = "  " .. item.title .. suffix
           self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
+
+          for _, preview in ipairs(prompt_preview_lines(item)) do
+            self.queue_rows[#self.queue_rows + 1] = {
+              kind = "preview",
+              text = preview,
+              queue = queue_name,
+              item = item,
+            }
+            lines[#lines + 1] = preview
+          end
         end
       end
 
@@ -487,7 +517,7 @@ function Workspace:render_queue()
   for row, item in ipairs(self.queue_rows) do
     if item.text ~= "" then
       local hl = item.kind == "header" and "CodexCliQueueHeader"
-        or (item.item and "CodexCliQueueItem" or "CodexCliQueueItemMuted")
+        or (item.kind == "item" and "CodexCliQueueItem" or "CodexCliQueueItemMuted")
       vim.api.nvim_buf_set_extmark(self.queue_buf, ns, row - 1, 0, {
         end_col = #item.text,
         hl_group = hl,
@@ -498,7 +528,7 @@ end
 
 function Workspace:render_footer()
   local lines = {
-    "Focus: h/l or ←/→   Move: j/k or ↑/↓   Enter: open README + terminal   A: activate session",
+    "Focus: h/l or ←/→   Move: j/k or ↑/↓   Enter: open README + terminal   A/X: start/stop session",
     "a: add todo   m/M: move forward/back   p: move project   d: delete item   D: delete project   q: close",
   }
   vim.bo[self.footer_buf].modifiable = true
@@ -521,6 +551,15 @@ function Workspace:activate_selected_project()
     return
   end
   self.app:activate_project_session(project)
+  self:refresh()
+end
+
+function Workspace:deactivate_selected_project()
+  local project = self:selected_project()
+  if not project then
+    return
+  end
+  self.app:deactivate_project_session(project)
   self:refresh()
 end
 

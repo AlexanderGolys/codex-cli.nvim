@@ -303,6 +303,14 @@ function App:activate_project_session(project)
 end
 
 ---@param project CodexCli.Project
+function App:deactivate_project_session(project)
+  self.terminals:destroy_project_session(project.root)
+  self.terminals:detach_session(project.root, self.tabs:list())
+  notify.notify(("Stopped Codex session for %s"):format(project.name))
+  self:refresh_state_preview()
+end
+
+---@param project CodexCli.Project
 function App:open_project_workspace_target(project)
   self:activate_project(project.root)
 
