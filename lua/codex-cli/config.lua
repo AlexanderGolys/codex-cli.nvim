@@ -79,7 +79,7 @@ local defaults = {
   terminal = {
     win = {
       position = "right",
-      width = 0.35,
+      width = 0.45,
     },
     start_insert = true,
   },
@@ -94,6 +94,7 @@ local defaults = {
     col = 2,
     winblend = 18,
   },
+
   queue_workspace = {
     width = 0.98,
     height = 0.98,
@@ -102,13 +103,17 @@ local defaults = {
     preview_max_lines = 5,
     fold_preview = true,
   },
+
   error_prompt = {
     screenshot_dir = nil,
   },
+
   highlights = vim.deepcopy(HighlightConfig),
+
   prompt_picker = {
     highlights = {},
   },
+
   prompt_execution = {
     relative_dir = ".codex-cli/prompt-executions",
     poll_ms = 5000,

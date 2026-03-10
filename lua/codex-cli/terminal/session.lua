@@ -23,6 +23,7 @@ local notify = require("codex-cli.util.notify")
 ---@field header_enabled boolean
 ---@field buf? number
 ---@field job_id? integer
+---@field suppress_exit_warning boolean
 
 --- Defines the CodexCli.TerminalSession.Snapshot type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -114,6 +115,7 @@ function Session.new(spec)
   if spec.header_enabled == nil then
     spec.header_enabled = spec.kind == "free"
   end
+  spec.suppress_exit_warning = false
   return setmetatable(spec, Session)
 end
 
@@ -225,7 +227,9 @@ function Session:ensure_started()
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       on_exit = function(_, code)
         self.job_id = nil
-        if code ~= 0 then
+        local suppress_warning = self.suppress_exit_warning
+        self.suppress_exit_warning = false
+        if code ~= 0 and not suppress_warning then
           notify.warn(("Codex session exited with code %d at %s"):format(code, self.cwd))
         end
       end,
@@ -258,6 +262,7 @@ end
 --- It is called during project shutdown and when switching away from removed sessions.
 function Session:destroy()
   if self:is_running() then
+    self.suppress_exit_warning = true
     pcall(vim.fn.jobstop, self.job_id)
   end
   self.job_id = nil
@@ -303,6 +308,9 @@ function Session:update_identity(spec)
   self.project_root = spec.project_root
   if spec.header_enabled ~= nil then
     self.header_enabled = spec.header_enabled
+  end
+  if spec.suppress_exit_warning ~= nil then
+    self.suppress_exit_warning = spec.suppress_exit_warning
   end
   self:update_buffer_state()
 end

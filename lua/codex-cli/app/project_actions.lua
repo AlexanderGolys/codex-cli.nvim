@@ -140,6 +140,27 @@ function ProjectActions:open_project_workspace_target(project)
   self.app:refresh_state_preview()
 end
 
+--- Opens the current project's todo file in the active window.
+--- The file lives at `TODO.md` in the project root and is created on demand.
+---@param project? CodexCli.Project
+function ProjectActions:open_project_todo_file(project)
+  project = project or self.app:resolve_target(self.app:current_tab()).project
+  if not project then
+    notify.warn("No active project selected")
+    return
+  end
+
+  local path = fs.join(project.root, "TODO.md")
+  if not fs.exists(path) then
+    fs.write_file(path, ("# %s TODO\n"):format(project.name))
+  end
+
+  self:activate_project(project.root)
+  vim.cmd.edit(vim.fn.fnameescape(path))
+  self.app:touch_project_activity(project)
+  self.app:refresh_state_preview()
+end
+
 ---@param root string
 --- Updates the active tab project root and refreshes snapshot state.
 --- This is the low-level state mutation used by project-switch actions.
@@ -161,6 +182,21 @@ function ProjectActions:clear_active_project()
     end
   end
   self.app:refresh_state_preview()
+end
+
+--- Sets the current tab's active project and refreshes the resolved terminal target.
+--- This is shared by workspace and command-driven project selection flows.
+---@param project CodexCli.Project
+function ProjectActions:set_current_project(project)
+  local state = self.app:current_tab()
+  state:set_active_project(project.root)
+  if not self:show_target(state, self.app:resolve_target(state)) then
+    self.app:refresh_state_preview()
+    return
+  end
+  self.app:touch_project_activity(project)
+  self.app:refresh_state_preview()
+  notify.notify(("Set current project to %s"):format(project.name))
 end
 
 --- Toggles visibility of the current tab's terminal target.
@@ -195,36 +231,6 @@ function ProjectActions:toggle()
   if target.kind == "free" then
     self:maybe_offer_project(target.cwd)
   end
-end
-
---- Opens the project picker and applies the selected project to current tab state.
---- This is the user-driven switch path that resolves session target and activity timestamps.
---- It also wires removal/rename callbacks for interactive list entries.
-function ProjectActions:select_project()
-  local state = self.app:current_tab()
-  self.app.picker:pick({
-    active_root = state.active_project_root,
-    --- Deletes a project through the global removal flow.
-    --- This callback keeps deletion behavior identical whether launched from picker or command.
-    on_delete = function(project)
-      self:remove_project(project)
-    end,
-    --- Renames a project using app-level validation and persistence.
-    --- It mirrors command behavior while staying within picker-driven flow.
-    on_rename = function(project)
-      self:rename_project(project)
-    end,
-  }, function(project)
-    state:set_active_project(project and project.root or nil)
-    if not self:show_target(state, self.app:resolve_target(state)) then
-      self.app:refresh_state_preview()
-      return
-    end
-    if project then
-      self.app:touch_project_activity(project)
-    end
-    self.app:refresh_state_preview()
-  end)
 end
 
 --- Implements the resolve_project path for app project actions.

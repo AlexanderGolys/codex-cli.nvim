@@ -63,13 +63,6 @@ function M.open_terminal()
   app():toggle()
 end
 
---- Implements the select_project path for init.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
-function M.select_project()
-  app():select_project()
-end
-
 --- Adds a new init entry and keeps related state aligned.
 --- This function feeds the same workflow used by interactive and scripted callers.
 ---@param opts? { name?: string, root?: string }
@@ -111,6 +104,12 @@ end
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function M.open_queue_workspace()
   app():open_queue_workspace()
+end
+
+--- Opens the active project's `TODO.md` in the current window.
+--- The file is created automatically when it does not already exist.
+function M.open_project_todo_file()
+  app():open_project_todo_file()
 end
 
 --- Adds a new init entry and keeps related state aligned.

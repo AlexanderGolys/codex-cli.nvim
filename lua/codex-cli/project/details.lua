@@ -320,9 +320,9 @@ local function code_lines_for_file(path, filetype)
   local line_count = 0
   for raw_line in (content .. "\n"):gmatch("([^\n]*)\n") do
     local line = vim.trim(raw_line:gsub("\r$", ""))
-    if line ~= "" and not is_comment_line(filetype, line) then
+    -- if line ~= "" and not is_comment_line(filetype, line) then
       line_count = line_count + 1
-    end
+    -- end
   end
   return line_count, true
 end

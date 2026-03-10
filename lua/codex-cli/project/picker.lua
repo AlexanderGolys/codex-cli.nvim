@@ -67,11 +67,11 @@ function Picker:format_item(item, supports_chunks)
 end
 
 ---@param opts? {
----  include_none?: boolean,
----  prompt?: string,
----  active_root?: string,
----  on_delete?: fun(project: CodexCli.Project),
----  on_rename?: fun(project: CodexCli.Project),
+---include_none?: boolean,
+---prompt?: string,
+---active_root?: string,
+---on_delete?: fun(project: CodexCli.Project),
+---on_rename?: fun(project: CodexCli.Project),
 ---}
 ---@param on_choice fun(project?: CodexCli.Project)
 function Picker:pick(opts, on_choice)
@@ -131,13 +131,19 @@ function Picker:pick(opts, on_choice)
 --- Implements the action path for project picker.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
-      action = function(_, item)
+      action = function(picker, item)
         item = item and item.item or item
         if not item or not item.project then
           notify.warn("No project selected")
           return
         end
-        opts.on_delete(item.project)
+        local project = item.project
+        if picker and picker.close then
+          picker:close()
+        end
+        vim.schedule(function()
+          opts.on_delete(project)
+        end)
       end,
     }
     action_hints[#action_hints + 1] = "d: Delete project"
@@ -159,13 +165,19 @@ function Picker:pick(opts, on_choice)
 --- Implements the action path for project picker.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
-      action = function(_, item)
+      action = function(picker, item)
         item = item and item.item or item
         if not item or not item.project then
           notify.warn("No project selected")
           return
         end
-        opts.on_rename(item.project)
+        local project = item.project
+        if picker and picker.close then
+          picker:close()
+        end
+        vim.schedule(function()
+          opts.on_rename(project)
+        end)
       end,
     }
     action_hints[#action_hints + 1] = "r: Rename project"

@@ -1,5 +1,6 @@
 local ui = require("codex-cli.ui.select")
 local Extmark = require("codex-cli.ui.extmark")
+local PromptComposer = require("codex-cli.prompt.composer")
 local TextBlock = require("codex-cli.ui.text_block")
 local PromptHighlight = require("codex-cli.prompt.highlight")
 local ui_win = require("codex-cli.ui.win")
@@ -247,8 +248,8 @@ local function footer_actions(focus)
       title = " Project Actions ",
       lines = {
         "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
-        "A: start session   X: stop session   a: add prompt   D: delete project",
-        "Queue-specific actions appear when the queue pane is active.",
+        "s: set current project   A: start session   X: stop session   a: add prompt   D: delete project",
+        "&: insert editor context in prompt editor   x: canned prompt in prompt editor",
       },
     }
   end
@@ -258,7 +259,7 @@ local function footer_actions(focus)
     lines = {
       "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
       "a: add prompt   e: edit prompt   i/I: implement one/all queued   m/M: move forward/back",
-      "p: move project   H/L: prev/next project   d: delete item   Ctrl-S: save multiline body",
+      "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   Ctrl-S: save",
     },
   }
 end
@@ -410,6 +411,23 @@ function Workspace:update_config(config)
   self.config = config
 end
 
+--- Focuses a project row by root so selection commands can land on the right entry.
+---@param root? string
+function Workspace:focus_project(root)
+  self.projects = self.app:projects_for_queue_workspace()
+  self.project_index = 1
+  if root and root ~= "" then
+    for index, project in ipairs(self.projects) do
+      if project.root == root then
+        self.project_index = index
+        break
+      end
+    end
+  end
+  self.queue_index = 1
+  self.focus = "projects"
+end
+
 --- Checks a open condition for ui queue workspace.
 --- This gate keeps callers safe before continuing higher-level state transitions.
 ---@return boolean
@@ -435,9 +453,9 @@ function Workspace:ensure_buffers()
     return buf
   end
 
-  self.project_buf = buf_valid(self.project_buf) and self.project_buf or make_buffer("codex-cli://queue-projects")
-  self.queue_buf = buf_valid(self.queue_buf) and self.queue_buf or make_buffer("codex-cli://queue-items")
-  self.footer_buf = buf_valid(self.footer_buf) and self.footer_buf or make_buffer("codex-cli://queue-footer")
+  self.project_buf = buf_valid(self.project_buf) and self.project_buf or make_buffer("codex-cli-queue-projects")
+  self.queue_buf = buf_valid(self.queue_buf) and self.queue_buf or make_buffer("codex-cli-queue-items")
+  self.footer_buf = buf_valid(self.footer_buf) and self.footer_buf or make_buffer("codex-cli-queue-footer")
 end
 
 --- Implements the layout path for ui queue workspace.
@@ -645,6 +663,9 @@ function Workspace:attach_keymaps()
     end)
     map(buf, "<CR>", function()
       self:open_selected_project()
+    end)
+    map(buf, "s", function()
+      self:set_current_project()
     end)
     map(buf, "A", function()
       self:activate_selected_project()
@@ -1034,6 +1055,18 @@ function Workspace:open_selected_project()
   end)
 end
 
+--- Pins the selected project as the current project for the active tab.
+--- This reuses the normal project-target routing so terminal and preview state stay in sync.
+function Workspace:set_current_project()
+  local project = self:selected_project()
+  if not project then
+    notify.warn("No project selected")
+    return
+  end
+  self.app:set_current_project(project)
+  self:refresh()
+end
+
 --- Implements the selected_queue_item path for ui queue workspace.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
@@ -1056,24 +1089,19 @@ function Workspace:add_todo()
     return
   end
 
-  ui.input({
-    prompt = ("Todo title for %s"):format(project.name),
-  }, function(title)
-    title = title and vim.trim(title) or ""
-    if title == "" then
+  ui.multiline_input({
+    prompt = ("Todo prompt for %s"):format(project.name),
+  }, function(body)
+    local spec = body and PromptComposer.parse(body) or nil
+    if not spec then
       return
     end
-
-    ui.input({
-      prompt = "Todo details (optional)",
-    }, function(details)
-      self.app:add_project_todo(project, {
-        title = title,
-        details = details,
-      })
-      self.queue_index = 1
-      self:refresh()
-    end)
+    self.app:add_project_todo(project, {
+      title = spec.title,
+      details = spec.details,
+    })
+    self.queue_index = 1
+    self:refresh()
   end)
 end
 
@@ -1088,25 +1116,19 @@ function Workspace:edit_queue_item()
     return
   end
 
-  ui.input({
-    prompt = ("Edit title for %s"):format(project.name),
-    default = item.title,
-  }, function(title)
-    title = title and vim.trim(title) or ""
-    if title == "" then
+  ui.multiline_input({
+    prompt = ("Edit prompt for %s"):format(project.name),
+    default = PromptComposer.render(item.title, item.details),
+  }, function(body)
+    local spec = body and PromptComposer.parse(body) or nil
+    if not spec then
       return
     end
-
-    ui.input({
-      prompt = "Edit details (optional)",
-      default = item.details or "",
-    }, function(details)
-      self.app:edit_queue_item(project, item.id, {
-        title = title,
-        details = details,
-      })
-      self:refresh()
-    end)
+    self.app:edit_queue_item(project, item.id, {
+      title = spec.title,
+      details = spec.details,
+    })
+    self:refresh()
   end)
 end
 

@@ -1,4 +1,5 @@
 local PromptCategory = require("codex-cli.prompt.category")
+local PromptComposer = require("codex-cli.prompt.composer")
 local PromptLibrary = require("codex-cli.prompt.library")
 local PromptTitle = require("codex-cli.prompt.title")
 local clipboard = require("codex-cli.util.clipboard")
@@ -177,22 +178,40 @@ end
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function PromptActions:prompt_for_todo(project)
-  ui.input({
-    prompt = ("Todo title for %s"):format(project.name),
-  }, function(title)
-    title = title and vim.trim(title) or ""
-    if title == "" then
+  ui.multiline_input({
+    prompt = ("Todo prompt for %s"):format(project.name),
+  }, function(body)
+    local spec = body and PromptComposer.parse(body) or nil
+    if not spec then
       return
     end
+    self.app:add_project_todo(project, {
+      title = spec.title,
+      details = spec.details,
+    })
+  end)
+end
 
-    ui.input({
-      prompt = "Todo details (optional)",
-    }, function(details)
-      self.app:add_project_todo(project, {
-        title = title,
-        details = details,
-      })
-    end)
+--- Opens a multiline prompt composer for a category-specific todo.
+--- The composed body is parsed back into queue title/details before persistence.
+---@param project CodexCli.Project
+---@param definition CodexCli.PromptCategoryDef
+---@param category CodexCli.PromptCategory
+---@param default_body? string
+function PromptActions:compose_category_prompt(project, definition, category, default_body)
+  ui.multiline_input({
+    prompt = ("%s prompt for %s"):format(definition.label, project.name),
+    default = default_body or definition.default_title,
+  }, function(body)
+    local spec = body and PromptComposer.parse(body) or nil
+    if not spec then
+      return
+    end
+    self.app:add_project_todo(project, {
+      title = spec.title,
+      details = spec.details,
+      kind = category,
+    })
   end)
 end
 
@@ -203,25 +222,7 @@ end
 ---@param category CodexCli.PromptCategory
 function PromptActions:prompt_for_category(project, category)
   local definition = self:category(category)
-  ui.input({
-    prompt = ("%s title for %s"):format(definition.label, project.name),
-    default = definition.default_title,
-  }, function(title)
-    title = title and vim.trim(title) or ""
-    if title == "" then
-      return
-    end
-
-    ui.input({
-      prompt = ("%s details"):format(definition.label),
-    }, function(details)
-      self.app:add_project_todo(project, {
-        title = title,
-        details = details,
-        kind = category,
-      })
-    end)
-  end)
+  self:compose_category_prompt(project, definition, category)
 end
 
 --- Implements the prompt_for_visual path for app prompt actions.
@@ -279,12 +280,10 @@ function PromptActions:prompt_for_library(project)
     if not template then
       return
     end
-
-    self.app:add_project_todo(project, {
-      title = template.title,
-      details = template.details,
-      kind = template.kind,
-    })
+    self:compose_category_prompt(project, self:category(template.kind), template.kind, PromptComposer.render(
+      template.title,
+      template.details
+    ))
   end)
 end
 

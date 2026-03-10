@@ -287,9 +287,9 @@ function Preview:ensure_buffers()
   end
 
   self.command_buf = buf_valid(self.command_buf) and self.command_buf
-    or make_buffer("codex-cli://state-preview-commands", "codex_cli_state")
+    or make_buffer("codex-cli-state-preview-commands", "codex_cli_state")
   self.state_buf = buf_valid(self.state_buf) and self.state_buf
-    or make_buffer("codex-cli://state-preview-state", "codex_cli_state")
+    or make_buffer("codex-cli-state-preview-state", "codex_cli_state")
 end
 
 --- Applies shared styling for both preview windows.

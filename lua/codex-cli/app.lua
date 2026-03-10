@@ -452,6 +452,13 @@ function App:open_project_workspace_target(project)
   self.project_actions:open_project_workspace_target(project)
 end
 
+--- Opens the current project's todo file in the active window.
+--- This delegates project resolution and file creation to project actions.
+---@param project? CodexCli.Project
+function App:open_project_todo_file(project)
+  self.project_actions:open_project_todo_file(project)
+end
+
 --- Implements the resolve_todo_project path for app.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
@@ -714,6 +721,12 @@ function App:activate_project(root)
   self.project_actions:activate_project(root)
 end
 
+--- Sets the current tab's active project and refreshes dependent terminal state.
+---@param project CodexCli.Project
+function App:set_current_project(project)
+  self.project_actions:set_current_project(project)
+end
+
 --- Clears current tab project selection and updates session/preview state.
 --- This is used by command users and when project context needs a reset.
 function App:clear_active_project()
@@ -724,12 +737,6 @@ end
 --- It chooses the right target by current detection rules and switches focus cleanly.
 function App:toggle()
   self.project_actions:toggle()
-end
-
---- Opens the project picker and selects a project for current tab context.
---- The selection is then wired into active target resolution and preview updates.
-function App:select_project()
-  self.project_actions:select_project()
 end
 
 --- Implements the rename_project path for app.

@@ -32,8 +32,8 @@ When the prompt provides an execution receipt path and a required JSON shape bef
 3. Write valid JSON to the exact path provided by the prompt.
 4. Match the requested shape exactly.
 5. Do not change unrelated files while creating the receipt.
-6. If more queued codex-cli.nvim prompt jobs are already waiting in the conversation after the current one, continue with the next queued job immediately after finishing the current one.
-7. Repeat until there are no queued codex-cli.nvim prompt jobs left to handle.
+6. If more prompts are waiting in the project's `Queued` lane, continue with the next queued prompt immediately after finishing the current one.
+7. Repeat until the project's `Queued` lane is empty. Do not start prompts that are only in `Planned`.
 ]]
 
 --- Builds the markdown guidance block that is appended to prompts requiring receipts.
@@ -47,8 +47,8 @@ local function completion_instruction_lines(receipt_path, receipt_json)
     "```json",
     receipt_json,
     "```",
-    "If more queued codex-cli.nvim prompt jobs are already waiting in the conversation after the current one, continue with the next queued job immediately after finishing the current one.",
-    "Repeat until there are no queued codex-cli.nvim prompt jobs left to handle.",
+    "If more prompts are waiting in the project's `Queued` lane, continue with the next queued prompt immediately after finishing the current one.",
+    "Repeat until the project's `Queued` lane is empty. Do not start prompts that are only in `Planned`.",
   }
 end
 

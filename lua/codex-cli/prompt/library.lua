@@ -20,7 +20,7 @@ local templates = {
     title = "Fix diagnostics from the current project",
     kind = "adjustment",
     details = table.concat({
-      "Use `&(diagnostics)` as the primary problem list.",
+      "Use `&all_diagnostics` as the primary problem list.",
       "Group related issues, fix them in a coherent order, and mention any follow-up validation.",
     }, "\n\n"),
   },
@@ -30,7 +30,7 @@ local templates = {
     title = "Explain the current file",
     kind = "explain",
     details = table.concat({
-      "Explain `&(current file)` in terms of its responsibilities, main control flow, and important assumptions.",
+      "Explain `&file` in terms of its responsibilities, main control flow, and important assumptions.",
       "Call out any non-obvious edge cases or follow-up refactors worth considering.",
     }, "\n\n"),
   },
@@ -40,18 +40,18 @@ local templates = {
     title = "Refactor the selected code",
     kind = "refactor",
     details = table.concat({
-      "Focus on `&(range<start, end>)` or the current visual selection once prompt expansion exists.",
+      "Focus on `&selection` and keep behavior intact while reducing duplication.",
       "Keep behavior intact, reduce duplication, and explain any structural tradeoffs.",
     }, "\n\n"),
   },
   {
-    id = "summarize-qf",
-    label = "Summarize quickfix",
-    title = "Summarize the quickfix list",
+    id = "fix-buffer-diagnostics",
+    label = "Fix buffer diagnostics",
+    title = "Fix diagnostics from the current buffer",
     kind = "idea",
     details = table.concat({
-      "Review `&(qf list)` and summarize the problems by theme.",
-      "Suggest the smallest sensible execution plan before making changes.",
+      "Use `&buff_diagnostics` as the main issue list.",
+      "Fix what should be fixed and explain clearly why any remaining diagnostics should be ignored.",
     }, "\n\n"),
   },
 }

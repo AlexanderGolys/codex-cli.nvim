@@ -4,6 +4,8 @@ Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration fo
 
 `codex-cli.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived Codex terminal sessions, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
 
+The plugin is intentionally Neovim-first rather than agent-first. It keeps the classic Codex CLI experience inside Neovim, then uses Neovim's own context to make prompt authoring faster and more structured. The editor resolves things like files, lines, selections, and diagnostics into plain prompt text before the prompt is sent, so the plugin can stay focused on helping Neovim use AI well instead of centering the whole workflow around agent management.
+
 The plugin is built around a few core ideas:
 
 - one persistent Codex session per registered project
@@ -12,9 +14,28 @@ The plugin is built around a few core ideas:
 - queued prompts that move through `planned`, `queued`, and `history`
 - prompt execution receipts so queued work can be completed asynchronously and tracked back in the editor
 
+## Philosophy
+
+The core idea behind `codex-cli.nvim` is simple:
+
+- keep Codex CLI as the execution engine
+- keep Neovim as the place where prompt context is gathered and shaped
+- keep prompts portable by converting editor state into ordinary text before dispatch
+- treat agent workflow features as optional extensions, not the center of gravity
+
+That means the plugin is not primarily about teaching agents how to operate Neovim. Instead, Neovim does the editor-specific work up front and hands Codex normal prompt text that is easy to reuse anywhere.
+
+Examples of that model:
+
+- a file reference becomes something like `@{lua/codex-cli/ui/select.lua}`
+- a line reference becomes something like `@{lua/codex-cli/ui/select.lua}: line 42`
+- diagnostics become plain text produced by the editor, with enough explanation for the agent to act on them without knowing anything about Neovim
+
+This keeps the system composable. The plugin stays focused on being a strong CLI wrapper with editor-native ergonomics, and if richer agent workflow features become useful later they can be added from that Neovim-first foundation.
+
 ## Status
 
-The plugin is functional today and already covers the main terminal, project, and queue workflows. Some prompt-expansion features are still intentionally planned rather than implemented, and the README calls those out explicitly as roadmap items.
+The plugin is functional today and already covers the main terminal, project, and queue workflows. Its direction is intentionally conservative: better prompt generation, better editor integration, and better queue/session ergonomics, without turning the plugin into a separate agent platform.
 
 ## What The Plugin Does
 
@@ -65,6 +86,25 @@ Every queue item stores:
 
 This lets you treat Codex work more like a lightweight implementation backlog than an ad-hoc chat window.
 
+### Editor-powered prompt generation
+
+Prompt generation is a first-class part of the plugin.
+
+The goal is not to expose Neovim concepts directly to agents. The goal is to let Neovim use its own knowledge of the current editing state to generate better prompts automatically.
+
+In practice, that means editor state such as:
+
+- current file
+- current line
+- visual selection
+- visible buffer region
+- word under cursor
+- current diagnostics
+- buffer diagnostics
+- project diagnostics
+
+can be turned into prompt-ready text before dispatch. The resulting prompt stays readable and portable, and the agent only sees ordinary text and file references rather than editor-specific commands or abstractions.
+
 ### Prompt categories
 
 The plugin supports several prompt categories out of the box:
@@ -86,7 +126,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 ### Receipt-based prompt execution
 
-Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
+Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete, then keep draining the project's `queued` lane until it is empty. Items in `planned` remain staged and are not started automatically. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
 
 That gives you:
 
@@ -105,6 +145,7 @@ That gives you:
 - Show a floating state preview of current Codex/project state.
 - Open a queue workspace with project summaries and prompt history.
 - Add prompts from categories or saved prompt templates.
+- Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
 - Dispatch the next queued prompt or all queued prompts for a project.
 - Poll execution receipts and promote completed prompts into history.
 - Move, copy, rewind, edit, and delete queue items.
@@ -240,8 +281,7 @@ Core commands:
 
 - `:CodexToggle`
 - `:CodexStateToggle`
-- `:CodexProjectSelect`
-- `:CodexProjectAdd`
+  - `:CodexProjectAdd`
 - `:CodexProjectRename`
 - `:CodexProjectRemove`
 - `:CodexProjectClear`
@@ -311,7 +351,8 @@ When a queued item is dispatched:
 4. It appends execution instructions describing where the JSON receipt must be written.
 5. If a prompt skill is configured, it appends `$prompt-nvim-codex-cli`.
 6. Codex performs the work and writes the receipt when done.
-7. The plugin polls receipt files on a timer and moves completed items into history.
+7. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
+8. The plugin polls receipt files on a timer and moves completed items into history.
 
 ### Receipt schema
 
@@ -344,8 +385,7 @@ Main functions:
 - `require("codex-cli").setup(opts)`
 - `require("codex-cli").toggle()`
 - `require("codex-cli").toggle_state_preview()`
-- `require("codex-cli").select_project()`
-- `require("codex-cli").add_project(opts)`
+  - `require("codex-cli").add_project(opts)`
 - `require("codex-cli").rename_project(name)`
 - `require("codex-cli").remove_project(value)`
 - `require("codex-cli").clear_active_project()`
@@ -422,6 +462,7 @@ From an integration standpoint, the plugin uses:
 The runtime loop is straightforward:
 
 - Neovim owns editor state and UI
+- Neovim can turn editor state into plain prompt text before dispatch
 - the plugin derives project/session intent from that state
 - Codex CLI runs in a persistent terminal buffer
 - queued prompt execution writes receipts back to disk
@@ -431,7 +472,7 @@ The runtime loop is straightforward:
 
 The current implementation is centered on project/session management and queued prompt execution. Planned or likely follow-up areas include:
 
-- richer prompt expansion based on editor context such as current file, ranges, diagnostics, and quickfix lists
+- richer prompt-generation flows based on editor context such as current file, ranges, diagnostics, and quickfix lists
 - more reusable prompt-library templates
 - broader test coverage for config merging, queue transitions, and session persistence
 - additional project/session metadata surfaced in the UI

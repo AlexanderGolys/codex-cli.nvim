@@ -45,15 +45,6 @@ local function command_specs()
       end,
     },
     {
-      name = "CodexProjectSelect",
-      desc = "Select active Codex project",
-      --- Opens a project picker to change the active project for this tab.
-      --- Downstream terminal focus follows the new project selection.
-      handler = function()
-        require("codex-cli").select_project()
-      end,
-    },
-    {
       name = "CodexProjectAdd",
       desc = "Add current directory as a Codex project",
       nargs = "?",
@@ -108,6 +99,15 @@ local function command_specs()
       --- It is the canonical UI for viewing and managing queued prompts.
       handler = function()
         require("codex-cli").open_queue_workspace()
+      end,
+    },
+    {
+      name = "CodexProjectTodo",
+      desc = "Open the current project's TODO.md",
+      --- Opens or creates the active project's todo file in the current window.
+      --- This gives each project a simple persistent scratchpad for queued work.
+      handler = function()
+        require("codex-cli").open_project_todo_file()
       end,
     },
     {
