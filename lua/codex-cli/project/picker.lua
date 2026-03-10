@@ -1,6 +1,8 @@
 local ui = require("codex-cli.ui.select")
 local notify = require("codex-cli.util.notify")
 
+--- Defines the CodexCli.ProjectPicker.Item type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectPicker.Item
 ---@field project? CodexCli.Project
 ---@field label string
@@ -8,35 +10,15 @@ local notify = require("codex-cli.util.notify")
 ---@field preview? { text: string, ft?: string, loc?: boolean }
 ---@field preview_title? string
 
+--- Defines the CodexCli.ProjectPicker type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectPicker
 ---@field registry CodexCli.ProjectRegistry
 local Picker = {}
 Picker.__index = Picker
 
-local highlights_ready = false
-
-local function hl_fg(name)
-  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-  return ok and hl and hl.fg or nil
-end
-
-local function ensure_highlights()
-  if highlights_ready then
-    return
-  end
-  highlights_ready = true
-  vim.api.nvim_set_hl(0, "CodexCliPickerProject", {
-    fg = hl_fg("DiagnosticError") or hl_fg("ErrorMsg"),
-    bold = true,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPickerRoot", {
-    fg = hl_fg("Directory"),
-    italic = true,
-    default = true,
-  })
-end
-
+--- Creates a new project picker instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param registry CodexCli.ProjectRegistry
 ---@return CodexCli.ProjectPicker
 function Picker.new(registry)
@@ -45,6 +27,9 @@ function Picker.new(registry)
   return self
 end
 
+--- Implements the preview_text path for project picker.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param active_root? string
 ---@return string
@@ -61,6 +46,9 @@ function Picker:preview_text(project, active_root)
   }, "\n")
 end
 
+--- Implements the format_item path for project picker.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param item CodexCli.ProjectPicker.Item
 ---@param supports_chunks? boolean
 ---@return string|snacks.picker.Highlight[]
@@ -71,7 +59,6 @@ function Picker:format_item(item, supports_chunks)
   if not supports_chunks then
     return item.label
   end
-  ensure_highlights()
   return {
     { item.project.name, "CodexCliPickerProject" },
     { item.spacer or "  " },
@@ -141,6 +128,9 @@ function Picker:pick(opts, on_choice)
     snacks_opts.actions = snacks_opts.actions or {}
     snacks_opts.actions.codex_project_delete = {
       desc = "Delete project",
+--- Implements the action path for project picker.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       action = function(_, item)
         item = item and item.item or item
         if not item or not item.project then
@@ -166,6 +156,9 @@ function Picker:pick(opts, on_choice)
     snacks_opts.actions = snacks_opts.actions or {}
     snacks_opts.actions.codex_project_rename = {
       desc = "Rename project",
+--- Implements the action path for project picker.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       action = function(_, item)
         item = item and item.item or item
         if not item or not item.project then
@@ -194,6 +187,9 @@ function Picker:pick(opts, on_choice)
 
   ui.select(items, {
     prompt = opts.prompt or "Select Codex project",
+--- Implements the format_item path for project picker.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     format_item = function(item, supports_chunks)
       return self:format_item(item, supports_chunks)
     end,
@@ -201,8 +197,11 @@ function Picker:pick(opts, on_choice)
   }, function(item)
     on_choice(item and item.project or nil)
   end)
+    
 end
 
+--- Opens a picker path for project picker and handles the chosen result.
+--- It is used by user-driven selection flows to continue the action pipeline with valid input.
 ---@param on_choice fun(project?: CodexCli.Project)
 function Picker:pick_for_removal(on_choice)
   return self:pick({ prompt = "Remove Codex project" }, on_choice)

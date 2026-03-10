@@ -2,24 +2,28 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
+--- Normalizes an input path with Vim's path normalizer.
 ---@param path string
 ---@return string
 function M.normalize(path)
   return vim.fs.normalize(path)
 end
 
+--- Gets filesystem stat metadata or returns nil when the path is missing.
 ---@param path string
 ---@return uv.aliases.fs_stat_table?
 function M.stat(path)
   return uv.fs_stat(path)
 end
 
+--- Checks whether a path exists on disk.
 ---@param path string
 ---@return boolean
 function M.exists(path)
   return M.stat(path) ~= nil
 end
 
+--- Returns true when a path points to an existing directory.
 ---@param path string
 ---@return boolean
 function M.is_dir(path)
@@ -27,6 +31,7 @@ function M.is_dir(path)
   return stat ~= nil and stat.type == "directory"
 end
 
+--- Returns true when a path points to a regular file.
 ---@param path string
 ---@return boolean
 function M.is_file(path)
@@ -34,6 +39,7 @@ function M.is_file(path)
   return stat ~= nil and stat.type == "file"
 end
 
+--- Returns the directory portion of a path, treating files as parents.
 ---@param path string
 ---@return string
 function M.dirname(path)
@@ -44,18 +50,21 @@ function M.dirname(path)
   return vim.fs.dirname(path)
 end
 
+--- Returns the file name component of a path.
 ---@param path string
 ---@return string
 function M.basename(path)
   return vim.fs.basename(M.normalize(path))
 end
 
+--- Joins path segments and normalizes separators.
 ---@param ...
 ---@return string
 function M.join(...)
   return M.normalize(table.concat({ ... }, "/"))
 end
 
+--- Resolves a path to a directory path, using current working directory as fallback.
 ---@param path string
 ---@return string
 function M.cwd_for_path(path)
@@ -63,11 +72,13 @@ function M.cwd_for_path(path)
   return M.is_dir(path) and path or M.dirname(path)
 end
 
+--- Resolves the current working directory from Neovim/UV APIs.
 ---@return string
 function M.cwd()
   return M.normalize(uv.cwd() or vim.fn.getcwd())
 end
 
+--- Returns the path associated with a buffer, or current cwd when unnamed.
 ---@param buf? number
 ---@return string
 function M.current_path(buf)
@@ -76,6 +87,7 @@ function M.current_path(buf)
   return name ~= "" and M.normalize(name) or M.cwd()
 end
 
+--- Returns true when `path` is under `root` or the root itself.
 ---@param path string
 ---@param root string
 ---@return boolean
@@ -85,11 +97,13 @@ function M.is_relative_to(path, root)
   return path == root or vim.startswith(path, root .. "/")
 end
 
+--- Ensures a directory path exists via Vim's mkdir utility.
 ---@param path string
 function M.ensure_dir(path)
   vim.fn.mkdir(path, "p")
 end
 
+--- Reads JSON from disk and returns a default value on any failure.
 ---@param path string
 ---@param default any
 ---@return any
@@ -113,6 +127,7 @@ function M.read_json(path, default)
   return ok and decoded or default
 end
 
+--- Encodes and writes JSON with directory creation.
 ---@param path string
 ---@param value any
 function M.write_json(path, value)
@@ -123,6 +138,7 @@ function M.write_json(path, value)
   file:close()
 end
 
+--- Writes raw string data to a path using binary mode.
 ---@param path string
 ---@param content string
 function M.write_file(path, content)
@@ -132,6 +148,7 @@ function M.write_file(path, content)
   file:close()
 end
 
+--- Copies a file by reading and writing its entire content.
 ---@param source string
 ---@param destination string
 ---@return boolean
@@ -151,11 +168,13 @@ function M.copy_file(source, destination)
   return true
 end
 
+--- Removes a file or directory path recursively.
 ---@param path string
 function M.remove(path)
   vim.fn.delete(M.normalize(path), "rf")
 end
 
+--- Tries common README filenames and returns the first match.
 ---@param root string
 ---@return string?
 function M.find_readme(root)
@@ -179,6 +198,7 @@ function M.find_readme(root)
   end
 end
 
+--- Finds the newest regular file in a directory and returns its path.
 ---@param dir string
 ---@return string?
 function M.latest_file(dir)

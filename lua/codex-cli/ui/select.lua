@@ -3,6 +3,9 @@ local SnacksInput = require("snacks.input")
 local SnacksSelect = require("snacks.picker.select")
 local ui_win = require("codex-cli.ui.win")
 
+--- Implements the select path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@generic T
 ---@param items T[]
 ---@param opts? vim.ui.select.Opts
@@ -11,18 +14,25 @@ function M.select(items, opts, on_choice)
   return SnacksSelect.select(items, opts, on_choice)
 end
 
+--- Implements the input path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts vim.ui.input.Opts
 ---@param on_confirm fun(value?: string)
 function M.input(opts, on_confirm)
   return SnacksInput.input(opts, on_confirm)
 end
 
+--- Joins multiline input lines into a single string for submission.
+--- This keeps `multiline_input` consistent regardless of how the buffer is edited.
 ---@param lines string[]
 ---@return string
 local function join_lines(lines)
   return table.concat(lines, "\n")
 end
 
+--- Computes the widest line width for the dynamic dialog sizing.
+--- Used by popup width sizing to avoid clipping when default text is long.
 ---@param lines string[]
 ---@return integer
 local function longest_width(lines)
@@ -33,6 +43,9 @@ local function longest_width(lines)
   return width
 end
 
+--- Implements the multiline_input path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts { prompt: string, default?: string, min_height?: integer }
 ---@param on_confirm fun(value?: string)
 function M.multiline_input(opts, on_confirm)
@@ -53,6 +66,8 @@ function M.multiline_input(opts, on_confirm)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].modifiable = true
 
+  --- Calculates current required popup height from buffer content.
+  --- The value is shared by size callback and repositioning math.
   local function calc_height()
     local count = math.max(#vim.api.nvim_buf_get_lines(buf, 0, -1, false), min_height)
     return math.min(count, max_height)
@@ -65,12 +80,21 @@ function M.multiline_input(opts, on_confirm)
     border = "rounded",
     title = (" %s "):format(opts.prompt),
     width = width,
+--- Implements the height path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     height = function()
       return calc_height()
     end,
+--- Implements the row path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     row = function()
       return math.max(math.floor((editor_height - calc_height()) / 2), 1)
     end,
+--- Implements the col path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     col = function()
       return math.max(math.floor((editor_width - width) / 2), 1)
     end,
@@ -84,6 +108,8 @@ function M.multiline_input(opts, on_confirm)
     },
   })
 
+  --- Updates floating window dimensions after every content change.
+  --- This keeps the edit popup responsive without manual user action.
   local function resize()
     if not win:valid() then
       return
@@ -92,6 +118,8 @@ function M.multiline_input(opts, on_confirm)
   end
 
   local done = false
+  --- Closes the popup once and dispatches final content to caller.
+  --- A guard flag prevents duplicate callbacks from multiple close triggers.
   local function close(value)
     if done then
       return
@@ -109,10 +137,13 @@ function M.multiline_input(opts, on_confirm)
     callback = resize,
   })
 
+  --- Submits the full current buffer content into the confirm callback.
+  --- It is used by Enter and Ctrl-S as explicit commit actions.
   local function submit()
     close(join_lines(vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
   end
 
+  vim.keymap.set("n", "<CR>", submit, { buffer = buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-s>", submit, { buffer = buf, silent = true })
   vim.keymap.set("n", "q", function()
     close(nil)
@@ -123,6 +154,9 @@ function M.multiline_input(opts, on_confirm)
   vim.api.nvim_create_autocmd("WinClosed", {
     once = true,
     pattern = tostring(win.win),
+--- Implements the callback path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     callback = function()
       close(nil)
     end,
@@ -132,6 +166,9 @@ function M.multiline_input(opts, on_confirm)
   vim.cmd.startinsert()
 end
 
+--- Implements the confirm path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param prompt string
 ---@param on_choice fun(confirmed: boolean)
 function M.confirm(prompt, on_choice)
@@ -142,6 +179,9 @@ function M.confirm(prompt, on_choice)
 
   return M.select(items, {
     prompt = prompt,
+--- Implements the format_item path for ui select.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     format_item = function(item)
       return item.label
     end,

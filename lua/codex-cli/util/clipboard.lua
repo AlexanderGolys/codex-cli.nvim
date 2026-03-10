@@ -2,6 +2,7 @@ local fs = require("codex-cli.util.fs")
 
 local M = {}
 
+--- Writes captured image bytes into a file when image content exists.
 ---@param path string
 ---@param data string
 local function write_image(path, data)
@@ -12,12 +13,14 @@ local function write_image(path, data)
   return true
 end
 
+--- Runs a command with raw binary output and returns the completed result.
 ---@param cmd string[]
 ---@return vim.SystemCompleted
 local function run(cmd)
   return vim.system(cmd, { text = false }):wait()
 end
 
+--- Reads image data from a supported clipboard command and returns bytes plus mime.
 ---@return string?, string?
 function M.read_image()
   if vim.fn.executable("wl-paste") == 1 then
@@ -60,6 +63,7 @@ function M.read_image()
   end
 end
 
+--- Saves the current clipboard image to `path` when available and returns success.
 ---@param path string
 ---@return boolean
 function M.save_image(path)

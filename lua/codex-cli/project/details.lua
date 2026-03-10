@@ -1,11 +1,15 @@
 local fs = require("codex-cli.util.fs")
 local git = require("codex-cli.util.git")
 
+--- Defines the CodexCli.ProjectDetails.LanguageStat type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectDetails.LanguageStat
 ---@field name string
 ---@field files integer
 ---@field percent integer
 
+--- Defines the CodexCli.ProjectDetails.Snapshot type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectDetails.Snapshot
 ---@field file_count integer
 ---@field avg_code_lines_per_file? number
@@ -14,10 +18,14 @@ local git = require("codex-cli.util.git")
 ---@field last_file_modified_at? integer
 ---@field languages CodexCli.ProjectDetails.LanguageStat[]
 
+--- Defines the CodexCli.ProjectDetails.Metadata type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectDetails.Metadata
 ---@field version integer
 ---@field last_codex_activity_at? integer
 
+--- Defines the CodexCli.ProjectDetails type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectDetails
 ---@field config CodexCli.Config.Values
 ---@field cache table<string, { captured_at: integer, snapshot: CodexCli.ProjectDetails.Snapshot }>
@@ -99,6 +107,8 @@ local LANGUAGE_LABELS = {
   yaml = "yaml",
 }
 
+--- Creates a new project details instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.ProjectDetails
 function Details.new(config)
@@ -108,23 +118,35 @@ function Details.new(config)
   return self
 end
 
+--- Implements the update_config path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Details:update_config(config)
   self.config = config
 end
 
+--- Implements the project_id path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project_root string
 ---@return string
 function Details:project_id(project_root)
   return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
 end
 
+--- Implements the metadata_path path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project_root string
 ---@return string
 function Details:metadata_path(project_root)
   return fs.join(self.config.storage.workspaces_dir, "project-details", self:project_id(project_root) .. ".json")
 end
 
+--- Implements the read_metadata path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project_root string
 ---@return CodexCli.ProjectDetails.Metadata
 function Details:read_metadata(project_root)
@@ -133,6 +155,9 @@ function Details:read_metadata(project_root)
   return metadata
 end
 
+--- Implements the write_metadata path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project_root string
 ---@param metadata CodexCli.ProjectDetails.Metadata
 function Details:write_metadata(project_root, metadata)
@@ -140,6 +165,9 @@ function Details:write_metadata(project_root, metadata)
   fs.write_json(self:metadata_path(project_root), metadata)
 end
 
+--- Implements the touch_codex_activity path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param timestamp? integer
 function Details:touch_codex_activity(project, timestamp)
@@ -154,6 +182,8 @@ function Details:touch_codex_activity(project, timestamp)
   end
 end
 
+--- Removes a project details item and normalizes dependent state.
+--- This cleanup keeps persistence and session state consistent with user actions.
 ---@param project_root string
 function Details:delete(project_root)
   project_root = fs.normalize(project_root)
@@ -161,6 +191,9 @@ function Details:delete(project_root)
   fs.remove(self:metadata_path(project_root))
 end
 
+--- Implements the detect_filetype path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
 ---@return string?
 local function detect_filetype(path)
@@ -171,6 +204,9 @@ local function detect_filetype(path)
   return ft
 end
 
+--- Implements the language_name path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param filetype string?
 ---@return string?
 local function language_name(filetype)
@@ -180,6 +216,8 @@ local function language_name(filetype)
   return LANGUAGE_LABELS[filetype] or filetype
 end
 
+--- Checks a comment line condition for project details.
+--- This gate keeps callers safe before continuing higher-level state transitions.
 ---@param filetype string?
 ---@param line string
 ---@return boolean
@@ -196,6 +234,9 @@ local function is_comment_line(filetype, line)
   return false
 end
 
+--- Implements the excluded_path path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
 ---@return boolean
 local function excluded_path(path)
@@ -207,6 +248,9 @@ local function excluded_path(path)
   return false
 end
 
+--- Implements the list_files path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 ---@return string[]
 local function list_files(root)
@@ -252,6 +296,9 @@ local function list_files(root)
   return files
 end
 
+--- Implements the code_lines_for_file path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
 ---@param filetype string?
 ---@return integer?, boolean
@@ -280,6 +327,9 @@ local function code_lines_for_file(path, filetype)
   return line_count, true
 end
 
+--- Implements the compute path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectDetails.Snapshot
 function Details:compute(project)
@@ -343,6 +393,9 @@ function Details:compute(project)
   }
 end
 
+--- Implements the get path for project details.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectDetails.Snapshot
 function Details:get(project)

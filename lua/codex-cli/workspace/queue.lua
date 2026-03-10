@@ -1,8 +1,13 @@
 local Store = require("codex-cli.workspace.store")
 local Category = require("codex-cli.prompt.category")
 
+--- Queue names represent the supported lanes for prompt entries: planned, queued, and history.
+--- They are used by persistence and queue transitions to coordinate scheduling and history visibility.
 ---@alias CodexCli.QueueName "planned"|"queued"|"history"
 
+--- Canonical representation of one queued prompt item.
+--- Entries are written to and loaded from per-project workspace storage.
+--- This type tracks queue position metadata needed by action handlers and UI rendering.
 ---@class CodexCli.QueueItem
 ---@field id string
 ---@field kind CodexCli.PromptCategory
@@ -16,16 +21,22 @@ local Category = require("codex-cli.prompt.category")
 ---@field history_commit? string
 ---@field history_completed_at? string
 
+--- Full persisted queue payload for a single project root.
+--- The file format is produced by workspace store and consumed by app-level queue actions.
 ---@class CodexCli.ProjectQueueData
 ---@field version integer
 ---@field queues table<CodexCli.QueueName, CodexCli.QueueItem[]>
 
+--- Human-friendly queue summary assembled for UI and project-level diagnostics.
+--- It contains both aggregate counts and full queue contents.
 ---@class CodexCli.ProjectQueueSummary
 ---@field project CodexCli.Project
 ---@field session_running boolean
 ---@field counts table<CodexCli.QueueName, integer>
 ---@field queues table<CodexCli.QueueName, CodexCli.QueueItem[]>
 
+--- Lightweight wrapper for queue operations that own loading and persistence.
+--- The manager delegates find/update/transform operations through this object.
 ---@class CodexCli.Workspace.Queue
 ---@field store CodexCli.Workspace.Store
 local Queue = {}
@@ -42,11 +53,23 @@ local KNOWN_QUEUES = {
   history = true,
 }
 
+--- Returns the current UTC timestamp for queue metadata.
+--- Queue item creation and updates use this for `created_at` and `updated_at` stamping.
+--- This keeps ordering and receipts stable across sessions.
+
+--- Implements the now path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function now()
   return os.date("!%Y-%m-%dT%H:%M:%SZ")
 end
 
+--- Builds a stable identifier for a queue item.
+--- It combines project root, title, timestamp, and optional seed for uniqueness.
+--- Actions and storage lookups use this key consistently during transitions.
 ---@param project_root string
+--- Builds a prompt payload string from title plus optional details block.
+--- This string is reused for queue previews and dispatch so prompts stay aligned.
 ---@param title string
 ---@param timestamp string
 ---@param seed? string
@@ -55,6 +78,9 @@ local function item_id(project_root, title, timestamp, seed)
   return vim.fn.sha256(project_root .. "\n" .. timestamp .. "\n" .. title .. "\n" .. (seed or "")):sub(1, 16)
 end
 
+--- Implements the render_prompt path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param title string
 ---@param details? string
 ---@return string
@@ -67,6 +93,8 @@ local function render_prompt(title, details)
   return table.concat(lines, "\n")
 end
 
+--- Creates a new workspace queue instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param root_dir string
 ---@return CodexCli.Workspace.Queue
 function Queue.new(root_dir)
@@ -75,6 +103,8 @@ function Queue.new(root_dir)
   return self
 end
 
+--- Persists or restores workspace queue data for this workflow.
+--- It is used by session restoration and command surfaces so behavior remains repeatable.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectQueueData
 function Queue:load(project)
@@ -87,17 +117,25 @@ function Queue:load(project)
   return data
 end
 
+--- Persists or restores workspace queue data for this workflow.
+--- It is used by session restoration and command surfaces so behavior remains repeatable.
 ---@param project CodexCli.Project
 ---@param data CodexCli.ProjectQueueData
 function Queue:save(project, data)
   self.store:save(project.root, data)
 end
 
+--- Implements the delete_workspace path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project_root string
 function Queue:delete_workspace(project_root)
   self.store:delete(project_root)
 end
 
+--- Implements the find_item path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@return CodexCli.QueueName?, integer?, CodexCli.QueueItem?
@@ -112,6 +150,8 @@ function Queue:find_item(project, item_id)
   end
 end
 
+--- Adds a new workspace queue entry and keeps related state aligned.
+--- This function feeds the same workflow used by interactive and scripted callers.
 ---@param project CodexCli.Project
 ---@param spec { title: string, details?: string, queue?: CodexCli.QueueName, kind?: CodexCli.PromptCategory, image_path?: string }
 ---@return CodexCli.QueueItem
@@ -134,6 +174,9 @@ function Queue:add_todo(project, spec)
   return item
 end
 
+--- Implements the take_item path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id_value string
 ---@return CodexCli.QueueItem?, CodexCli.QueueName?
@@ -247,6 +290,9 @@ function Queue:update_item(project, item_id_value, attrs)
   end
 end
 
+--- Implements the delete_item path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@return boolean
@@ -264,6 +310,9 @@ function Queue:delete_item(project, item_id)
   return false
 end
 
+--- Implements the advance path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@return CodexCli.QueueName?
@@ -281,6 +330,9 @@ function Queue:advance(project, item_id)
   return next_queue
 end
 
+--- Implements the complete_queued_item path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id_value string
 ---@param result { summary: string, commit?: string, completed_at?: string }
@@ -299,12 +351,18 @@ function Queue:complete_queued_item(project, item_id_value, result)
   })
 end
 
+--- Implements the queues path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return table<CodexCli.QueueName, CodexCli.QueueItem[]>
 function Queue:queues(project)
   return self:load(project).queues
 end
 
+--- Implements the summary path for workspace queue.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param session_running boolean
 ---@return CodexCli.ProjectQueueSummary

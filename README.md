@@ -1,331 +1,459 @@
 # codex-cli.nvim
 
-Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration for Neovim, built around `snacks.nvim` terminals and pickers.
+Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration for Neovim.
 
-The goal is to make Codex feel like a persistent editor-native tool instead of a disposable shell command: one Codex session per project, one ephemeral free session outside projects, tab-local project selection, and prompt helpers that can translate Neovim state into text Codex can understand.
+`codex-cli.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived Codex terminal sessions, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
 
-Project prompts can be staged through a queue with three states:
+The plugin is built around a few core ideas:
 
-- `planned`: captured but not ready to run yet
-- `queued`: ready to implement, but dispatched only when explicitly requested
-- `history`: completed items with an execution receipt summary
+- one persistent Codex session per registered project
+- one ephemeral free session outside projects
+- tab-local active project state
+- queued prompts that move through `planned`, `queued`, and `history`
+- prompt execution receipts so queued work can be completed asynchronously and tracked back in the editor
 
 ## Status
 
-Design and scaffold phase.
+The plugin is functional today and already covers the main terminal, project, and queue workflows. Some prompt-expansion features are still intentionally planned rather than implemented, and the README calls those out explicitly as roadmap items.
 
-This README describes the intended behavior and structure of the plugin before the full implementation lands.
+## What The Plugin Does
 
-## Features
+### Persistent Codex terminals
 
-### Core terminal workflow
+Instead of spawning a fresh shell every time, the plugin reuses Codex terminals:
 
-- Toggle Codex CLI inside a `snacks.nvim` terminal window.
-- Launch Codex with the `codex` shell command in `bash`.
-- Reuse one persistent Codex terminal session per project root.
-- Reuse one free Codex terminal outside projects.
-- Replace the free session when reopening Codex from a different non-project location.
-- Keep project sessions alive until they are explicitly removed or Neovim exits.
+- registered projects get stable project sessions keyed by project root
+- non-project work gets a single free session keyed by cwd
+- when a free session later becomes a project session for the same root, the plugin promotes it instead of throwing the buffer away
+- terminal visibility is tab-local, but the backing session is persistent
 
-### Project model
+This is useful when you want Codex to keep conversational context while you move around the editor.
 
-A project is defined as:
+### Project-aware behavior
 
-- `name`: display name in pickers and UI
-- `root`: absolute root directory
+Projects are simple records:
 
-The plugin will provide:
+- `name`: display label
+- `root`: absolute project root
 
-- add/remove project management
-- project lookup by current file or working directory
-- persistent project storage
-- a Snacks picker for switching the active project
+The plugin uses those records to:
 
-### Tab-local behavior
+- decide which Codex session should open
+- route queued prompts to the correct project
+- show project summaries in the workspace UI
+- expose project state in statusline integrations
 
-State is local to each tab page.
+If the current buffer lives inside a known project, that project is preferred automatically. Tabs can also pin an active project explicitly, so different tabs can stay focused on different repositories.
 
-Each tab may have:
+### Queue-driven prompt workflow
 
-- no active project
-- one active project
-- at most one visible Codex terminal window
+Each project has a workspace file on disk containing three queues:
 
-Different tabs may point at different projects.
+- `planned`: captured ideas, bugs, or tasks that are not ready to run yet
+- `queued`: ready to dispatch to Codex
+- `history`: completed work with execution metadata
 
-When the active project changes in a tab while Codex is already visible, the visible terminal window should switch to the session belonging to the newly selected project.
+Every queue item stores:
 
-### Project-aware terminal routing
+- category/kind
+- title
+- optional details
+- rendered prompt text
+- timestamps
+- optional image path for visual prompts
+- optional completion summary, commit, and completion time in history
 
-When toggling Codex:
+This lets you treat Codex work more like a lightweight implementation backlog than an ad-hoc chat window.
 
-- if the current buffer belongs to a known project, the project root controls the session key and terminal cwd
-- if the current tab already has an active project, that project takes precedence for that tab
-- if the current buffer does not belong to a project, Codex opens in the cwd of the current file or current working directory
+### Prompt categories
 
-### Git-root project suggestion
+The plugin supports several prompt categories out of the box:
 
-When opening a free Codex terminal outside any known project:
+- `todo`
+- `error`
+- `visual`
+- `adjustment`
+- `refactor`
+- `idea`
+- `explain`
+- `library`
 
-- walk upward from the current path
-- if a `.git` root is found
-- and that root is not already in the project registry
-- ask whether it should be added as a new project
-- if confirmed, add it and make it active in the current tab
+These categories control default titles, visual highlighting, and some specialized behavior:
 
-The confirmation UI should use Snacks input/select UX.
+- `error` can pull in screenshot context
+- `visual` can save a clipboard image into prompt assets
+- `library` lets you instantiate a saved prompt template
 
-## Prompt Expansion
+### Receipt-based prompt execution
 
-A later goal of the plugin is a prompt expansion layer that converts Neovim state into prompt text before sending it to Codex.
+Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
 
-The user-facing syntax is based on `&(...)` placeholders.
+That gives you:
 
-Examples:
+- asynchronous completion tracking
+- per-item summaries in history
+- commit attribution
+- completion timestamps
+- a clean handoff between Neovim state and Codex execution
 
-- `&(current file)` -> `@relative/path/to/file.lua`
-- `&(range<10, 40>)` -> `@relative/path/to/file.lua (lines 10:40)`
-- `&(current line)` -> `@relative/path/to/file.lua (line 18)`
-- `&(visible buffer)` -> visible text plus file metadata
-- `&(diagnostics)` -> diagnostics rendered relative to the active project root
-- `&(qf list)` -> quickfix items rendered into a compact prompt-friendly form
+## Main Features
 
-Example prompt:
+- Toggle a Codex terminal with `:CodexToggle`.
+- Keep one persistent session per project root.
+- Keep one free non-project session outside registered projects.
+- Track active projects per tabpage.
+- Show a floating state preview of current Codex/project state.
+- Open a queue workspace with project summaries and prompt history.
+- Add prompts from categories or saved prompt templates.
+- Dispatch the next queued prompt or all queued prompts for a project.
+- Poll execution receipts and promote completed prompts into history.
+- Move, copy, rewind, edit, and delete queue items.
+- Preserve session state across Vim sessions.
+- Expose a small `lualine` helper for current-project display.
 
-```text
-Fix all &(diagnostics)
-```
+## Requirements
 
-Before being sent to Codex, the plugin should expand it into a concrete textual prompt derived from editor state.
-
-## Prompt Library / Macros
-
-The prompt system is intended to support a small library of reusable prompt templates.
-
-Examples of future macros:
-
-- `fix-diagnostics`
-- `explain-current-file`
-- `refactor-selection`
-- `summarize-qf`
-
-A macro may expand into plain text and may itself contain `&(...)` placeholders.
-
-## Design Constraints
-
-The implementation is expected to follow these constraints:
-
-- Neovim plugin structure should be conventional and easy to navigate.
-- Runtime dependencies should stay minimal.
-- Required dependencies:
-  - `folke/snacks.nvim`
-  - `nvim-lua/plenary.nvim`
-  - Codex CLI installed and available as `codex`
-- Internal code should be as close to type-safe OOP-style Lua as is practical.
-- Style should track the conventions used in `snacks.nvim`:
-  - small focused modules
-  - class-like tables with `__index`
-  - explicit config/default merging
-  - LuaLS annotations for public types and methods
-  - lazy module loading where it helps keep the public API small
+- Neovim 0.10+ recommended
+- [snacks.nvim](https://github.com/folke/snacks.nvim)
+- Codex CLI installed and available in the configured `codex_cmd`
 
 ## Installation
 
-Using `lazy.nvim`:
+Example with `lazy.nvim`:
 
 ```lua
 {
   "AlexanderGolys/codex-cli.nvim",
   dependencies = {
     "folke/snacks.nvim",
-    "nvim-lua/plenary.nvim",
   },
   opts = {
-    codex_cmd = { "codex" },
-    prompt_picker = {
-      highlights = {
-        todo_title = "WarningMsg",
-        error_title = "DiagnosticError",
-        prompt_text = "Directory",
-      },
+    codex_cmd = { "bash", "-lc", "codex" },
+    prompt_execution = {
+      skills_dir = vim.fn.expand("~/.codex/skills"),
     },
   },
 }
 ```
 
-## Planned Configuration
+Minimal manual setup:
+
+```lua
+require("codex-cli").setup()
+```
+
+## Configuration
+
+Current defaults:
 
 ```lua
 require("codex-cli").setup({
-  codex_cmd = { "codex" },
+  codex_cmd = { "bash", "-lc", "codex" },
   storage = {
     projects_file = vim.fn.stdpath("data") .. "/codex-cli/projects.json",
-    prompts_dir = vim.fn.stdpath("data") .. "/codex-cli/prompts",
+    workspaces_dir = vim.fn.stdpath("data") .. "/codex-cli/workspaces",
   },
   terminal = {
-    shell = "bash",
     win = {
       position = "right",
       width = 0.35,
     },
+    start_insert = true,
   },
   project_detection = {
     auto_suggest_git_root = true,
   },
   state_preview = {
-    width = 48,
+    min_width = 36,
+    max_width = 72,
+    max_height = 0,
+    row = 1,
+    col = 2,
+    winblend = 18,
+  },
+  queue_workspace = {
+    width = 0.88,
+    height = 0.78,
+    project_width = 0.32,
+    footer_height = 4,
+    preview_max_lines = 5,
+    fold_preview = true,
   },
   error_prompt = {
-    screenshot_dir = "~/screenshots",
+    screenshot_dir = nil,
+  },
+  highlights = {
+    groups = {
+      -- custom highlight specs
+    },
+  },
+  prompt_picker = {
+    highlights = {
+      -- deprecated compatibility aliases
+    },
+  },
+  prompt_execution = {
+    relative_dir = ".codex-cli/prompt-executions",
+    poll_ms = 5000,
+    skills_dir = nil,
+    skill_name = "prompt-nvim-codex-cli",
   },
 })
 ```
 
-Final option names may shift slightly, but the behavior above is the target.
+### Important configuration notes
 
-## Planned Commands
+`codex_cmd`
 
-The exact command surface may still change, but the expected workflow is centered around commands like:
+- Command used to start Codex terminals.
+- Default is `bash -lc codex` so shell startup files are honored.
+
+`storage.projects_file`
+
+- JSON file containing the registered project list.
+
+`storage.workspaces_dir`
+
+- Per-project queue data and prompt assets are stored here.
+
+`prompt_execution.relative_dir`
+
+- Receipt files are written inside each project at this relative path.
+
+`prompt_execution.skills_dir`
+
+- Optional path to your Codex skills root.
+- When set, the plugin installs a generated skill at `<skills_dir>/<skill_name>/SKILL.md`.
+- Queued prompt dispatch then ends with `$prompt-nvim-codex-cli` instead of inlining the full receipt instructions every time.
+
+`highlights.groups`
+
+- Preferred way to customize prompt/workspace highlight groups.
+
+`prompt_picker.highlights`
+
+- Legacy compatibility aliases mapped into the internal highlight groups.
+
+## Commands
+
+Core commands:
 
 - `:CodexToggle`
 - `:CodexStateToggle`
 - `:CodexProjectSelect`
 - `:CodexProjectAdd`
+- `:CodexProjectRename`
 - `:CodexProjectRemove`
+- `:CodexProjectClear`
+- `:CodexTerminalHeaderToggle`
 - `:CodexQueueWorkspace`
+- `:CodexDebugReload`
+
+Queue and prompt commands:
+
 - `:CodexTodoAdd`
 - `:CodexTodoError`
 - `:CodexTodoImplement`
 - `:CodexTodoImplementAll`
-- `:CodexPromptExpand`
+- `:CodexPromptAdd`
+- `:CodexPromptAddFor`
+- `:CodexPromptTodo`
+- `:CodexPromptError`
+- `:CodexPromptVisual`
+- `:CodexPromptAdjustment`
+- `:CodexPromptRefactor`
+- `:CodexPromptIdea`
+- `:CodexPromptExplain`
+- `:CodexPromptTodoFor`
+- `:CodexPromptErrorFor`
+- `:CodexPromptVisualFor`
+- `:CodexPromptAdjustmentFor`
+- `:CodexPromptRefactorFor`
+- `:CodexPromptIdeaFor`
+- `:CodexPromptExplainFor`
 
-## Proposed Architecture
+## Queue Workspace
 
-The plugin is intended to be split into focused modules instead of a single `init.lua` file.
+The queue workspace is the main control surface for prompt management.
+
+The left pane shows:
+
+- known projects
+- whether a Codex session is running
+- queue counts for `planned`, `queued`, and `history`
+- project detail snapshots such as file counts, languages, git remote, and recent activity
+
+The right pane shows:
+
+- prompts grouped by queue
+- category-colored titles
+- prompt previews
+- history metadata for completed items
+
+Supported workspace actions include:
+
+- activate/deactivate a project Codex session
+- open the selected project workspace
+- add prompts
+- edit prompts
+- move prompts between queues
+- dispatch queued prompts
+- copy or move prompts between projects
+- delete prompts or whole projects
+
+## How Prompt Execution Works
+
+When a queued item is dispatched:
+
+1. The plugin ensures the target project session is running.
+2. It clears any stale receipt file for that queue item.
+3. It renders the queue item into a Codex prompt.
+4. It appends execution instructions describing where the JSON receipt must be written.
+5. If a prompt skill is configured, it appends `$prompt-nvim-codex-cli`.
+6. Codex performs the work and writes the receipt when done.
+7. The plugin polls receipt files on a timer and moves completed items into history.
+
+### Receipt schema
+
+Receipts currently contain:
+
+- `summary`
+- `commit`
+- `completed_at`
+- `version`
+
+Those values are used to populate the history queue and to make completion status visible inside Neovim.
+
+## Prompt Library
+
+The built-in prompt library currently ships with reusable templates such as:
+
+- `fix-diagnostics`
+- `explain-current-file`
+- `refactor-selection`
+- `summarize-qf`
+
+These are plain prompt blueprints that can be inserted into the queue as normal items.
+
+## Public Lua API
+
+Public entrypoints live in [`lua/codex-cli/init.lua`](/home/flux/nvim-plugins/codex-cli/lua/codex-cli/init.lua).
+
+Main functions:
+
+- `require("codex-cli").setup(opts)`
+- `require("codex-cli").toggle()`
+- `require("codex-cli").toggle_state_preview()`
+- `require("codex-cli").select_project()`
+- `require("codex-cli").add_project(opts)`
+- `require("codex-cli").rename_project(name)`
+- `require("codex-cli").remove_project(value)`
+- `require("codex-cli").clear_active_project()`
+- `require("codex-cli").open_queue_workspace()`
+- `require("codex-cli").add_todo(opts)`
+- `require("codex-cli").add_prompt(opts)`
+- `require("codex-cli").add_prompt_for_project(opts)`
+- `require("codex-cli").add_error_todo(opts)`
+- `require("codex-cli").implement_next_queued_item(opts)`
+- `require("codex-cli").implement_all_queued_items(opts)`
+- `require("codex-cli").debug_reload()`
+
+Statusline helper:
+
+- `require("codex-cli").lualine.project(opts)`
+- `require("codex-cli").lualine.project_name(opts)`
+
+Example:
+
+```lua
+sections = {
+  lualine_x = {
+    function()
+      return require("codex-cli").lualine.project_name({
+        include_detected = true,
+        prefix = "Codex:",
+      })
+    end,
+  },
+}
+```
+
+## Architecture
+
+The codebase is intentionally split by responsibility:
 
 ```text
 lua/codex-cli/
-  init.lua                -- public API facade
-  config.lua              -- defaults and option merging
-  app.lua                 -- top-level orchestrator
-  commands.lua            -- user command registration
+  init.lua
+  app.lua
+  commands.lua
+  config.lua
+  lualine.lua
   project/
-    project.lua           -- project model
-    registry.lua          -- persistent project list
-    detector.lua          -- current-path and git-root detection
-    picker.lua            -- Snacks picker integration for project selection
-  terminal/
-    session.lua           -- persistent Codex terminal session
-    manager.lua           -- project/free session lifecycle
-  tab/
-    state.lua             -- tab-local active project + visible terminal state
-    manager.lua           -- tab state lookup and cleanup
   prompt/
-    context.lua           -- extract editor state
-    expander.lua          -- substitute &(...) placeholders
-    library.lua           -- prompt templates and macros
-    renderers/
-      buffer.lua          -- current file, line, range, visible region
-      diagnostics.lua     -- diagnostics rendering
-      quickfix.lua        -- quickfix rendering
+  session/
+  tab/
+  terminal/
   ui/
-    input.lua             -- Snacks-backed input/select helpers
   util/
-    fs.lua                -- path and persistence helpers
-    git.lua               -- git root detection helpers
-    notify.lua            -- consistent notifications
+  workspace/
 plugin/
-  codex-cli.lua           -- plugin bootstrap and commands
-doc/
-  codex-cli.txt           -- vim help once the API is stable
+  codex-cli.lua
 ```
 
-## Core Invariants
+Important modules:
 
-The session model should preserve these invariants:
+- `app.lua`: top-level orchestration and user-facing behavior
+- `terminal/`: terminal session lifecycle and window management
+- `project/`: registry, detection, metadata, and project picking
+- `workspace/`: queued prompts, storage, and execution receipts
+- `ui/`: floating windows, prompt workspace rendering, and selection helpers
+- `config.lua`: defaults, merging, and highlight application
 
-1. There is at most one Codex session per project root.
-2. There is at most one free Codex session outside projects.
-3. Reopening the free session from another location destroys the old free session and starts a new one.
-4. Project sessions are not destroyed during normal toggling.
-5. Each tab has its own active-project pointer.
-6. Each tab has at most one visible Codex terminal window.
-7. Switching the active project in a tab swaps the visible Codex buffer for that tab.
+## API And Runtime Model
 
-## Development Notes
+From an integration standpoint, the plugin uses:
 
-Recommended validation while implementing:
+- Neovim Lua APIs for buffers, windows, timers, extmarks, user commands, and autocommands
+- `snacks.nvim` for terminal window construction and UI primitives
+- filesystem JSON storage for projects and queue state
+- Codex CLI as the actual execution backend
+
+The runtime loop is straightforward:
+
+- Neovim owns editor state and UI
+- the plugin derives project/session intent from that state
+- Codex CLI runs in a persistent terminal buffer
+- queued prompt execution writes receipts back to disk
+- the plugin polls those receipts and updates editor-visible state
+
+## Roadmap
+
+The current implementation is centered on project/session management and queued prompt execution. Planned or likely follow-up areas include:
+
+- richer prompt expansion based on editor context such as current file, ranges, diagnostics, and quickfix lists
+- more reusable prompt-library templates
+- broader test coverage for config merging, queue transitions, and session persistence
+- additional project/session metadata surfaced in the UI
+- more refined prompt authoring flows for visual and diagnostic tasks
+
+## Development
+
+Useful checks while developing:
 
 ```bash
 nvim --headless "+lua require('codex-cli').setup()" +qa
 nvim --headless "+lua print(vim.inspect(require('codex-cli')))" +qa
 ```
 
-For an isolated runtime with only `lazy.nvim`, `snacks.nvim`, and this plugin loaded:
+Manual validation:
 
-```bash
-./bin/codex-nvim-clean
-```
-
-That launcher uses [dev/nvim/init.lua](/home/flux/nvim-plugins/codex-cli/dev/nvim/init.lua) and repo-local XDG cache/data/state directories so it does not load your normal Neovim config.
-
-Manual runtime checks should focus on:
-
-- toggling inside and outside projects
-- switching projects with Codex visible
-- reopening the free session from a different cwd
-- tab-local active-project behavior
-- prompt expansion edge cases for diagnostics, quickfix items, and ranges
-
-## Lualine
-
-The plugin exposes a small helper for lualine components:
-
-```lua
-require("lualine").setup({
-  sections = {
-    lualine_c = {
-      function()
-        return require("codex-cli").lualine.project_name({
-          prefix = "Codex:",
-        })
-      end,
-    },
-  },
-})
-```
-
-For tabline usage you can pass a specific tabpage and optionally fall back to the detected project:
-
-```lua
-require("codex-cli").lualine.project_name({
-  tabpage = vim.api.nvim_get_current_tabpage(),
-  include_detected = true,
-})
-```
-
-## Roadmap
-
-### Phase 1
-
-- module layout
-- config and persistence
-- project registry
-- tab-local state
-- Codex terminal session manager
-
-### Phase 2
-
-- Snacks picker and input flows
-- git-root project suggestion
-- stable commands and help docs
-
-### Phase 3
-
-- prompt expansion engine
-- prompt macro library
-- text renderers for diagnostics, ranges, visible content, and quickfix lists
+1. Register a project and open `:CodexQueueWorkspace`.
+2. Add prompts and move one into `queued`.
+3. Dispatch it with `:CodexTodoImplement`.
+4. Confirm the prompt is sent to the project session.
+5. Write a matching receipt file and verify the item moves into `history`.
 
 ## License
 
-MIT
+MIT. See [`LICENSE`](/home/flux/nvim-plugins/codex-cli/LICENSE).

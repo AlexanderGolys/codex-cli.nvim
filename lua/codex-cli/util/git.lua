@@ -2,12 +2,14 @@ local M = {}
 
 local fs = require("codex-cli.util.fs")
 
+--- Checks whether a directory contains a `.git` marker.
 ---@param dir string
 ---@return boolean
 local function has_git(dir)
   return fs.exists(dir .. "/.git")
 end
 
+--- Resolves the nearest Git root for the given path or current buffer path.
 ---@param path? string
 ---@return string?
 function M.get_root(path)
@@ -23,6 +25,7 @@ function M.get_root(path)
   end
 end
 
+--- Reads the current commit hash for a repository, optionally short form.
 ---@param root string
 ---@param short? boolean
 ---@return string?
@@ -46,6 +49,7 @@ function M.head_commit(root, short)
   return output ~= "" and output or nil
 end
 
+--- Parses a Git remote URL into a repository name for display.
 ---@param url string
 ---@return string?
 local function repo_name_from_url(url)
@@ -62,6 +66,7 @@ local function repo_name_from_url(url)
   return name
 end
 
+--- Resolves the current remote `origin` name for project metadata.
 ---@param root string
 ---@return string?
 function M.remote_name(root)

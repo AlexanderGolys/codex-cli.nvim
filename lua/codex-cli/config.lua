@@ -1,14 +1,20 @@
+local HighlightConfig = require("codex-cli.config.highlights")
+
+--- Persistent plugin settings used to resolve workspace and project registry files.
 ---@class CodexCli.Config.Storage
 ---@field projects_file string
 ---@field workspaces_dir string
 
+--- Terminal UI/runtime options for Codex subprocess windows.
 ---@class CodexCli.Config.Terminal
 ---@field win snacks.win.Config|{}
 ---@field start_insert boolean
 
+--- Project autodetection behavior configured by the active buffer resolver.
 ---@class CodexCli.Config.ProjectDetection
 ---@field auto_suggest_git_root boolean
 
+--- Floating preview window sizing and placement options.
 ---@class CodexCli.Config.StatePreview
 ---@field min_width integer
 ---@field max_width integer
@@ -17,32 +23,35 @@
 ---@field col integer
 ---@field winblend integer
 
+--- Queue workspace layout and presentation defaults for queue/project panes.
 ---@class CodexCli.Config.QueueWorkspace
 ---@field width number
 ---@field height number
 ---@field project_width number
 ---@field footer_height integer
+---@field preview_max_lines integer
+---@field fold_preview boolean
 
+--- Error prompt behavior and optional screenshot directory hints.
 ---@class CodexCli.Config.ErrorPrompt
 ---@field screenshot_dir? string
 
----@class CodexCli.Config.PromptPickerHighlights
----@field todo_title string
----@field error_title string
----@field visual_title string
----@field adjustment_title string
----@field refactor_title string
----@field idea_title string
----@field explain_title string
----@field prompt_text string
+--- Highlight group catalog consumed by setup when applying plugin colors.
+---@class CodexCli.Config.Highlights
+---@field groups table<string, CodexCli.Config.HighlightSpec>
 
+--- Prompt picker display overrides, including compatibility aliases.
 ---@class CodexCli.Config.PromptPicker
----@field highlights CodexCli.Config.PromptPickerHighlights
+---@field highlights? table<string, string> # Deprecated compatibility aliases for prompt display groups.
 
+--- Settings driving prompt dispatch and external completion polling.
 ---@class CodexCli.Config.PromptExecution
 ---@field relative_dir string
 ---@field poll_ms integer
+---@field skills_dir? string
+---@field skill_name string
 
+--- Runtime-config data structure consumed across managers and UI modules.
 ---@class CodexCli.Config.Values
 ---@field codex_cmd string[]
 ---@field storage CodexCli.Config.Storage
@@ -51,9 +60,11 @@
 ---@field state_preview CodexCli.Config.StatePreview
 ---@field queue_workspace CodexCli.Config.QueueWorkspace
 ---@field error_prompt CodexCli.Config.ErrorPrompt
+---@field highlights CodexCli.Config.Highlights
 ---@field prompt_picker CodexCli.Config.PromptPicker
 ---@field prompt_execution CodexCli.Config.PromptExecution
 
+--- Root config object exported by `require("codex-cli.config")`.
 ---@class CodexCli.Config
 ---@field values CodexCli.Config.Values
 local Config = {}
@@ -84,40 +95,137 @@ local defaults = {
     winblend = 18,
   },
   queue_workspace = {
-    width = 0.8,
-    height = 0.7,
-    project_width = 0.34,
-    footer_height = 3,
+    width = 0.98,
+    height = 0.98,
+    project_width = 0.32,
+    footer_height = 4,
+    preview_max_lines = 5,
+    fold_preview = true,
   },
   error_prompt = {
     screenshot_dir = nil,
   },
+  highlights = vim.deepcopy(HighlightConfig),
   prompt_picker = {
-    highlights = {
-      todo_title = "WarningMsg",
-      error_title = "DiagnosticError",
-      visual_title = "Special",
-      adjustment_title = "Constant",
-      refactor_title = "String",
-      idea_title = "PreProc",
-      explain_title = "Type",
-      prompt_text = "Directory",
-    },
+    highlights = {},
   },
   prompt_execution = {
     relative_dir = ".codex-cli/prompt-executions",
     poll_ms = 5000,
+    skills_dir = nil,
+    skill_name = "prompt-nvim-codex-cli",
   },
 }
 
+local prompt_picker_highlight_map = {
+  todo_title = "CodexCliPromptPickerTodoTitle",
+  error_title = "CodexCliPromptPickerErrorTitle",
+  visual_title = "CodexCliPromptPickerVisualTitle",
+  adjustment_title = "CodexCliPromptPickerAdjustmentTitle",
+  refactor_title = "CodexCliPromptPickerRefactorTitle",
+  idea_title = "CodexCliPromptPickerIdeaTitle",
+  explain_title = "CodexCliPromptPickerExplainTitle",
+  prompt_text = "CodexCliPromptPickerPromptText",
+}
+
+--- Checks whether a value is a dictionary-like table for merge operations.
+--- This helper distinguishes keyed tables from list-like tables before deep merge.
+---@param value any
+---@return boolean
 local function is_dict_like(value)
   return type(value) == "table" and (vim.tbl_isempty(value) or not vim.islist(value))
 end
 
+--- Checks whether a value is a keyed table compatible with config overwrite paths.
+--- It treats non-list tables and empty tables as dictionary-shaped data.
+---@param value any
+---@return boolean
 local function is_dict(value)
   return type(value) == "table" and (vim.tbl_isempty(value) or not value[1])
 end
 
+--- Loads a named highlight safely from Neovim and returns an empty spec on failure.
+---@param name string
+---@return vim.api.keyset.highlight
+local function get_hl(name)
+  if type(name) ~= "string" or name == "" then
+    return {}
+  end
+
+  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+  return ok and hl or {}
+end
+
+---@param value CodexCli.Config.HighlightColor?
+---@param attr "fg"|"bg"|"sp"
+---@return string|integer?
+--- Resolves a highlight source into a concrete color based on fallback attributes.
+---@param value CodexCli.Config.HighlightColor?
+---@param attr "fg"|"bg"|"sp"
+---@return string|integer?
+local function resolve_color(value, attr)
+  if type(value) == "string" or type(value) == "number" then
+    return value
+  end
+  if type(value) ~= "table" then
+    return nil
+  end
+
+  local source_attr = value.attr or attr
+  local sources = type(value.from) == "table" and value.from or { value.from }
+  for _, source in ipairs(sources) do
+    local resolved = get_hl(source)[source_attr]
+    if resolved ~= nil then
+      return resolved
+    end
+  end
+end
+
+---@param spec CodexCli.Config.HighlightSpec
+---@return vim.api.keyset.highlight
+--- Normalizes one configured highlight description into `vim.api.nvim_set_hl` shape.
+---@param spec CodexCli.Config.HighlightSpec
+---@return vim.api.keyset.highlight
+local function resolve_highlight_spec(spec)
+  local resolved = {} ---@type vim.api.keyset.highlight
+  if type(spec) ~= "table" then
+    return resolved
+  end
+
+  if spec.link then
+    resolved.link = spec.link
+  end
+
+  resolved.fg = resolve_color(spec.fg, "fg")
+  resolved.bg = resolve_color(spec.bg, "bg")
+  resolved.sp = resolve_color(spec.sp, "sp")
+
+  for _, key in ipairs({
+    "blend",
+    "bold",
+    "italic",
+    "underline",
+    "undercurl",
+    "reverse",
+    "strikethrough",
+    "default",
+    "force",
+    "ctermfg",
+    "ctermbg",
+    "cterm",
+  }) do
+    if spec[key] ~= nil then
+      resolved[key] = spec[key]
+    end
+  end
+
+  return resolved
+end
+
+---@generic T
+---@param ... T
+---@return T
+--- Merges nested dictionaries and scalar values while preserving explicit overrides.
 ---@generic T
 ---@param ... T
 ---@return T
@@ -137,6 +245,8 @@ function Config.merge(...)
 end
 
 ---@return CodexCli.Config
+--- Creates a new config object seeded from defaults.
+---@return CodexCli.Config
 function Config.new()
   local self = setmetatable({}, Config)
   self.values = vim.deepcopy(defaults)
@@ -145,11 +255,45 @@ end
 
 ---@param opts? CodexCli.Config.Values|{}
 ---@return CodexCli.Config.Values
+--- Applies setup values, maps legacy highlight keys, and caches active values.
+---@param opts? CodexCli.Config.Values|{}
+---@return CodexCli.Config.Values
 function Config:setup(opts)
   self.values = Config.merge(vim.deepcopy(defaults), opts or {})
+  local legacy = self.values.prompt_picker and self.values.prompt_picker.highlights or nil
+  if legacy then
+    for key, group in pairs(legacy) do
+      local target = prompt_picker_highlight_map[key]
+      if target and group and group ~= "" then
+        local spec = vim.deepcopy(self.values.highlights.groups[target] or {})
+        spec.link = nil
+        spec.fg = { from = group }
+        if key ~= "prompt_text" then
+          spec.bold = true
+        end
+        self.values.highlights.groups[target] = spec
+      end
+    end
+  end
   return self.values
 end
 
+---@param values CodexCli.Config.Values
+--- Writes configured highlight groups to Neovim whenever setup is called or reloaded.
+---@param values CodexCli.Config.Values
+function Config.apply_highlights(values)
+  local groups = values and values.highlights and values.highlights.groups or nil
+  if type(groups) ~= "table" then
+    return
+  end
+
+  for name, spec in pairs(groups) do
+    vim.api.nvim_set_hl(0, name, resolve_highlight_spec(spec))
+  end
+end
+
+---@return CodexCli.Config.Values
+--- Returns the currently active merged config values.
 ---@return CodexCli.Config.Values
 function Config:get()
   return self.values

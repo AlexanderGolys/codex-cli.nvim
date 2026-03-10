@@ -1,21 +1,34 @@
 local ui = require("codex-cli.ui.select")
 local Extmark = require("codex-cli.ui.extmark")
 local TextBlock = require("codex-cli.ui.text_block")
+local PromptHighlight = require("codex-cli.prompt.highlight")
 local ui_win = require("codex-cli.ui.win")
 local notify = require("codex-cli.util.notify")
 local Category = require("codex-cli.prompt.category")
 
+--- Defines the CodexCli.QueueWorkspace.QueueRow type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.QueueWorkspace.QueueRow
 ---@field kind "header"|"item"|"preview"
 ---@field text string
 ---@field queue? CodexCli.QueueName
 ---@field item? CodexCli.QueueItem
 
+--- Defines the CodexCli.QueueWorkspace.ActionSet type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
+---@class CodexCli.QueueWorkspace.ActionSet
+---@field title string
+---@field lines string[]
+
+--- Defines the CodexCli.QueueWorkspace.ProjectRow type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.QueueWorkspace.ProjectRow
 ---@field kind "item"|"detail"
 ---@field text string
 ---@field project? CodexCli.Project
 
+--- Defines the CodexCli.QueueWorkspace type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.QueueWorkspace
 ---@field app CodexCli.App
 ---@field config CodexCli.Config.Values
@@ -46,15 +59,25 @@ local QUEUE_LABELS = {
   queued = "Queued",
   history = "History",
 }
+local ITEM_TITLE_PREFIX_WIDTH = 2
 
+--- Implements the win_valid path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function win_valid(win)
   return win ~= nil and vim.api.nvim_win_is_valid(win)
 end
 
+--- Implements the buf_valid path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function buf_valid(buf)
   return buf ~= nil and vim.api.nvim_buf_is_valid(buf)
 end
 
+--- Implements the clamp path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function clamp(index, max_value)
   if max_value <= 0 then
     return 1
@@ -62,6 +85,25 @@ local function clamp(index, max_value)
   return math.min(math.max(index, 1), max_value)
 end
 
+--- Implements the row_index path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param line integer
+---@param rows integer[]
+---@return integer?
+local function row_index(line, rows)
+  for index, first_row in ipairs(rows) do
+    local next_row = rows[index + 1] or math.huge
+    if line >= first_row and line < next_row then
+      return index
+    end
+  end
+  return nil
+end
+
+--- Implements the resolve_size path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function resolve_size(total, value, minimum)
   if value <= 1 then
     return math.max(math.floor(total * value), minimum)
@@ -69,33 +111,180 @@ local function resolve_size(total, value, minimum)
   return math.max(math.floor(value), minimum)
 end
 
+--- Implements the selection_marks path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param first_row integer
+---@param last_row integer
+---@param hl_group string
+---@return CodexCli.Extmark[]
+local function selection_marks(first_row, last_row, hl_group)
+  local marks = {} ---@type CodexCli.Extmark[]
+  for row = first_row, last_row do
+    marks[#marks + 1] = Extmark.line(row - 1, hl_group)
+  end
+  return marks
+end
+
+--- Implements the prompt_queue_label path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function prompt_queue_label(queue_name)
   return QUEUE_LABELS[queue_name] or queue_name
 end
 
+--- Implements the prompt_item_kind path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param item CodexCli.QueueItem
 ---@return CodexCli.PromptCategory
 local function prompt_item_kind(item)
   return Category.get(item.kind).id
 end
 
+--- Implements the prompt_preview_lines path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param item CodexCli.QueueItem
+---@param opts? { max_lines?: integer, fold?: boolean }
 ---@return string[]
-local function prompt_preview_lines(item)
+local function prompt_preview_lines(item, opts)
+  opts = opts or {}
   local preview = {} ---@type string[]
   local lines = vim.split(item.prompt or "", "\n", { plain = true })
+  local max_lines = math.max(tonumber(opts.max_lines) or 3, 1)
+  local folded = opts.fold ~= false
+  local remaining = 0
+  local skipped_title = false
   for _, line in ipairs(lines) do
     line = vim.trim(line)
     if line ~= "" then
-      preview[#preview + 1] = "    " .. line
+      if not skipped_title then
+        skipped_title = true
+        goto continue
+      end
+      if #preview >= max_lines then
+        remaining = remaining + 1
+      else
+        preview[#preview + 1] = "    " .. line
+      end
     end
-    if #preview >= 3 then
-      break
+    ::continue::
+  end
+
+  if folded and remaining > 0 then
+    if #preview >= max_lines then
+      preview[#preview] = ("    ... (+%d more line%s)"):format(
+        remaining + 1,
+        remaining == 0 and "" or "s"
+      )
+    else
+      preview[#preview + 1] = ("    ... (+%d more line%s)"):format(remaining, remaining == 1 and "" or "s")
+    end
+  else
+    while #preview > max_lines do
+      preview[#preview] = nil
     end
   end
+
   return preview
 end
 
+--- Implements the queue_header_groups path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param queue_name CodexCli.QueueName
+---@return string, string, string
+local function queue_header_groups(queue_name)
+  local map = {
+    planned = {
+      "CodexCliQueueTodoName",
+      "CodexCliQueueTodoBracket",
+      "CodexCliQueueTodoCount",
+    },
+    queued = {
+      "CodexCliQueueQueuedName",
+      "CodexCliQueueQueuedBracket",
+      "CodexCliQueueQueuedCount",
+    },
+    history = {
+      "CodexCliQueueHistoryName",
+      "CodexCliQueueHistoryBracket",
+      "CodexCliQueueHistoryCount",
+    },
+  }
+  local groups = map[queue_name] or map.planned
+  return groups[1], groups[2], groups[3]
+end
+
+--- Implements the queue_header_line path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param queue_name CodexCli.QueueName
+---@param count integer
+---@return string, CodexCli.Extmark[]
+local function queue_header_line(queue_name, count)
+  local label = prompt_queue_label(queue_name)
+  local text = ("%s (%d)"):format(label, count)
+  local name_hl, bracket_hl, count_hl = queue_header_groups(queue_name)
+  local marks = {
+    Extmark.inline(0, 0, #label, name_hl),
+    Extmark.inline(0, #label, #label + 2, bracket_hl),
+    Extmark.inline(0, #label + 2, #label + 2 + #tostring(count), count_hl),
+    Extmark.inline(0, #label + 2 + #tostring(count), #text, bracket_hl),
+  }
+  return text, marks
+end
+
+--- Implements the footer_actions path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param focus "projects"|"queue"
+---@return CodexCli.QueueWorkspace.ActionSet
+local function footer_actions(focus)
+  if focus == "projects" then
+    return {
+      title = " Project Actions ",
+      lines = {
+        "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
+        "A: start session   X: stop session   a: add prompt   D: delete project",
+        "Queue-specific actions appear when the queue pane is active.",
+      },
+    }
+  end
+
+  return {
+    title = " Queue Actions ",
+    lines = {
+      "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
+      "a: add prompt   e: edit prompt   i/I: implement one/all queued   m/M: move forward/back",
+      "p: move project   H/L: prev/next project   d: delete item   Ctrl-S: save multiline body",
+    },
+  }
+end
+
+--- Implements the should_render_queue path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param _queue_name CodexCli.QueueName
+---@param items CodexCli.QueueItem[]
+---@return boolean
+local function should_render_queue(_queue_name, items)
+  return #items > 0
+end
+
+--- Implements the footer_text path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@param text string
+---@return string
+local function footer_text(text)
+  return text:gsub("Left/Right", "←/→"):gsub("Up/Down", "↑/↓")
+end
+
+--- Implements the history_suffix path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param item CodexCli.QueueItem
 ---@return string
 local function history_suffix(item)
@@ -109,97 +298,9 @@ local function history_suffix(item)
   return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
 end
 
----@param name string
----@return integer?
-local function hl_fg(name)
-  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-  return ok and hl and hl.fg or nil
-end
-
----@param config CodexCli.Config.Values
-local function ensure_highlights(config)
-  local picker_hl = config.prompt_picker.highlights
-  local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
-  local selection_bg = visual.bg or hl_fg("Visual")
-  local active_border_fg = hl_fg("Identifier") or hl_fg("FloatBorder")
-  local inactive_border_fg = hl_fg("Comment") or hl_fg("FloatBorder")
-  vim.api.nvim_set_hl(0, "CodexCliQueueProjectActive", {
-    fg = hl_fg("Directory"),
-    bold = true,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueProjectInactive", {
-    fg = hl_fg("Comment"),
-    italic = true,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueCounts", {
-    fg = hl_fg("Identifier"),
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueHeader", {
-    fg = hl_fg("Title"),
-    bold = true,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueItem", {
-    fg = hl_fg("Normal"),
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueItemMuted", {
-    fg = hl_fg("Comment"),
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueFooter", {
-    fg = hl_fg("Comment"),
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerTodoTitle", {
-    fg = hl_fg(picker_hl.todo_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerErrorTitle", {
-    fg = hl_fg(picker_hl.error_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerVisualTitle", {
-    fg = hl_fg(picker_hl.visual_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerAdjustmentTitle", {
-    fg = hl_fg(picker_hl.adjustment_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerRefactorTitle", {
-    fg = hl_fg(picker_hl.refactor_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerIdeaTitle", {
-    fg = hl_fg(picker_hl.idea_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerExplainTitle", {
-    fg = hl_fg(picker_hl.explain_title),
-    bold = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliPromptPickerPromptText", {
-    fg = hl_fg(picker_hl.prompt_text),
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueSelection", {
-    bg = selection_bg,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueActiveBorder", {
-    fg = active_border_fg,
-    bold = true,
-    default = true,
-  })
-  vim.api.nvim_set_hl(0, "CodexCliQueueInactiveBorder", {
-    fg = inactive_border_fg,
-    default = true,
-  })
-end
-
+--- Implements the queue_kind_counts path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param items CodexCli.QueueItem[]
 ---@return table<CodexCli.PromptCategory, integer>
 local function queue_kind_counts(items)
@@ -211,6 +312,9 @@ local function queue_kind_counts(items)
   return counts
 end
 
+--- Implements the format_timestamp path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param timestamp? integer
 ---@return string
 local function format_timestamp(timestamp)
@@ -220,6 +324,9 @@ local function format_timestamp(timestamp)
   return os.date("%Y-%m-%d %H:%M", timestamp)
 end
 
+--- Implements the format_languages path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param languages CodexCli.ProjectDetails.LanguageStat[]
 ---@return string
 local function format_languages(languages)
@@ -241,6 +348,9 @@ local function format_languages(languages)
   return table.concat(parts, ", ")
 end
 
+--- Implements the format_avg_lines path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param value? number
 ---@return string
 local function format_avg_lines(value)
@@ -250,6 +360,9 @@ local function format_avg_lines(value)
   return ("%.1f"):format(value)
 end
 
+--- Implements the project_detail_lines path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param app CodexCli.App
 ---@param summary CodexCli.ProjectQueueSummary
 ---@return string[]
@@ -269,22 +382,8 @@ local function project_detail_lines(app, summary)
   }
 end
 
----@param item CodexCli.QueueItem
----@return string
-local function prompt_title_highlight(item)
-  local id = prompt_item_kind(item)
-  local map = {
-    todo = "CodexCliPromptPickerTodoTitle",
-    error = "CodexCliPromptPickerErrorTitle",
-    visual = "CodexCliPromptPickerVisualTitle",
-    adjustment = "CodexCliPromptPickerAdjustmentTitle",
-    refactor = "CodexCliPromptPickerRefactorTitle",
-    idea = "CodexCliPromptPickerIdeaTitle",
-    explain = "CodexCliPromptPickerExplainTitle",
-  }
-  return map[id] or map.todo
-end
-
+--- Creates a new ui queue workspace instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param app CodexCli.App
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.QueueWorkspace
@@ -303,17 +402,28 @@ function Workspace.new(app, config)
   return self
 end
 
+--- Implements the update_config path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Workspace:update_config(config)
   self.config = config
 end
 
+--- Checks a open condition for ui queue workspace.
+--- This gate keeps callers safe before continuing higher-level state transitions.
 ---@return boolean
 function Workspace:is_open()
   return win_valid(self.project_win) and win_valid(self.queue_win) and win_valid(self.footer_win)
 end
 
+--- Implements the ensure_buffers path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:ensure_buffers()
+--- Implements the make_buffer path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function make_buffer(name)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
@@ -330,6 +440,9 @@ function Workspace:ensure_buffers()
   self.footer_buf = buf_valid(self.footer_buf) and self.footer_buf or make_buffer("codex-cli://queue-footer")
 end
 
+--- Implements the layout path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return integer, integer, integer, integer, integer, integer
 function Workspace:layout()
   local ui_state = vim.api.nvim_list_uis()[1]
@@ -346,13 +459,23 @@ function Workspace:layout()
   return row, col, project_width, queue_width, height, footer_height
 end
 
+--- Implements the prompt_title_width path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+---@return integer
+function Workspace:prompt_title_width()
+  local queue_width = win_valid(self.queue_win) and vim.api.nvim_win_get_width(self.queue_win) or select(4, self:layout())
+  return math.max(queue_width - ITEM_TITLE_PREFIX_WIDTH, 1)
+end
+
+--- Opens or activates the selected ui queue workspace target in the workspace.
+--- This is used by navigation flows that need to display the most recent selection.
 function Workspace:open()
   if self:is_open() then
     self:refresh()
     return
   end
 
-  ensure_highlights(self.config)
   self:ensure_buffers()
 
   local row, col, project_width, queue_width, height, footer_height = self:layout()
@@ -389,7 +512,7 @@ function Workspace:open()
     height = footer_height,
     style = "minimal",
     border = "rounded",
-    title = " Actions ",
+    title = footer_actions(self.focus).title,
     zindex = FOOTER_ZINDEX,
   }).win
 
@@ -398,6 +521,9 @@ function Workspace:open()
   self:refresh(true)
 end
 
+--- Implements the configure_windows path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:configure_windows()
   for _, win in ipairs({ self.project_win, self.queue_win, self.footer_win }) do
     if win_valid(win) then
@@ -412,7 +538,7 @@ function Workspace:configure_windows()
 
   for _, win in ipairs({ self.project_win, self.queue_win }) do
     if win_valid(win) then
-      vim.wo[win].cursorline = true
+      vim.wo[win].cursorline = false
     end
   end
 
@@ -422,20 +548,68 @@ function Workspace:configure_windows()
   self:update_window_highlights()
 end
 
+--- Closes or deactivates ui queue workspace behavior for the current context.
+--- This is used by command flows when a view or session should stop being active.
 function Workspace:close()
   for _, win in ipairs({ self.project_win, self.queue_win, self.footer_win }) do
-    if win_valid(win) then
-      pcall(vim.api.nvim_win_close, win, true)
-    end
+    ui_win.close(win)
   end
   self.project_win = nil
   self.queue_win = nil
   self.footer_win = nil
 end
 
+--- Implements the attach_keymaps path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:attach_keymaps()
+--- Implements the map path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function map(buf, lhs, rhs)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
+  end
+
+--- Implements the project_click path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+  local function project_click(confirm)
+    local mouse = vim.fn.getmousepos()
+    if mouse.winid ~= self.project_win then
+      return
+    end
+    local index = row_index(mouse.line, self.project_item_rows)
+    if not index then
+      return
+    end
+    self.project_index = index
+    self.queue_index = 1
+    self:set_focus("projects")
+    self:refresh()
+    if confirm then
+      self:open_selected_project()
+    end
+  end
+
+--- Implements the queue_click path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+  local function queue_click(confirm)
+    local mouse = vim.fn.getmousepos()
+    if mouse.winid ~= self.queue_win then
+      return
+    end
+    local index = row_index(mouse.line, self.queue_item_rows)
+    if not index then
+      return
+    end
+    self.queue_index = index
+    self:set_focus("queue")
+    self:update_cursor()
+    self:render_footer()
+    if confirm then
+      self:open_selected_project()
+    end
   end
 
   for _, buf in ipairs({ self.project_buf, self.queue_buf }) do
@@ -512,8 +686,24 @@ function Workspace:attach_keymaps()
       self:delete_project()
     end)
   end
+
+  map(self.project_buf, "<LeftMouse>", function()
+    project_click(false)
+  end)
+  map(self.project_buf, "<2-LeftMouse>", function()
+    project_click(true)
+  end)
+  map(self.queue_buf, "<LeftMouse>", function()
+    queue_click(false)
+  end)
+  map(self.queue_buf, "<2-LeftMouse>", function()
+    queue_click(true)
+  end)
 end
 
+--- Implements the set_focus path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param focus "projects"|"queue"
 function Workspace:set_focus(focus)
   if focus == "queue" and not self:selected_project() then
@@ -523,13 +713,15 @@ function Workspace:set_focus(focus)
   self:apply_focus()
 end
 
+--- Implements the update_window_highlights path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:update_window_highlights()
+--- Implements the apply path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function apply(win, active)
-    if not win_valid(win) then
-      return
-    end
-    local border = active and "CodexCliQueueActiveBorder" or "CodexCliQueueInactiveBorder"
-    vim.wo[win].winhl = ("NormalFloat:NormalFloat,FloatBorder:%s"):format(border)
+    ui_win.set_focus_border(win, active)
   end
 
   apply(self.project_win, self.focus == "projects")
@@ -537,6 +729,9 @@ function Workspace:update_window_highlights()
   apply(self.footer_win, false)
 end
 
+--- Implements the apply_focus path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:apply_focus()
   self:update_window_highlights()
   local win = self.focus == "projects" and self.project_win or self.queue_win
@@ -546,11 +741,17 @@ function Workspace:apply_focus()
   self:update_cursor()
 end
 
+--- Implements the selected_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.Project?
 function Workspace:selected_project()
   return self.projects[self.project_index]
 end
 
+--- Implements the update_cursor path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:update_cursor()
   if win_valid(self.project_win) then
     local row = self.project_item_rows[self.project_index] or 1
@@ -562,6 +763,9 @@ function Workspace:update_cursor()
   end
 end
 
+--- Implements the move_selection path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param delta integer
 function Workspace:move_selection(delta)
   if self.focus == "projects" then
@@ -584,9 +788,10 @@ function Workspace:move_selection(delta)
   self:update_cursor()
 end
 
+--- Updates ui queue workspace state after local changes.
+--- Higher-level callers use this to keep the UI and terminal state consistent.
 ---@param initial? boolean
 function Workspace:refresh(initial)
-  ensure_highlights(self.config)
   if not self:is_open() then
     return
   end
@@ -605,9 +810,18 @@ function Workspace:refresh(initial)
   if initial then
     self.focus = "projects"
   end
+  if win_valid(self.footer_win) then
+    vim.api.nvim_win_set_config(self.footer_win, {
+      title = footer_actions(self.focus).title,
+      title_pos = "center",
+    })
+  end
   self:apply_focus()
 end
 
+--- Implements the render_projects path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:render_projects()
   self.project_rows = {}
   self.project_item_rows = {}
@@ -657,13 +871,20 @@ function Workspace:render_projects()
 
   local selected_row = self.project_item_rows[self.project_index]
   if selected_row then
-    local end_row = math.min(selected_row + 2, block:line_count())
-    block:add_extmarks(Extmark.block(selected_row - 1, end_row, "CodexCliQueueSelection"))
+    local selected = self.project_rows[selected_row]
+    local last_row = selected_row
+    while self.project_rows[last_row + 1] and self.project_rows[last_row + 1].project == selected.project do
+      last_row = last_row + 1
+    end
+    block:add_extmarks(selection_marks(selected_row, last_row, "CodexCliQueueSelection"))
   end
 
   block:render(self.project_buf, PROJECT_NS)
 end
 
+--- Implements the render_queue path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:render_queue()
   local project = self:selected_project()
   self.queue_rows = {}
@@ -676,57 +897,51 @@ function Workspace:render_queue()
     local summary = self.app:queue_summary(project)
     for _, queue_name in ipairs({ "planned", "queued", "history" }) do
       local items = summary.queues[queue_name]
-      local header_text = string.format("%s (%d)", prompt_queue_label(queue_name), #items)
+      if not should_render_queue(queue_name, items) then
+        goto continue
+      end
+
+      local header_text, header_marks = queue_header_line(queue_name, #items)
       self.queue_rows[#self.queue_rows + 1] = {
         kind = "header",
         text = header_text,
         queue = queue_name,
       }
-      block:append_line(header_text, {
-        Extmark.inline(0, 0, #header_text, "CodexCliQueueHeader"),
-      })
+      block:append_line(header_text, header_marks)
 
-      if #items == 0 then
+      for _, item in ipairs(items) do
+        local suffix = queue_name == "history" and history_suffix(item) or ""
+        local item_text = "  " .. item.title .. suffix
+        local title_text = "  " .. item.title
         self.queue_rows[#self.queue_rows + 1] = {
           kind = "item",
-          text = "  (empty)",
+          text = item_text,
           queue = queue_name,
+          item = item,
         }
-        block:append_line("  (empty)", {
-          Extmark.inline(0, 0, #"  (empty)", "CodexCliQueueItem"),
-        })
-      else
-        for _, item in ipairs(items) do
-          local suffix = queue_name == "history" and history_suffix(item) or ""
-          local item_text = "  " .. item.title .. suffix
-          local title_text = "  " .. item.title
+        self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
+        local item_extmarks = {
+          Extmark.inline(0, 0, #title_text, PromptHighlight.title_group(prompt_item_kind(item), "prompt")),
+        }
+        if #item_text > #title_text then
+          item_extmarks[#item_extmarks + 1] =
+            Extmark.inline(0, #title_text, #item_text, "CodexCliQueueItemMuted")
+        end
+        block:append_line(item_text, item_extmarks)
+
+        for _, preview in ipairs(prompt_preview_lines(item, {
+          max_lines = self.config.queue_workspace.preview_max_lines,
+          fold = self.config.queue_workspace.fold_preview,
+        })) do
           self.queue_rows[#self.queue_rows + 1] = {
-            kind = "item",
-            text = item_text,
+            kind = "preview",
+            text = preview,
             queue = queue_name,
             item = item,
           }
-          self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
-          local item_extmarks = {
-            Extmark.inline(0, 0, #title_text, prompt_title_highlight(item)),
-          }
-          if #item_text > #title_text then
-            item_extmarks[#item_extmarks + 1] =
-              Extmark.inline(0, #title_text, #item_text, "CodexCliQueueItemMuted")
-          end
-          block:append_line(item_text, item_extmarks)
-
-          for _, preview in ipairs(prompt_preview_lines(item)) do
-            self.queue_rows[#self.queue_rows + 1] = {
-              kind = "preview",
-              text = preview,
-              queue = queue_name,
-              item = item,
-            }
-            block:append_line(preview, {
-              Extmark.inline(0, 0, #preview, "CodexCliPromptPickerPromptText"),
-            })
-          end
+          block:append_line(preview, {
+            Extmark.inline(0, 0, #preview, PromptHighlight.preview_group()),
+          })
         end
       end
 
@@ -735,6 +950,13 @@ function Workspace:render_queue()
         kind = "header",
         text = "",
       }
+      ::continue::
+    end
+
+    if block:is_empty() then
+      block:append_line("No prompts queued for this project", {
+        Extmark.inline(0, 0, #"No prompts queued for this project", "CodexCliQueueItemMuted"),
+      })
     end
   end
 
@@ -752,21 +974,21 @@ function Workspace:render_queue()
       while self.queue_rows[last_row + 1] and self.queue_rows[last_row + 1].item == item.item do
         last_row = last_row + 1
       end
-      block:add_extmarks(Extmark.block(selected_row - 1, last_row, "CodexCliQueueSelection"))
+      block:add_extmarks(selection_marks(selected_row, last_row, "CodexCliQueueSelection"))
     end
   end
 
   block:render(self.queue_buf, QUEUE_NS)
 end
 
+--- Implements the render_footer path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:render_footer()
-  local lines = {
-    "Focus: h/l or ←/→   Move: j/k or ↑/↓   Enter: open README + terminal   A/X: start/stop session",
-    "Active pane border shows focus   a: add todo   e: edit prompt   i/I: implement one/all queued   q: close",
-    "m/M: move forward/back   p: move project   H/L: prev/next project   d/D: delete item/project   Ctrl-S: save body",
-  }
+  local action_set = footer_actions(self.focus)
   local block = TextBlock.new()
-  for _, line in ipairs(lines) do
+  for _, line in ipairs(action_set.lines) do
+    line = footer_text(line)
     block:append_line(line, {
       Extmark.inline(0, 0, #line, "CodexCliQueueFooter"),
     })
@@ -774,6 +996,9 @@ function Workspace:render_footer()
   block:render(self.footer_buf, FOOTER_NS)
 end
 
+--- Implements the activate_selected_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:activate_selected_project()
   local project = self:selected_project()
   if not project then
@@ -783,6 +1008,9 @@ function Workspace:activate_selected_project()
   self:refresh()
 end
 
+--- Implements the deactivate_selected_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:deactivate_selected_project()
   local project = self:selected_project()
   if not project then
@@ -792,6 +1020,9 @@ function Workspace:deactivate_selected_project()
   self:refresh()
 end
 
+--- Implements the open_selected_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:open_selected_project()
   local project = self:selected_project()
   if not project then
@@ -803,6 +1034,9 @@ function Workspace:open_selected_project()
   end)
 end
 
+--- Implements the selected_queue_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.QueueItem?, CodexCli.QueueName?
 function Workspace:selected_queue_item()
   local row_index = self.queue_item_rows[self.queue_index]
@@ -813,6 +1047,8 @@ function Workspace:selected_queue_item()
   return row.item, row.queue
 end
 
+--- Adds a new ui queue workspace entry and keeps related state aligned.
+--- This function feeds the same workflow used by interactive and scripted callers.
 function Workspace:add_todo()
   local project = self:selected_project()
   if not project then
@@ -828,7 +1064,7 @@ function Workspace:add_todo()
       return
     end
 
-    ui.multiline_input({
+    ui.input({
       prompt = "Todo details (optional)",
     }, function(details)
       self.app:add_project_todo(project, {
@@ -841,6 +1077,9 @@ function Workspace:add_todo()
   end)
 end
 
+--- Implements the edit_queue_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:edit_queue_item()
   local project = self:selected_project()
   local item = self:selected_queue_item()
@@ -858,7 +1097,7 @@ function Workspace:edit_queue_item()
       return
     end
 
-    ui.multiline_input({
+    ui.input({
       prompt = "Edit details (optional)",
       default = item.details or "",
     }, function(details)
@@ -871,6 +1110,9 @@ function Workspace:edit_queue_item()
   end)
 end
 
+--- Implements the implement_queue_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:implement_queue_item()
   local project = self:selected_project()
   local item, queue_name = self:selected_queue_item()
@@ -887,6 +1129,9 @@ function Workspace:implement_queue_item()
   self:refresh()
 end
 
+--- Implements the implement_queued_items path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:implement_queued_items()
   local project = self:selected_project()
   if not project then
@@ -898,6 +1143,9 @@ function Workspace:implement_queued_items()
   self:refresh()
 end
 
+--- Implements the move_queue_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:move_queue_item()
   local project = self:selected_project()
   local item = self:selected_queue_item()
@@ -910,6 +1158,9 @@ function Workspace:move_queue_item()
   self:refresh()
 end
 
+--- Implements the move_queue_item_back path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:move_queue_item_back()
   local project = self:selected_project()
   local item, queue_name = self:selected_queue_item()
@@ -918,6 +1169,9 @@ function Workspace:move_queue_item_back()
     return
   end
 
+--- Implements the move_back path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function move_back(copy)
     self.app:rewind_queue_item(project, item.id, { copy = copy })
     self.queue_index = 1
@@ -930,6 +1184,9 @@ function Workspace:move_queue_item_back()
       { label = "Duplicate back to queued", copy = true },
     }, {
       prompt = ("Move '%s' back"):format(item.title),
+--- Implements the format_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       format_item = function(choice)
         return choice.label
       end,
@@ -944,6 +1201,9 @@ function Workspace:move_queue_item_back()
   move_back(false)
 end
 
+--- Implements the move_queue_item_to_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:move_queue_item_to_project()
   local project = self:selected_project()
   local item, queue_name = self:selected_queue_item()
@@ -980,12 +1240,18 @@ function Workspace:move_queue_item_to_project()
   end)
 end
 
+--- Implements the prompt_move_to_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 ---@param queue_name CodexCli.QueueName
 ---@param target_project CodexCli.Project
 ---@param on_complete fun()
 function Workspace:prompt_move_to_project(project, item, queue_name, target_project, on_complete)
+--- Implements the move_to_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function move_to_project(copy)
     self.app:move_queue_item_to_project(project, item.id, target_project, {
       copy = copy,
@@ -999,6 +1265,9 @@ function Workspace:prompt_move_to_project(project, item, queue_name, target_proj
       { label = "Duplicate history item", copy = true },
     }, {
       prompt = ("Transfer '%s' to %s"):format(item.title, target_project.name),
+--- Implements the format_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       format_item = function(choice)
         return choice.label
       end,
@@ -1015,6 +1284,9 @@ function Workspace:prompt_move_to_project(project, item, queue_name, target_proj
   move_to_project(false)
 end
 
+--- Implements the move_queue_item_to_adjacent_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param delta integer
 function Workspace:move_queue_item_to_adjacent_project(delta)
   local project = self:selected_project()
@@ -1043,6 +1315,9 @@ function Workspace:move_queue_item_to_adjacent_project(delta)
   end)
 end
 
+--- Implements the delete_queue_item path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:delete_queue_item()
   local project = self:selected_project()
   local item = self:selected_queue_item()
@@ -1061,6 +1336,9 @@ function Workspace:delete_queue_item()
   end)
 end
 
+--- Implements the delete_project path for ui queue workspace.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Workspace:delete_project()
   local project = self:selected_project()
   if not project then

@@ -3,6 +3,8 @@ local Extmark = require("codex-cli.ui.extmark")
 local TextBlock = require("codex-cli.ui.text_block")
 local ui_win = require("codex-cli.ui.win")
 
+--- Defines the CodexCli.StatePreview type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.StatePreview
 ---@field config CodexCli.Config.Values
 ---@field state_buf? integer
@@ -19,12 +21,12 @@ local Preview = {}
 Preview.__index = Preview
 
 local status_hl = {
-  ["session alive"] = "@diff.plus",
-  ["session stopped"] = "ErrorMsg",
-  ["offline"] = "@error",
-  ["true"] = "@boolean",
-  ["false"] = "@boolean",
-  ["nil"] = "@constant",
+  ["session alive"] = "CodexCliStateStatusActive",
+  ["session stopped"] = "CodexCliStateStatusStopped",
+  ["offline"] = "CodexCliStateStatusOffline",
+  ["true"] = "CodexCliStateBoolean",
+  ["false"] = "CodexCliStateBoolean",
+  ["nil"] = "CodexCliStateNil",
 }
 
 local FIELD_LABEL_WIDTH = 20
@@ -36,14 +38,20 @@ local COMMAND_WIDTH_MIN = 28
 local COMMAND_WIDTH_MAX = 40
 local PANEL_GAP_COLS = 1
 
+--- Checks whether a floating window is valid before accessing win options.
+--- This guard pattern is used across all state-preview window operations.
 local function win_valid(win)
   return win ~= nil and vim.api.nvim_win_is_valid(win)
 end
 
+--- Checks whether a preview buffer exists and is still valid.
+--- All state rendering passes use this before setting lines or marks.
 local function buf_valid(buf)
   return buf ~= nil and vim.api.nvim_buf_is_valid(buf)
 end
 
+--- Ensures cursor indexes stay within a valid 1-based range.
+--- This is used by movement methods to avoid invalid cursor rows.
 local function clamp(index, max_value)
   if max_value <= 0 then
     return 1
@@ -51,6 +59,8 @@ local function clamp(index, max_value)
   return math.min(math.max(index, 1), max_value)
 end
 
+--- Normalizes values for display in text blocks.
+--- Booleans and nil values become stable labels for easier scanning.
 local function format_value(value)
   if value == nil then
     return "nil"
@@ -66,6 +76,8 @@ end
 ---@param text string
 ---@param extmarks? CodexCli.Extmark[]
 ---@return integer
+--- Pushes a text line into a block and tracks max rendered width for sizing.
+--- This keeps width calculations synced with rendered content.
 local function push_line(self, block, text, extmarks)
   self.max_state_width = math.max(self.max_state_width or 0, vim.fn.strdisplaywidth(text))
   return block:append_line(text, extmarks)
@@ -75,12 +87,14 @@ end
 ---@param block CodexCli.TextBlock
 ---@param label string
 ---@param value any
+--- Appends a labeled state field and applies status highlight when recognized.
+--- Keeps project and tab fields visually consistent across render passes.
 local function append_field(self, block, label, value)
   local rendered = format_value(value)
   local prefix = string.format("%-" .. FIELD_LABEL_WIDTH .. "s ", label .. ":")
   local text = prefix .. rendered
   local extmarks = {
-    Extmark.inline(0, 0, #prefix, "@constructor"),
+    Extmark.inline(0, 0, #prefix, "CodexCliStateFieldLabel"),
   }
   if status_hl[rendered] then
     extmarks[#extmarks + 1] = Extmark.inline(0, #prefix, #text, status_hl[rendered])
@@ -90,12 +104,16 @@ end
 
 ---@param project? CodexCli.Project
 ---@return string
+--- Returns user-friendly project name text for snapshot rendering.
+--- This avoids duplicate nil-checking for optional project references.
 local function project_name(project)
   return project and project.name or "none"
 end
 
 ---@param target CodexCli.App.TargetSnapshot
 ---@return string
+--- Builds a compact display label for the current target snapshot.
+--- It distinguishes whether focus is on a project session or free terminal.
 local function target_label(target)
   if target.kind == "project" then
     return ("project:%s"):format(target.project.name)
@@ -104,6 +122,8 @@ local function target_label(target)
 end
 
 ---@param project_state CodexCli.App.ProjectStateSnapshot
+--- Builds human-readable status text for a project's workspace state.
+--- Includes tracking and visibility flags used in project line summaries.
 ---@return string
 local function project_status(project_state)
   local parts = { project_state.working }
@@ -119,11 +139,13 @@ end
 ---@param self CodexCli.StatePreview
 ---@param block CodexCli.TextBlock
 ---@param project_state CodexCli.App.ProjectStateSnapshot
+--- Appends one project line and key metadata fields to the state block.
+--- It is called for every project snapshot while rendering the main state pane.
 local function append_project_state(self, block, project_state)
   local text = string.format("> %s  %s", project_state.project.name, project_status(project_state))
   push_line(self, block, text, {
-    Extmark.inline(0, 0, 1, "SpecialChar"),
-    Extmark.inline(0, 2, #text, "Identifier"),
+    Extmark.inline(0, 0, 1, "CodexCliStateMarker"),
+    Extmark.inline(0, 2, #text, "CodexCliStateEntryTitle"),
   })
   append_field(self, block, "  root", project_state.project.root)
 end
@@ -131,6 +153,8 @@ end
 ---@param self CodexCli.StatePreview
 ---@param block CodexCli.TextBlock
 ---@param target CodexCli.App.TargetSnapshot
+--- Adds active target data to the state output, including project or free path target.
+--- This keeps the selected project/session context obvious to the user.
 local function append_target(self, block, target)
   append_field(self, block, "target", target_label(target))
 end
@@ -138,13 +162,15 @@ end
 ---@param self CodexCli.StatePreview
 ---@param block CodexCli.TextBlock
 ---@param tab CodexCli.Tab.StateSnapshot
+--- Adds tab state summary rows with visibility and window metadata.
+--- It shows what session each tab is currently showing if any.
 local function append_tab(self, block, tab)
   local active = tab.active_project_root or "none"
   local showing = tab.session_key or "none"
   local text = string.format("> tab %d  active=%s  showing=%s", tab.tabpage, active, showing)
   push_line(self, block, text, {
-    Extmark.inline(0, 0, 1, "SpecialChar"),
-    Extmark.inline(0, 2, #text, "Identifier"),
+    Extmark.inline(0, 0, 1, "CodexCliStateMarker"),
+    Extmark.inline(0, 2, #text, "CodexCliStateEntryTitle"),
   })
   if tab.window_id ~= nil then
     append_field(self, block, "  window", tab.window_id)
@@ -152,12 +178,16 @@ local function append_tab(self, block, tab)
 end
 
 ---@param command CodexCli.CommandSpec
+--- Returns a short display name for a command by removing plugin prefix.
+--- This keeps command labels compact in the state floating list.
 ---@return string
 local function command_label(command)
   return command.name:gsub("^Codex", "")
 end
 
 ---@param command CodexCli.CommandSpec
+--- Adds an optional argument marker for commands that accept arguments.
+--- This signals command handlers that additional input is expected.
 ---@return string
 local function command_hint(command)
   if command.nargs and command.nargs ~= "0" then
@@ -167,6 +197,8 @@ local function command_hint(command)
 end
 
 ---@param self CodexCli.StatePreview
+--- Computes adaptive width for the command pane based on available labels and hints.
+--- The width is bounded by min/max constants and used during window layout.
 ---@return integer
 local function command_width(self)
   local width = COMMAND_WIDTH_MIN
@@ -178,6 +210,8 @@ local function command_width(self)
 end
 
 ---@param self CodexCli.StatePreview
+--- Computes adaptive width for the state pane from rendered content and config limits.
+--- This keeps the panel flexible across larger or smaller editor windows.
 ---@return integer
 local function state_width(self)
   local preview = self.config.state_preview
@@ -188,6 +222,8 @@ local function state_width(self)
 end
 
 ---@param self CodexCli.StatePreview
+--- Computes safe height for both panels based on UI and config constraints.
+--- The result avoids clipping when the editor is resized or constrained.
 ---@return integer
 local function panel_height(self)
   local preview = self.config.state_preview
@@ -202,6 +238,8 @@ local function panel_height(self)
   return math.min(max_height, available)
 end
 
+--- Creates a new ui state preview instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.StatePreview
 function Preview.new(config)
@@ -216,17 +254,27 @@ function Preview.new(config)
   return self
 end
 
+--- Implements the update_config path for ui state preview.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Preview:update_config(config)
   self.config = config
 end
 
+--- Checks a open condition for ui state preview.
+--- This gate keeps callers safe before continuing higher-level state transitions.
 ---@return boolean
 function Preview:is_open()
   return win_valid(self.command_win) and win_valid(self.state_win)
 end
 
+--- Creates or reuses state preview buffers.
+--- A small buffer cache avoids recreating state each render and keeps UI snappy.
 function Preview:ensure_buffers()
+--- Implements the make_buffer path for ui state preview.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function make_buffer(name, filetype)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
@@ -244,7 +292,12 @@ function Preview:ensure_buffers()
     or make_buffer("codex-cli://state-preview-state", "codex_cli_state")
 end
 
+--- Applies shared styling for both preview windows.
+--- Keeps numbering, wrapping, and focus cursorline behavior synchronized.
 function Preview:apply_window_style()
+--- Implements the apply path for ui state preview.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function apply(win, active)
     if not win_valid(win) then
       return
@@ -263,12 +316,19 @@ function Preview:apply_window_style()
   apply(self.state_win, self.focus == "state")
 end
 
+--- Implements the update_cursor path for ui state preview.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Preview:update_cursor()
+  --- Repositions the command cursor after selection changes.
+  --- No-op when command window is unavailable.
   if win_valid(self.command_win) then
     vim.api.nvim_win_set_cursor(self.command_win, { clamp(self.command_index, math.max(#self.commands, 1)), 0 })
   end
 end
 
+--- Sets active pane focus and aligns highlight/cursor in the focused window.
+--- Callers use this when users press pane switching keys.
 function Preview:set_focus(focus)
   self.focus = focus
   self:apply_window_style()
@@ -279,7 +339,12 @@ function Preview:set_focus(focus)
   self:update_cursor()
 end
 
+--- Binds keymaps used for closing, navigation, and command execution.
+--- Keeps both panes in sync and delegates to command/project-level handlers.
 function Preview:attach_keymaps()
+--- Implements the map path for ui state preview.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function map(buf, lhs, rhs)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
   end
@@ -322,6 +387,8 @@ function Preview:attach_keymaps()
   end)
 end
 
+--- Re-renders or creates the two floating windows and reapplies layout.
+--- Works on top of computed pane sizes and current state preview config.
 function Preview:update_windows()
   self:ensure_buffers()
   local config = self.config.state_preview
@@ -378,6 +445,8 @@ function Preview:update_windows()
   self:update_cursor()
 end
 
+--- Shows the state preview windows and enters the command pane by default.
+--- This is the preferred path when users toggle the feature on.
 function Preview:show()
   if self:is_open() then
     return
@@ -389,16 +458,18 @@ function Preview:show()
   self:set_focus("commands")
 end
 
+--- Closes both preview windows and releases tracked window ids.
+--- Buffer reuse allows quick re-open with preserved display content.
 function Preview:hide()
   for _, win in ipairs({ self.command_win, self.state_win }) do
-    if win_valid(win) then
-      pcall(vim.api.nvim_win_close, win, true)
-    end
+    ui_win.close(win)
   end
   self.command_win = nil
   self.state_win = nil
 end
 
+--- Renders the command list and updates the cursor for current command selection.
+--- This keeps the command panel aligned with command registry state.
 function Preview:render_commands()
   self.commands = Commands.list()
   self.command_index = clamp(self.command_index, #self.commands)
@@ -408,10 +479,10 @@ function Preview:render_commands()
     local name = command_label(command)
     local text = ("%s%s"):format(name, command_hint(command))
     local extmarks = {
-      Extmark.inline(0, 0, #name, "Identifier"),
+      Extmark.inline(0, 0, #name, "CodexCliStateCommandName"),
     }
     if #text > #name then
-      extmarks[#extmarks + 1] = Extmark.inline(0, #name, #text, "Comment")
+      extmarks[#extmarks + 1] = Extmark.inline(0, #name, #text, "CodexCliStateCommandHint")
     end
     block:append_line(text, extmarks)
   end
@@ -425,12 +496,15 @@ function Preview:render_commands()
 end
 
 ---@param snapshot CodexCli.App.StateSnapshot
+--- Renders project/tab/state details from an app snapshot into the state pane.
+--- The snapshot is assumed to already include project details and resolved target.
+---@param snapshot CodexCli.App.StateSnapshot
 function Preview:render_state(snapshot)
   self.max_state_width = 0
 
   local block = TextBlock.new()
   push_line(self, block, "Focus", {
-    Extmark.inline(0, 0, #"Focus", "Directory"),
+    Extmark.inline(0, 0, #"Focus", "CodexCliStateSection"),
   })
   append_field(self, block, "tab", snapshot.current_tab.tabpage)
   append_field(self, block, "path", snapshot.current_path)
@@ -440,7 +514,7 @@ function Preview:render_state(snapshot)
 
   push_line(self, block, "")
   push_line(self, block, "Current Tab", {
-    Extmark.inline(0, 0, #"Current Tab", "Directory"),
+    Extmark.inline(0, 0, #"Current Tab", "CodexCliStateSection"),
   })
   append_field(self, block, "visible", snapshot.current_tab.has_visible_window)
   append_field(self, block, "session", snapshot.current_tab.session_key or "none")
@@ -448,12 +522,12 @@ function Preview:render_state(snapshot)
 
   push_line(self, block, "")
   push_line(self, block, "Projects", {
-    Extmark.inline(0, 0, #"Projects", "Directory"),
+    Extmark.inline(0, 0, #"Projects", "CodexCliStateSection"),
   })
   if #snapshot.project_states == 0 then
     push_line(self, block, "> none", {
-      Extmark.inline(0, 0, 1, "SpecialChar"),
-      Extmark.inline(0, 2, #"> none", "Identifier"),
+      Extmark.inline(0, 0, 1, "CodexCliStateMarker"),
+      Extmark.inline(0, 2, #"> none", "CodexCliStateEntryTitle"),
     })
   else
     for _, project_state in ipairs(snapshot.project_states) do
@@ -463,12 +537,12 @@ function Preview:render_state(snapshot)
 
   push_line(self, block, "")
   push_line(self, block, "Tabs", {
-    Extmark.inline(0, 0, #"Tabs", "Directory"),
+    Extmark.inline(0, 0, #"Tabs", "CodexCliStateSection"),
   })
   if #snapshot.tabs == 0 then
     push_line(self, block, "> none", {
-      Extmark.inline(0, 0, 1, "SpecialChar"),
-      Extmark.inline(0, 2, #"> none", "Identifier"),
+      Extmark.inline(0, 0, 1, "CodexCliStateMarker"),
+      Extmark.inline(0, 2, #"> none", "CodexCliStateEntryTitle"),
     })
   else
     for _, tab in ipairs(snapshot.tabs) do
@@ -480,6 +554,9 @@ function Preview:render_state(snapshot)
 end
 
 ---@param delta integer
+--- Moves command selection by delta and updates cursor.
+--- No-op when command list is empty.
+---@param delta integer
 function Preview:move_command_selection(delta)
   if #self.commands == 0 then
     return
@@ -488,6 +565,8 @@ function Preview:move_command_selection(delta)
   self:update_cursor()
 end
 
+--- Executes the currently selected command and closes preview unless it's a toggle.
+--- Command execution is routed through Vim commands to reuse existing Ex entry points.
 function Preview:execute_selected_command()
   local command = self.commands[self.command_index]
   if not command then
@@ -506,6 +585,9 @@ function Preview:execute_selected_command()
 end
 
 ---@param snapshot CodexCli.App.StateSnapshot
+--- Full render pass for both command and state windows.
+--- It ensures buffer creation and updates all panels in one call.
+---@param snapshot CodexCli.App.StateSnapshot
 function Preview:render(snapshot)
   self:ensure_buffers()
   self:render_commands()
@@ -514,6 +596,8 @@ function Preview:render(snapshot)
 end
 
 ---@param app CodexCli.App
+--- Refreshes the currently open preview from latest app state.
+---@param app CodexCli.App
 function Preview:refresh(app)
   if not self:is_open() then
     return
@@ -521,6 +605,8 @@ function Preview:refresh(app)
   self:render(app:state_snapshot())
 end
 
+--- Toggles the ui state preview state for the active context.
+--- It is typically invoked from user commands and keeps preview/session state in sync.
 ---@param app CodexCli.App
 function Preview:toggle(app)
   if self:is_open() then

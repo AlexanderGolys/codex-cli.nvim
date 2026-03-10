@@ -31,3 +31,6 @@ Thumbs.db
 /build/
 /dist/
 .nvimlog
+**.json
+STYLE_GUIDELINES.md
+AGENTS.md

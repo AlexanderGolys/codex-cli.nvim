@@ -1,5 +1,9 @@
+--- Defines the CodexCli.Extmark.Coord type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@alias CodexCli.Extmark.Coord [integer, integer] # 0-based { row, col }, matching nvim_buf_set_extmark().
 
+--- Defines the CodexCli.Extmark type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.Extmark
 ---@field start_pos CodexCli.Extmark.Coord # Inclusive start position, matching nvim_buf_set_extmark().
 ---@field end_pos CodexCli.Extmark.Coord # Exclusive end position, matching nvim_buf_set_extmark().
@@ -13,6 +17,8 @@ local DEFAULT_OPTS = {
   strict = false,
 }
 
+--- Creates a new ui extmark instance from this module.
+--- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param start_pos CodexCli.Extmark.Coord
 ---@param end_pos CodexCli.Extmark.Coord
 ---@param hl_group? string
@@ -29,6 +35,9 @@ function Extmark.new(start_pos, end_pos, hl_group, priority, opts)
   return self
 end
 
+--- Implements the coord path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param row integer
 ---@param col integer
 ---@return CodexCli.Extmark.Coord
@@ -36,6 +45,9 @@ function Extmark.coord(row, col)
   return { row, col }
 end
 
+--- Implements the inline path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param row integer
 ---@param start_col integer
 ---@param end_col integer
@@ -47,6 +59,9 @@ function Extmark.inline(row, start_col, end_col, hl_group, priority, opts)
   return Extmark.new(Extmark.coord(row, start_col), Extmark.coord(row, end_col), hl_group, priority, opts)
 end
 
+--- Implements the line path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param row integer
 ---@param hl_group string
 ---@param priority? integer
@@ -60,6 +75,9 @@ function Extmark.line(row, hl_group, priority, opts)
   return Extmark.new(Extmark.coord(row, 0), Extmark.coord(row + 1, 0), nil, priority, line_opts)
 end
 
+--- Implements the block path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param start_row integer
 ---@param end_row integer
 ---@param hl_group string
@@ -74,6 +92,9 @@ function Extmark.block(start_row, end_row, hl_group, priority, opts)
   return marks
 end
 
+--- Implements the shifted path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param row_offset integer
 ---@return CodexCli.Extmark
 function Extmark:shifted(row_offset)
@@ -86,6 +107,9 @@ function Extmark:shifted(row_offset)
   )
 end
 
+--- Implements the to_opts path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return vim.api.keyset.set_extmark
 function Extmark:to_opts()
   local opts = vim.deepcopy(self.opts)
@@ -100,6 +124,9 @@ function Extmark:to_opts()
   return opts
 end
 
+--- Implements the place path for ui extmark.
+--- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
+--- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buf integer
 ---@param ns integer
 function Extmark:place(buf, ns)
