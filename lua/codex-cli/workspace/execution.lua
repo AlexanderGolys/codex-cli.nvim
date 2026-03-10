@@ -74,6 +74,36 @@ local function trim(value)
   return vim.trim(value or "")
 end
 
+--- Computes a stable directory name for one project's queued prompt receipts.
+---@param project_root string
+---@return string
+local function project_id(project_root)
+  return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
+end
+
+--- Resolves the shared receipt root stored under plugin data.
+---@param config CodexCli.Config.Values
+---@return string
+local function receipts_dir(config)
+  local dir = trim(config.prompt_execution.receipts_dir)
+  if dir ~= "" then
+    return fs.normalize(vim.fn.expand(dir))
+  end
+  return fs.join(vim.fn.stdpath("data"), "codex-cli", "prompt-executions")
+end
+
+--- Resolves the legacy per-project receipt directory when configured.
+---@param config CodexCli.Config.Values
+---@param project_root string
+---@return string?
+local function legacy_receipts_dir(config, project_root)
+  local dir = trim(config.prompt_execution.relative_dir)
+  if dir == "" then
+    return nil
+  end
+  return fs.join(project_root, dir)
+end
+
 --- Resolves the configured directory where generated skill files are stored.
 --- Returns nil when skill mode is not configured.
 --- This controls whether `$prompt` or `$<skill>` execution mode is active.
@@ -188,6 +218,33 @@ function Execution:legacy_skill_file()
   return path
 end
 
+--- Returns the project-scoped directory used for queued prompt receipts.
+---@param project CodexCli.Project
+---@return string
+function Execution:project_receipts_dir(project)
+  return fs.join(receipts_dir(self.config), project_id(project.root))
+end
+
+--- Returns the current canonical receipt path for one queued prompt item.
+---@param project CodexCli.Project
+---@param item CodexCli.QueueItem
+---@return string
+function Execution:current_receipt_path(project, item)
+  return fs.join(self:project_receipts_dir(project), item.id .. ".json")
+end
+
+--- Returns the legacy project-local receipt path when that migration path exists.
+---@param project CodexCli.Project
+---@param item CodexCli.QueueItem
+---@return string?
+function Execution:legacy_receipt_path(project, item)
+  local dir = legacy_receipts_dir(self.config, project.root)
+  if not dir then
+    return nil
+  end
+  return fs.join(dir, item.id .. ".json")
+end
+
 --- Updates the generated skill file and removes legacy duplicates if they match the new content.
 --- This keeps tool-call contract consistency while avoiding stale instructions.
 function Execution:ensure_prompt_skill()
@@ -211,7 +268,7 @@ end
 ---@param item CodexCli.QueueItem
 ---@return string
 function Execution:receipt_path(project, item)
-  return fs.join(project.root, self.config.prompt_execution.relative_dir, item.id .. ".json")
+  return self:current_receipt_path(project, item)
 end
 
 --- Implements the clear_receipt path for workspace execution.
@@ -220,7 +277,11 @@ end
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 function Execution:clear_receipt(project, item)
-  fs.remove(self:receipt_path(project, item))
+  fs.remove(self:current_receipt_path(project, item))
+  local legacy = self:legacy_receipt_path(project, item)
+  if legacy then
+    fs.remove(legacy)
+  end
 end
 
 --- Implements the dispatch_prompt path for workspace execution.
@@ -230,7 +291,7 @@ end
 ---@param item CodexCli.QueueItem
 ---@return string
 function Execution:dispatch_prompt(project, item)
-  local receipt_path = self:receipt_path(project, item)
+  local receipt_path = self:current_receipt_path(project, item)
   fs.ensure_dir(fs.dirname(receipt_path))
   local receipt = {
     version = RECEIPT_VERSION,
@@ -267,8 +328,13 @@ end
 ---@param item CodexCli.QueueItem
 ---@return CodexCli.Workspace.ExecutionReceipt?
 function Execution:read_receipt(project, item)
-  local path = self:receipt_path(project, item)
-  local data = fs.read_json(path, nil)
+  local data = fs.read_json(self:current_receipt_path(project, item), nil)
+  if type(data) ~= "table" then
+    local legacy = self:legacy_receipt_path(project, item)
+    if legacy then
+      data = fs.read_json(legacy, nil)
+    end
+  end
   if type(data) ~= "table" then
     return
   end

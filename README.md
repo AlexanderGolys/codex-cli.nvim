@@ -169,7 +169,7 @@ Example with `lazy.nvim`:
     "folke/snacks.nvim",
   },
   opts = {
-    codex_cmd = { "bash", "-lc", "codex" },
+    codex_cmd = { "codex" },
     prompt_execution = {
       skills_dir = vim.fn.expand("~/.codex/skills"),
     },
@@ -189,7 +189,7 @@ Current defaults:
 
 ```lua
 require("codex-cli").setup({
-  codex_cmd = { "bash", "-lc", "codex" },
+  codex_cmd = { "codex" },
   storage = {
     projects_file = vim.fn.stdpath("data") .. "/codex-cli/projects.json",
     workspaces_dir = vim.fn.stdpath("data") .. "/codex-cli/workspaces",
@@ -228,12 +228,8 @@ require("codex-cli").setup({
       -- custom highlight specs
     },
   },
-  prompt_picker = {
-    highlights = {
-      -- deprecated compatibility aliases
-    },
-  },
   prompt_execution = {
+    receipts_dir = vim.fn.stdpath("data") .. "/codex-cli/prompt-executions",
     relative_dir = ".codex-cli/prompt-executions",
     poll_ms = 5000,
     skills_dir = nil,
@@ -247,7 +243,7 @@ require("codex-cli").setup({
 `codex_cmd`
 
 - Command used to start Codex terminals.
-- Default is `bash -lc codex` so shell startup files are honored.
+- Default is `codex`.
 
 `storage.projects_file`
 
@@ -257,9 +253,13 @@ require("codex-cli").setup({
 
 - Per-project queue data and prompt assets are stored here.
 
+`prompt_execution.receipts_dir`
+
+- Receipt files are written under `stdpath("data")/codex-cli/prompt-executions`.
+
 `prompt_execution.relative_dir`
 
-- Receipt files are written inside each project at this relative path.
+- Legacy project-local receipt path kept only so older in-flight jobs can still be detected and cleaned up.
 
 `prompt_execution.skills_dir`
 
@@ -270,10 +270,6 @@ require("codex-cli").setup({
 `highlights.groups`
 
 - Preferred way to customize prompt/workspace highlight groups.
-
-`prompt_picker.highlights`
-
-- Legacy compatibility aliases mapped into the internal highlight groups.
 
 ## Commands
 

@@ -12,7 +12,7 @@ local git = require("codex-cli.util.git")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.ProjectDetails.Snapshot
 ---@field file_count integer
----@field avg_code_lines_per_file? number
+---@field avg_lines_per_file? number
 ---@field remote_name? string
 ---@field last_codex_activity_at? integer
 ---@field last_file_modified_at? integer
@@ -50,33 +50,6 @@ local EXCLUDED_DIRS = {
   ["coverage"] = true,
   ["target"] = true,
   [".codex-cli"] = true,
-}
-local COMMENT_PREFIXES = {
-  c = { "//", "/*", "*", "*/" },
-  cpp = { "//", "/*", "*", "*/" },
-  css = { "/*", "*", "*/" },
-  dockerfile = { "#" },
-  gitcommit = { "#" },
-  go = { "//", "/*", "*", "*/" },
-  html = { "<!--", "-->" },
-  java = { "//", "/*", "*", "*/" },
-  javascript = { "//", "/*", "*", "*/" },
-  javascriptreact = { "//", "/*", "*", "*/" },
-  jsonc = { "//", "/*", "*", "*/" },
-  lua = { "--" },
-  make = { "#" },
-  markdown = { "<!--", "-->" },
-  python = { "#" },
-  ruby = { "#" },
-  rust = { "//", "/*", "*", "*/" },
-  sh = { "#" },
-  sql = { "--" },
-  toml = { "#" },
-  typescript = { "//", "/*", "*", "*/" },
-  typescriptreact = { "//", "/*", "*", "*/" },
-  vim = { '"' },
-  xml = { "<!--", "-->" },
-  yaml = { "#" },
 }
 local LANGUAGE_LABELS = {
   c = "c",
@@ -165,12 +138,10 @@ function Details:write_metadata(project_root, metadata)
   fs.write_json(self:metadata_path(project_root), metadata)
 end
 
---- Implements the touch_codex_activity path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+--- Records the latest Codex interaction timestamp for a project.
 ---@param project CodexCli.Project
 ---@param timestamp? integer
-function Details:touch_codex_activity(project, timestamp)
+function Details:touch_activity(project, timestamp)
   local project_root = project.root
   local metadata = self:read_metadata(project_root)
   metadata.last_codex_activity_at = timestamp or os.time()
@@ -216,68 +187,10 @@ local function language_name(filetype)
   return LANGUAGE_LABELS[filetype] or filetype
 end
 
---- Checks a comment line condition for project details.
---- This gate keeps callers safe before continuing higher-level state transitions.
----@param filetype string?
----@param line string
----@return boolean
-local function is_comment_line(filetype, line)
-  local prefixes = filetype and COMMENT_PREFIXES[filetype] or nil
-  if not prefixes then
-    return false
-  end
-  for _, prefix in ipairs(prefixes) do
-    if vim.startswith(line, prefix) then
-      return true
-    end
-  end
-  return false
-end
-
---- Implements the excluded_path path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param path string
----@return boolean
-local function excluded_path(path)
-  for name in pairs(EXCLUDED_DIRS) do
-    if path:find("/" .. name .. "/", 1, true) then
-      return true
-    end
-  end
-  return false
-end
-
---- Implements the list_files path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+--- Walks the project tree while skipping known heavy/generated directories.
 ---@param root string
 ---@return string[]
 local function list_files(root)
-  if vim.fn.executable("rg") == 1 then
-    local args = {
-      "rg",
-      "--files",
-      "--hidden",
-    }
-    for name in pairs(EXCLUDED_DIRS) do
-      args[#args + 1] = "-g"
-      args[#args + 1] = "!" .. name
-      args[#args + 1] = "-g"
-      args[#args + 1] = "!" .. name .. "/**"
-    end
-    args[#args + 1] = "."
-
-    local result = vim.system(args, { cwd = root, text = true }):wait()
-    if result.code == 0 then
-      local files = {} ---@type string[]
-      for line in vim.gsplit(result.stdout or "", "\n", { plain = true, trimempty = true }) do
-        files[#files + 1] = fs.join(root, line)
-      end
-      return files
-    end
-  end
-
   local files = {} ---@type string[]
   local stack = { root }
   while #stack > 0 do
@@ -288,22 +201,30 @@ local function list_files(root)
         if not EXCLUDED_DIRS[name] then
           stack[#stack + 1] = path
         end
-      elseif entry_type == "file" and not excluded_path(path) then
-        files[#files + 1] = path
+      elseif entry_type == "file" then
+        local excluded = false
+        for excluded_name in pairs(EXCLUDED_DIRS) do
+          if path:find("/" .. excluded_name .. "/", 1, true) then
+            excluded = true
+            break
+          end
+        end
+        if not excluded then
+          files[#files + 1] = path
+        end
       end
     end
   end
   return files
 end
 
---- Implements the code_lines_for_file path for project details.
+--- Implements the line_count_for_file path for project details.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
----@param filetype string?
 ---@return integer?, boolean
-local function code_lines_for_file(path, filetype)
-  local file = io.open(path, "rb")
+local function line_count_for_file(path)
+  local file = io.open(path, "r")
   if not file then
     return nil, false
   end
@@ -318,11 +239,8 @@ local function code_lines_for_file(path, filetype)
   end
 
   local line_count = 0
-  for raw_line in (content .. "\n"):gmatch("([^\n]*)\n") do
-    local line = vim.trim(raw_line:gsub("\r$", ""))
-    -- if line ~= "" and not is_comment_line(filetype, line) then
-      line_count = line_count + 1
-    -- end
+  for _ in (content .. "\n"):gmatch("([^\n]*)\n") do
+    line_count = line_count + 1
   end
   return line_count, true
 end
@@ -337,8 +255,8 @@ function Details:compute(project)
   local file_count = 0
   local language_totals = {} ---@type table<string, integer>
   local language_file_count = 0
-  local code_lines_total = 0
-  local code_file_count = 0
+  local line_total = 0
+  local line_file_count = 0
   local last_file_modified_at ---@type integer?
 
   for _, path in ipairs(files) do
@@ -359,10 +277,10 @@ function Details:compute(project)
         language_file_count = language_file_count + 1
       end
 
-      local code_lines, is_text = code_lines_for_file(path, filetype)
-      if is_text and code_lines ~= nil and language then
-        code_lines_total = code_lines_total + code_lines
-        code_file_count = code_file_count + 1
+      local line_count, is_text = line_count_for_file(path)
+      if is_text and line_count ~= nil and language then
+        line_total = line_total + line_count
+        line_file_count = line_file_count + 1
       end
     end
   end
@@ -385,7 +303,7 @@ function Details:compute(project)
   local metadata = self:read_metadata(project.root)
   return {
     file_count = file_count,
-    avg_code_lines_per_file = code_file_count > 0 and (code_lines_total / code_file_count) or nil,
+    avg_lines_per_file = line_file_count > 0 and (line_total / line_file_count) or nil,
     remote_name = git.remote_name(project.root),
     last_codex_activity_at = metadata.last_codex_activity_at,
     last_file_modified_at = last_file_modified_at,

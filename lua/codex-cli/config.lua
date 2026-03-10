@@ -40,13 +40,10 @@ local HighlightConfig = require("codex-cli.config.highlights")
 ---@class CodexCli.Config.Highlights
 ---@field groups table<string, CodexCli.Config.HighlightSpec>
 
---- Prompt picker display overrides, including compatibility aliases.
----@class CodexCli.Config.PromptPicker
----@field highlights? table<string, string> # Deprecated compatibility aliases for prompt display groups.
-
 --- Settings driving prompt dispatch and external completion polling.
 ---@class CodexCli.Config.PromptExecution
----@field relative_dir string
+---@field receipts_dir string
+---@field relative_dir? string # Legacy project-local receipt path retained only for migration/cleanup.
 ---@field poll_ms integer
 ---@field skills_dir? string
 ---@field skill_name string
@@ -61,7 +58,6 @@ local HighlightConfig = require("codex-cli.config.highlights")
 ---@field queue_workspace CodexCli.Config.QueueWorkspace
 ---@field error_prompt CodexCli.Config.ErrorPrompt
 ---@field highlights CodexCli.Config.Highlights
----@field prompt_picker CodexCli.Config.PromptPicker
 ---@field prompt_execution CodexCli.Config.PromptExecution
 
 --- Root config object exported by `require("codex-cli.config")`.
@@ -71,7 +67,7 @@ local Config = {}
 Config.__index = Config
 
 local defaults = {
-  codex_cmd = { "bash", "-lc", "codex" },
+  codex_cmd = { "codex" },
   storage = {
     projects_file = vim.fn.stdpath("data") .. "/codex-cli/projects.json",
     workspaces_dir = vim.fn.stdpath("data") .. "/codex-cli/workspaces",
@@ -109,28 +105,13 @@ local defaults = {
   },
 
   highlights = vim.deepcopy(HighlightConfig),
-
-  prompt_picker = {
-    highlights = {},
-  },
-
   prompt_execution = {
+    receipts_dir = vim.fn.stdpath("data") .. "/codex-cli/prompt-executions",
     relative_dir = ".codex-cli/prompt-executions",
     poll_ms = 5000,
     skills_dir = nil,
     skill_name = "prompt-nvim-codex-cli",
   },
-}
-
-local prompt_picker_highlight_map = {
-  todo_title = "CodexCliPromptPickerTodoTitle",
-  error_title = "CodexCliPromptPickerErrorTitle",
-  visual_title = "CodexCliPromptPickerVisualTitle",
-  adjustment_title = "CodexCliPromptPickerAdjustmentTitle",
-  refactor_title = "CodexCliPromptPickerRefactorTitle",
-  idea_title = "CodexCliPromptPickerIdeaTitle",
-  explain_title = "CodexCliPromptPickerExplainTitle",
-  prompt_text = "CodexCliPromptPickerPromptText",
 }
 
 --- Checks whether a value is a dictionary-like table for merge operations.
@@ -265,21 +246,6 @@ end
 ---@return CodexCli.Config.Values
 function Config:setup(opts)
   self.values = Config.merge(vim.deepcopy(defaults), opts or {})
-  local legacy = self.values.prompt_picker and self.values.prompt_picker.highlights or nil
-  if legacy then
-    for key, group in pairs(legacy) do
-      local target = prompt_picker_highlight_map[key]
-      if target and group and group ~= "" then
-        local spec = vim.deepcopy(self.values.highlights.groups[target] or {})
-        spec.link = nil
-        spec.fg = { from = group }
-        if key ~= "prompt_text" then
-          spec.bold = true
-        end
-        self.values.highlights.groups[target] = spec
-      end
-    end
-  end
   return self.values
 end
 

@@ -72,30 +72,6 @@ local M = {
     CodexCliPromptPreviewText = {
       fg = { from = "Directory" },
     },
-    CodexCliPromptPickerTodoTitle = {
-      link = "CodexCliPromptTodoTitle",
-    },
-    CodexCliPromptPickerErrorTitle = {
-      link = "CodexCliPromptErrorTitle",
-    },
-    CodexCliPromptPickerVisualTitle = {
-      link = "CodexCliPromptVisualTitle",
-    },
-    CodexCliPromptPickerAdjustmentTitle = {
-      link = "CodexCliPromptAdjustmentTitle",
-    },
-    CodexCliPromptPickerRefactorTitle = {
-      link = "CodexCliPromptRefactorTitle",
-    },
-    CodexCliPromptPickerIdeaTitle = {
-      link = "CodexCliPromptIdeaTitle",
-    },
-    CodexCliPromptPickerExplainTitle = {
-      link = "CodexCliPromptExplainTitle",
-    },
-    CodexCliPromptPickerPromptText = {
-      link = "CodexCliPromptPreviewText",
-    },
     CodexCliQueueProjectActive = {
       fg = { from = "Directory" },
       bold = true,

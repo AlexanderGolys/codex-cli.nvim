@@ -57,53 +57,46 @@ end
 ---@param cmd string[]
 ---@param opts vim.fn.jobstart.Opts
 ---@param buf number
----@return boolean, integer?
+---@return integer
 local function start_with_snacks(cmd, opts, buf)
   local started_job ---@type integer?
-  local ok, err = pcall(function()
-    local Snacks = require("snacks")
-    Snacks.terminal.open(cmd, {
-      cwd = opts.cwd,
-      interactive = false,
-      auto_close = false,
-      start_insert = false,
-      auto_insert = false,
-      win = {
-        buf = buf,
-        show = false,
-        enter = false,
-        fixbuf = true,
-        bo = {
-          filetype = "codex_cli_terminal",
-        },
+  local Snacks = require("snacks")
+  Snacks.terminal(cmd, {
+    cwd = opts.cwd,
+    interactive = false,
+    auto_close = false,
+    start_insert = false,
+    auto_insert = false,
+    win = {
+      buf = buf,
+      show = false,
+      enter = false,
+      fixbuf = true,
+      bo = {
+        filetype = "codex_cli_terminal",
       },
+    },
 --- Implements the override path for terminal session.
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
-      override = function(terminal_cmd, terminal_opts)
-        local terminal = Snacks.win(terminal_opts.win)
-        vim.b[buf].snacks_terminal = {
-          cmd = terminal_cmd,
-          cwd = terminal_opts.cwd,
-        }
-        started_job = vim.api.nvim_buf_call(buf, function()
-          return termopen(terminal_cmd, opts)
-        end)
-        return terminal
-      end,
-    })
+    override = function(terminal_cmd, terminal_opts)
+      local terminal = Snacks.win(terminal_opts.win)
+      vim.b[buf].snacks_terminal = {
+        cmd = terminal_cmd,
+        cwd = terminal_opts.cwd,
+      }
+      started_job = vim.api.nvim_buf_call(buf, function()
+        return termopen(terminal_cmd, opts)
+      end)
+      return terminal
+    end,
+  })
 
-    if type(started_job) ~= "number" or started_job <= 0 then
-      error("invalid terminal job")
-    end
-  end)
-
-  if not ok then
-    notify.warn(("Falling back to raw terminal startup: %s"):format(tostring(err)))
-    return false
+  if type(started_job) ~= "number" or started_job <= 0 then
+    error("Failed to start Codex session with Snacks terminal")
   end
 
-  return true, started_job
+  return started_job
 end
 
 --- Creates a new terminal session instance from this module.
@@ -235,12 +228,7 @@ function Session:ensure_started()
       end,
     }
 
-    local started, snacks_job = start_with_snacks(self.cmd, start_opts, self.buf)
-    if started then
-      return snacks_job
-    end
-
-    return termopen(self.cmd, start_opts)
+    return start_with_snacks(self.cmd, start_opts, self.buf)
   end)
 
   if not ok or type(job_id) ~= "number" or job_id <= 0 then

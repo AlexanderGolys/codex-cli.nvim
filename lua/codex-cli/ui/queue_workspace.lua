@@ -368,11 +368,11 @@ end
 ---@param summary CodexCli.ProjectQueueSummary
 ---@return string[]
 local function project_detail_lines(app, summary)
-  local details = app:project_details(summary.project)
+  local details = app.project_details_store:get(summary.project)
   return {
     ("    Files:%d  Avg LOC:%s  Remote:%s  Codex:%s"):format(
       details.file_count,
-      format_avg_lines(details.avg_code_lines_per_file),
+      format_avg_lines(details.avg_lines_per_file),
       details.remote_name or "-",
       format_timestamp(details.last_codex_activity_at)
     ),
@@ -942,7 +942,7 @@ function Workspace:render_queue()
         }
         self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
         local item_extmarks = {
-          Extmark.inline(0, 0, #title_text, PromptHighlight.title_group(prompt_item_kind(item), "prompt")),
+          Extmark.inline(0, 0, #title_text, PromptHighlight.title_group(prompt_item_kind(item))),
         }
         if #item_text > #title_text then
           item_extmarks[#item_extmarks + 1] =
@@ -1025,7 +1025,7 @@ function Workspace:activate_selected_project()
   if not project then
     return
   end
-  self.app:activate_project_session(project)
+  self.app.project_actions:activate_project_session(project)
   self:refresh()
 end
 
@@ -1037,7 +1037,7 @@ function Workspace:deactivate_selected_project()
   if not project then
     return
   end
-  self.app:deactivate_project_session(project)
+  self.app.project_actions:deactivate_project_session(project)
   self:refresh()
 end
 
@@ -1051,7 +1051,7 @@ function Workspace:open_selected_project()
   end
   self:close()
   vim.schedule(function()
-    self.app:open_project_workspace_target(project)
+    self.app.project_actions:open_project_workspace_target(project)
   end)
 end
 
@@ -1096,7 +1096,7 @@ function Workspace:add_todo()
     if not spec then
       return
     end
-    self.app:add_project_todo(project, {
+    self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
     })
@@ -1124,7 +1124,7 @@ function Workspace:edit_queue_item()
     if not spec then
       return
     end
-    self.app:edit_queue_item(project, item.id, {
+    self.app.queue_actions:edit_queue_item(project, item.id, {
       title = spec.title,
       details = spec.details,
     })
@@ -1147,7 +1147,7 @@ function Workspace:implement_queue_item()
     return
   end
 
-  self.app:implement_queue_item(project, item.id)
+  self.app.queue_actions:implement_queue_item(project, item.id)
   self:refresh()
 end
 
@@ -1161,7 +1161,7 @@ function Workspace:implement_queued_items()
     return
   end
 
-  self.app:implement_queued_items(project)
+  self.app.queue_actions:implement_queued_items(project)
   self:refresh()
 end
 
@@ -1175,7 +1175,7 @@ function Workspace:move_queue_item()
     notify.warn("No queue item selected")
     return
   end
-  self.app:advance_queue_item(project, item.id)
+  self.app.queue_actions:advance_queue_item(project, item.id)
   self.queue_index = 1
   self:refresh()
 end
@@ -1195,7 +1195,7 @@ function Workspace:move_queue_item_back()
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function move_back(copy)
-    self.app:rewind_queue_item(project, item.id, { copy = copy })
+    self.app.queue_actions:rewind_queue_item(project, item.id, { copy = copy })
     self.queue_index = 1
     self:refresh()
   end
@@ -1237,7 +1237,7 @@ function Workspace:move_queue_item_to_project()
   local current_index = self.project_index
   self:close()
   vim.schedule(function()
-    self.app.picker:pick({
+    ui.pick_project(self.app:projects_for_queue_workspace(), {
       prompt = ("Move '%s' to project"):format(item.title),
     }, function(target_project)
       if not target_project then
@@ -1275,7 +1275,7 @@ function Workspace:prompt_move_to_project(project, item, queue_name, target_proj
 --- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function move_to_project(copy)
-    self.app:move_queue_item_to_project(project, item.id, target_project, {
+    self.app.queue_actions:move_queue_item_to_project(project, item.id, target_project, {
       copy = copy,
     })
     on_complete()
@@ -1352,7 +1352,7 @@ function Workspace:delete_queue_item()
     if not confirmed then
       return
     end
-    self.app:delete_queue_item(project, item.id)
+    self.app.queue_actions:delete_queue_item(project, item.id)
     self.queue_index = 1
     self:refresh()
   end)

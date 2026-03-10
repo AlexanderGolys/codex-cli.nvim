@@ -49,7 +49,7 @@ function QueueActions:dispatch_item(project, item)
   if not session:send(self.app.execution:dispatch_prompt(project, item)) then
     return false
   end
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
   return true
 end
 
@@ -85,7 +85,7 @@ function QueueActions:add_project_todo(project, spec)
     return
   end
 
-  local normalized = self.app:normalize_prompt_spec(project, {
+  local normalized = self.app.prompt_actions:normalize_spec(project, {
     title = title,
     details = spec.details,
   })
@@ -112,7 +112,7 @@ function QueueActions:edit_queue_item(project, item_id, spec)
     return
   end
 
-  local normalized = self.app:normalize_prompt_spec(project, {
+  local normalized = self.app.prompt_actions:normalize_spec(project, {
     title = title,
     details = spec.details and vim.trim(spec.details) ~= "" and spec.details or nil,
   })
@@ -177,7 +177,7 @@ end
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.AppPromptActions.ResolveOpts
 function QueueActions:implement_next_queued_item(opts)
-  self.app:pick_or_run_todo_project(self.app:resolve_todo_project(opts), function(project)
+  self.app.prompt_actions:pick_project(self.app.prompt_actions:resolve_project(opts), function(project)
     local next_item = self.app.queue:queues(project).queued[1]
     if not next_item then
       notify.warn(("No queued items for %s"):format(project.name))
@@ -192,7 +192,7 @@ end
 --- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.AppPromptActions.ResolveOpts
 function QueueActions:implement_all_queued_items(opts)
-  self.app:pick_or_run_todo_project(self.app:resolve_todo_project(opts), function(project)
+  self.app.prompt_actions:pick_project(self.app.prompt_actions:resolve_project(opts), function(project)
     self:implement_queued_items(project)
   end)
 end

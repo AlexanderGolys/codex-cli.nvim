@@ -1,4 +1,5 @@
 local fs = require("codex-cli.util.fs")
+local git = require("codex-cli.util.git")
 local notify = require("codex-cli.util.notify")
 local ui = require("codex-cli.ui.select")
 
@@ -8,6 +9,35 @@ local ui = require("codex-cli.ui.select")
 ---@field app CodexCli.App
 local ProjectActions = {}
 ProjectActions.__index = ProjectActions
+
+---@param buf? number
+---@return string
+local function current_path(buf)
+  return fs.current_path(buf)
+end
+
+---@param path? string
+---@return string
+local function cwd_for_path(path)
+  return fs.cwd_for_path(path or current_path())
+end
+
+---@param registry CodexCli.ProjectRegistry
+---@param path? string
+---@return CodexCli.Project?
+local function project_for_path(registry, path)
+  return registry:find_for_path(path or current_path())
+end
+
+---@param registry CodexCli.ProjectRegistry
+---@param path? string
+---@return string?
+local function git_candidate(registry, path)
+  local root = git.get_root(path or current_path())
+  if root and not registry:has_root(root) then
+    return root
+  end
+end
 
 --- Creates a new app project actions instance from this module.
 --- It is used by callers to bootstrap module state before running higher-level plugin actions.
@@ -80,7 +110,7 @@ function ProjectActions:maybe_prompt_active_project(buffer)
     return
   end
 
-  local project = self.app.detector:project_for_path(self.app.detector:current_path(buffer))
+  local project = project_for_path(self.app.registry, current_path(buffer))
   if project then
     self:prompt_set_active_project(project, state)
   end
@@ -98,7 +128,7 @@ function ProjectActions:activate_project_session(project)
   end
 
   self:activate_project(project.root)
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
   notify.notify(("Activated Codex session for %s"):format(project.name))
   return session
 end
@@ -136,7 +166,7 @@ function ProjectActions:open_project_workspace_target(project)
     kind = "project",
     project = project,
   })
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
   self.app:refresh_state_preview()
 end
 
@@ -157,7 +187,7 @@ function ProjectActions:open_project_todo_file(project)
 
   self:activate_project(project.root)
   vim.cmd.edit(vim.fn.fnameescape(path))
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
   self.app:refresh_state_preview()
 end
 
@@ -194,7 +224,7 @@ function ProjectActions:set_current_project(project)
     self.app:refresh_state_preview()
     return
   end
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
   self.app:refresh_state_preview()
   notify.notify(("Set current project to %s"):format(project.name))
 end
@@ -225,7 +255,7 @@ function ProjectActions:toggle()
   self.app.terminals:show_in_tab(state, session)
 
   if target.kind == "project" then
-    self.app:touch_project_activity(target.project)
+    self.app.project_details_store:touch_activity(target.project)
   end
   self.app:refresh_state_preview()
   if target.kind == "free" then
@@ -295,7 +325,7 @@ function ProjectActions:focus_project_session(project)
     return
   end
 
-  self.app:touch_project_activity(project)
+  self.app.project_details_store:touch_activity(project)
 end
 
 --- Implements the use_existing_project path for app project actions.
@@ -317,8 +347,8 @@ end
 ---@param opts? { name?: string, root?: string }
 function ProjectActions:add_project(opts)
   opts = opts or {}
-  local current_path = self.app.detector:current_path()
-  local root = opts.root or self.app.detector:git_candidate(current_path) or self.app.detector:cwd_for_path(current_path)
+  local path = current_path()
+  local root = opts.root or git_candidate(self.app.registry, path) or cwd_for_path(path)
   root = fs.normalize(root)
 
   local existing = self.app.registry:get(root)
@@ -387,7 +417,9 @@ function ProjectActions:remove_project(value)
     return
   end
 
-  self.app.picker:pick_for_removal(remove)
+  ui.pick_project(self.app.registry:list(), {
+    prompt = "Remove Codex project",
+  }, remove)
 end
 
 --- Implements the maybe_offer_project path for app project actions.
@@ -399,7 +431,7 @@ function ProjectActions:maybe_offer_project(cwd)
     return
   end
 
-  local root = self.app.detector:git_candidate(cwd)
+  local root = git_candidate(self.app.registry, cwd)
   if not root then
     return
   end

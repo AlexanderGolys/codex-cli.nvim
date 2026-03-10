@@ -24,6 +24,81 @@ function M.input(opts, on_confirm)
   return SnacksInput.input(opts, on_confirm)
 end
 
+---@param projects CodexCli.Project[]
+---@param opts? { prompt?: string, include_none?: boolean, active_root?: string }
+---@param on_choice fun(project?: CodexCli.Project)
+function M.pick_project(projects, opts, on_choice)
+  opts = opts or {}
+  local items = {} ---@type { project?: CodexCli.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }[]
+  local name_width = 0
+
+  for _, project in ipairs(projects) do
+    name_width = math.max(name_width, vim.fn.strdisplaywidth(project.name))
+  end
+
+  if opts.include_none then
+    items[#items + 1] = {
+      label = "No active project",
+      preview = {
+        text = "# Codex Project\n\n- Active project override is disabled for this tab.",
+        ft = "markdown",
+        loc = false,
+      },
+      preview_title = "No active project",
+    }
+  end
+
+  for _, project in ipairs(projects) do
+    local spacer = (" "):rep(math.max(name_width - vim.fn.strdisplaywidth(project.name), 0) + 2)
+    items[#items + 1] = {
+      project = project,
+      label = project.name .. spacer .. project.root,
+      spacer = spacer,
+      preview = {
+        text = table.concat({
+          "# Codex Project",
+          "",
+          ("- Name: `%s`"):format(project.name),
+          ("- Root: `%s`"):format(project.root),
+          ("- Exists on disk: `%s`"):format(vim.uv.fs_stat(project.root) ~= nil and "yes" or "no"),
+          ("- Active in this tab: `%s`"):format(opts.active_root == project.root and "yes" or "no"),
+        }, "\n"),
+        ft = "markdown",
+        loc = false,
+      },
+      preview_title = project.name,
+    }
+  end
+
+  if #items == 0 then
+    on_choice(nil)
+    return
+  end
+
+  return M.select(items, {
+    prompt = opts.prompt or "Select Codex project",
+    snacks = {
+      preview = "preview",
+      layout = {
+        preset = "select",
+        hidden = {},
+      },
+    },
+    format_item = function(item, supports_chunks)
+      if not item.project or not supports_chunks then
+        return item.label
+      end
+      return {
+        { item.project.name, "CodexCliPickerProject" },
+        { item.spacer or "  " },
+        { item.project.root, "CodexCliPickerRoot" },
+      }
+    end,
+  }, function(item)
+    on_choice(item and item.project or nil)
+  end)
+end
+
 --- Joins multiline input lines into a single string for submission.
 --- This keeps `multiline_input` consistent regardless of how the buffer is edited.
 ---@param lines string[]

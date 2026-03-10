@@ -80,9 +80,32 @@ function PromptActions:pick_project(target_project, callback)
     return
   end
 
-  self.app.picker:pick({ prompt = "Select project for todo" }, function(project)
+  ui.pick_project(self.app.registry:list(), { prompt = "Select project" }, function(project)
     if project then
       callback(project)
+    end
+  end)
+end
+
+---@param project CodexCli.Project
+---@param callback fun(project: CodexCli.Project, category: CodexCli.PromptCategory)
+function PromptActions:pick_category(project, callback)
+  local items = {} ---@type { label: string, category: CodexCli.PromptCategoryDef }[]
+  for _, category in ipairs(Category.list()) do
+    items[#items + 1] = {
+      label = category.label,
+      category = category,
+    }
+  end
+
+  ui.select(items, {
+    prompt = ("Prompt category for %s"):format(project.name),
+    format_item = function(item)
+      return item.label
+    end,
+  }, function(item)
+    if item then
+      callback(project, item.category.id)
     end
   end)
 end
@@ -125,20 +148,13 @@ function PromptActions:pick_target(opts, callback)
   opts = opts or {}
   local project = self:resolve_project(opts)
 
-  if opts.project_required then
-    self.app.prompt_picker:pick({
-      project = project,
-      require_project = true,
-    }, function(selected_project, category_def)
-      if selected_project and category_def then
-        callback(selected_project, category_def.id)
-      end
-    end)
+  if project and opts.category then
+    callback(project, opts.category)
     return
   end
 
   if not project then
-    self.app.picker:pick({ prompt = "Select project for prompt" }, function(selected_project)
+    self:pick_project(nil, function(selected_project)
       if not selected_project then
         return
       end
@@ -146,31 +162,12 @@ function PromptActions:pick_target(opts, callback)
         callback(selected_project, opts.category)
         return
       end
-      self.app.prompt_picker:pick({
-        project = selected_project,
-        require_project = false,
-      }, function(_, category_def)
-        if category_def then
-          callback(selected_project, category_def.id)
-        end
-      end)
+      self:pick_category(selected_project, callback)
     end)
     return
   end
 
-  if opts.category then
-    callback(project, opts.category)
-    return
-  end
-
-  self.app.prompt_picker:pick({
-    project = project,
-    require_project = false,
-  }, function(_, category_def)
-    if category_def then
-      callback(project, category_def.id)
-    end
-  end)
+  self:pick_category(project, callback)
 end
 
 --- Implements the prompt_for_todo path for app prompt actions.
@@ -185,7 +182,7 @@ function PromptActions:prompt_for_todo(project)
     if not spec then
       return
     end
-    self.app:add_project_todo(project, {
+    self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
     })
@@ -207,7 +204,7 @@ function PromptActions:compose_category_prompt(project, definition, category, de
     if not spec then
       return
     end
-    self.app:add_project_todo(project, {
+    self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
       kind = category,
@@ -249,7 +246,7 @@ function PromptActions:prompt_for_visual(project)
       prompt = "Visual prompt instructions",
     }, function(details)
       details = details and vim.trim(details) or ""
-      self.app:add_project_todo(project, {
+      self.app.queue_actions:add_project_todo(project, {
         title = title,
         kind = "visual",
         image_path = image_path,
@@ -340,7 +337,7 @@ end
 function PromptActions:add_error_investigation(project, summary, source_details, image_path)
   summary = summary and vim.trim(summary) or ""
   local title = summary ~= "" and ("Investigate runtime error: " .. summary) or "Investigate runtime error"
-  self.app:add_project_todo(project, {
+  self.app.queue_actions:add_project_todo(project, {
     title = title,
     kind = "error",
     image_path = image_path,
@@ -362,7 +359,7 @@ function PromptActions:add_problem_summary(project, summary)
     return
   end
 
-  self.app:add_project_todo(project, {
+  self.app.queue_actions:add_project_todo(project, {
     title = "Investigate reported problem: " .. summary,
     kind = "error",
     details = table.concat({

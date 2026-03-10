@@ -12,6 +12,22 @@ local STATE_VERSION = 1
 local STATE_DIRNAME = "session-state"
 local LEGACY_SIDECAR_SUFFIX = ".codex-cli.json"
 
+--- Checks whether a candidate session file is a real path instead of a virtual buffer name.
+--- Scratch names like `codex-cli:/...` and `term:/...` should never reach persistence.
+---@param path string
+---@return boolean
+local function is_virtual_session_path(path)
+  if vim.startswith(path, "codex-cli:") or vim.startswith(path, "term:") then
+    return true
+  end
+
+  if path:match("^%a:[/\\]") then
+    return false
+  end
+
+  return path:match("^[%w_.-]+:") ~= nil
+end
+
 --- Defines the CodexCli.SessionPersistence.State type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class CodexCli.SessionPersistence.State
@@ -39,6 +55,11 @@ function Persistence:normalize_session_file(session_file)
   if session_file == "" then
     return
   end
+
+  if is_virtual_session_path(session_file) then
+    return
+  end
+
   return fs.normalize(session_file)
 end
 
