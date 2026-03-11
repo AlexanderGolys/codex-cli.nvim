@@ -61,17 +61,11 @@ for _, template in ipairs(templates) do
   by_id[template.id] = template
 end
 
---- Implements the list path for prompt library.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.PromptLibrary.Template[]
 function M.list()
   return vim.deepcopy(templates)
 end
 
---- Implements the get path for prompt library.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param id string
 ---@return CodexCli.PromptLibrary.Template?
 function M.get(id)

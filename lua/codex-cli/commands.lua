@@ -220,17 +220,11 @@ local function command_specs()
   return specs
 end
 
---- Implements the list path for commands.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.CommandSpec[]
 function M.list()
   return command_specs()
 end
 
---- Implements the register path for commands.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function M.register()
   if did_register then
     return

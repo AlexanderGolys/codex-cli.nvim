@@ -231,7 +231,6 @@ function Config.merge(...)
 end
 
 ---@return CodexCli.Config
---- Creates a new config object seeded from defaults.
 ---@return CodexCli.Config
 function Config.new()
   local self = setmetatable({}, Config)

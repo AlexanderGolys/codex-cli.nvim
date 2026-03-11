@@ -61,6 +61,12 @@ App.__index = App
 
 local singleton ---@type CodexCli.App?
 
+local function forward(field, method)
+  return function(self, ...)
+    return self[field][method](self[field], ...)
+  end
+end
+
 ---@return CodexCli.App
 --- Returns the singleton application object, creating it lazily on first access.
 --- This guarantees shared state across modules and prevents duplicate terminal managers.
@@ -204,25 +210,16 @@ function App:setup_execution_timer()
   )
 end
 
---- Implements the save_session_state path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param session_file string
 function App:save_session_state(session_file)
   self.session_persistence:save(self, session_file ~= "" and session_file or vim.v.this_session)
 end
 
---- Implements the restore_session_state path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param session_file string
 function App:restore_session_state(session_file)
   self.session_persistence:restore(self, session_file ~= "" and session_file or vim.v.this_session)
 end
 
---- Implements the restore_session_windows path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param snapshots CodexCli.TabState.Snapshot[]
 function App:restore_session_windows(snapshots)
   snapshots = snapshots or {}
@@ -252,17 +249,11 @@ function App:prompt_set_active_project(project, state)
   self.project_actions:prompt_set_active_project(project, state)
 end
 
---- Implements the maybe_prompt_active_project path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buffer? number
 function App:maybe_prompt_active_project(buffer)
   self.project_actions:maybe_prompt_active_project(buffer)
 end
 
---- Implements the current_tab path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.TabState
 function App:current_tab()
   return self.tabs:get()
@@ -276,9 +267,6 @@ function App:resolve_target(state)
   return self:resolve_target_from_path(state, fs.current_path(), true)
 end
 
---- Implements the resolve_target_from_path path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param state CodexCli.TabState
 ---@param path string
 ---@param mutate boolean
@@ -353,8 +341,6 @@ function App:state_snapshot()
   }
 end
 
---- Refreshes all top-level preview surfaces from the latest app state snapshot.
---- This keeps command, project, and queue UI views aligned after every state change.
 function App:refresh_state_preview()
   self.state_preview:refresh(self)
   if self.queue_workspace then
@@ -362,9 +348,7 @@ function App:refresh_state_preview()
   end
 end
 
---- Toggles the state preview floating layout on and off.
---- It is a thin wrapper around the state-preview component for UI-level command wiring.
-function App:toggle_state_preview()
+App.toggle_state_preview = function(self)
   self.state_preview:toggle(self)
 end
 
@@ -376,9 +360,6 @@ function App:is_project_session_running(project)
   return self.terminals:is_project_session_running(project.root)
 end
 
---- Implements the projects_for_queue_workspace path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.Project[]
 function App:projects_for_queue_workspace()
   local projects = self.registry:list()
@@ -393,58 +374,24 @@ function App:projects_for_queue_workspace()
   return projects
 end
 
---- Implements the queue_summary path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectQueueSummary
 function App:queue_summary(project)
   return self.queue:summary(project, self:is_project_session_running(project))
 end
 
---- Opens the current project's todo file in the active window.
---- This delegates project resolution and file creation to project actions.
----@param project? CodexCli.Project
-function App:open_project_todo_file(project)
-  self.project_actions:open_project_todo_file(project)
-end
---- Implements the implement_next_queued_item path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param opts? { project?: CodexCli.Project, project_value?: string }
-function App:implement_next_queued_item(opts)
-  self.queue_actions:implement_next_queued_item(opts)
-end
-
---- Implements the implement_all_queued_items path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param opts? { project?: CodexCli.Project, project_value?: string }
-function App:implement_all_queued_items(opts)
-  self.queue_actions:implement_all_queued_items(opts)
-end
-
---- Adds a new app entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
----@param opts? { project?: CodexCli.Project, project_value?: string }
 function App:add_todo(opts)
   self.prompt_actions:pick_project(self.prompt_actions:resolve_project(opts), function(project)
     self.prompt_actions:prompt_for_todo(project)
   end)
 end
 
---- Adds a new app entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
----@param opts? { project?: CodexCli.Project, project_value?: string, category?: CodexCli.PromptCategory }
 function App:add_prompt(opts)
   self.prompt_actions:pick_target(opts or {}, function(project, category)
     self.prompt_actions:prompt_for_category_kind(project, category)
   end)
 end
 
---- Adds a new app entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
----@param opts? { project?: CodexCli.Project, project_value?: string, category?: CodexCli.PromptCategory }
 function App:add_prompt_for_project(opts)
   opts = vim.tbl_extend("force", { project_required = true }, opts or {})
   self.prompt_actions:pick_target(opts, function(project, category)
@@ -452,81 +399,21 @@ function App:add_prompt_for_project(opts)
   end)
 end
 
---- Adds a new app entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
----@param opts? { project?: CodexCli.Project, project_value?: string }
-function App:add_error_todo(opts)
-  self.prompt_actions:add_error_todo(opts)
-end
-
---- Opens the floating queue workspace for project and queue management.
---- This is usually invoked from user commands and quick navigation flows.
-function App:open_queue_workspace()
+App.open_project_todo_file = forward("project_actions", "open_project_todo_file")
+App.implement_next_queued_item = forward("queue_actions", "implement_next_queued_item")
+App.implement_all_queued_items = forward("queue_actions", "implement_all_queued_items")
+App.add_error_todo = forward("prompt_actions", "add_error_todo")
+App.open_queue_workspace = function(self)
   self.queue_workspace:open()
 end
-
---- Implements the activate_project path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param root string
-function App:activate_project(root)
-  self.project_actions:activate_project(root)
-end
-
---- Sets the current tab's active project and refreshes dependent terminal state.
----@param project CodexCli.Project
-function App:set_current_project(project)
-  self.project_actions:set_current_project(project)
-end
-
---- Clears current tab project selection and updates session/preview state.
---- This is used by command users and when project context needs a reset.
-function App:clear_active_project()
-  self.project_actions:clear_active_project()
-end
-
---- Toggles the active terminal target for the current tab.
---- It chooses the right target by current detection rules and switches focus cleanly.
-function App:toggle()
-  self.project_actions:toggle()
-end
-
---- Implements the rename_project path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param value? string|CodexCli.Project
-function App:rename_project(value)
-  self.project_actions:rename_project(value)
-end
-
---- Adds a new app entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
----@param opts? { name?: string, root?: string }
-function App:add_project(opts)
-  self.project_actions:add_project(opts)
-end
-
---- Removes a app item and normalizes dependent state.
---- This cleanup keeps persistence and session state consistent with user actions.
----@param value? string|CodexCli.Project
-function App:remove_project(value)
-  self.project_actions:remove_project(value)
-end
-
---- Implements the maybe_offer_project path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param cwd string
-function App:maybe_offer_project(cwd)
-  self.project_actions:maybe_offer_project(cwd)
-end
-
---- Implements the toggle_terminal_header path for app.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param buf? number
-function App:toggle_terminal_header(buf)
-  self.project_actions:toggle_terminal_header(buf)
-end
+App.activate_project = forward("project_actions", "activate_project")
+App.set_current_project = forward("project_actions", "set_current_project")
+App.clear_active_project = forward("project_actions", "clear_active_project")
+App.toggle = forward("project_actions", "toggle")
+App.rename_project = forward("project_actions", "rename_project")
+App.add_project = forward("project_actions", "add_project")
+App.remove_project = forward("project_actions", "remove_project")
+App.maybe_offer_project = forward("project_actions", "maybe_offer_project")
+App.toggle_terminal_header = forward("project_actions", "toggle_terminal_header")
 
 return App

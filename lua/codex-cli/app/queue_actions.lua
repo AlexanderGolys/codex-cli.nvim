@@ -24,17 +24,12 @@ local PREVIOUS_QUEUE = {
   history = "queued",
 }
 
---- Creates a new app queue actions instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param app CodexCli.App
 ---@return CodexCli.AppQueueActions
 function QueueActions.new(app)
   return setmetatable({ app = app }, QueueActions)
 end
 
---- Implements the dispatch_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 ---@return boolean
@@ -99,9 +94,6 @@ function QueueActions:add_project_todo(project, spec)
   self.app:refresh_state_preview()
 end
 
---- Implements the edit_queue_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@param spec { title: string, details?: string }
@@ -130,9 +122,6 @@ function QueueActions:edit_queue_item(project, item_id, spec)
   self.app:refresh_state_preview()
 end
 
---- Implements the implement_queue_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 function QueueActions:implement_queue_item(project, item_id)
@@ -148,9 +137,6 @@ function QueueActions:implement_queue_item(project, item_id)
   end
 end
 
---- Implements the implement_queued_items path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function QueueActions:implement_queued_items(project)
   local queued_items = self.app.queue:queues(project).queued
@@ -172,9 +158,6 @@ function QueueActions:implement_queued_items(project)
   end
 end
 
---- Implements the implement_next_queued_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.AppPromptActions.ResolveOpts
 function QueueActions:implement_next_queued_item(opts)
   self.app.prompt_actions:pick_project(self.app.prompt_actions:resolve_project(opts), function(project)
@@ -187,9 +170,6 @@ function QueueActions:implement_next_queued_item(opts)
   end)
 end
 
---- Implements the implement_all_queued_items path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.AppPromptActions.ResolveOpts
 function QueueActions:implement_all_queued_items(opts)
   self.app.prompt_actions:pick_project(self.app.prompt_actions:resolve_project(opts), function(project)
@@ -197,9 +177,6 @@ function QueueActions:implement_all_queued_items(opts)
   end)
 end
 
---- Implements the advance_queue_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 function QueueActions:advance_queue_item(project, item_id)
@@ -214,9 +191,6 @@ function QueueActions:advance_queue_item(project, item_id)
   self.app:refresh_state_preview()
 end
 
---- Implements the rewind_queue_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@param opts? CodexCli.AppQueueActions.RewindOpts
@@ -250,9 +224,6 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
   self.app:refresh_state_preview()
 end
 
---- Implements the move_queue_item_to_project path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 ---@param target_project CodexCli.Project
@@ -287,9 +258,6 @@ function QueueActions:move_queue_item_to_project(project, item_id, target_projec
   self.app:refresh_state_preview()
 end
 
---- Implements the delete_queue_item path for app queue actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item_id string
 function QueueActions:delete_queue_item(project, item_id)

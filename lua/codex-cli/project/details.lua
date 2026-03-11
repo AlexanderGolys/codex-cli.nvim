@@ -34,6 +34,7 @@ Details.__index = Details
 
 local CACHE_TTL_SECONDS = 30
 local METADATA_VERSION = 1
+local METADATA_DIRNAME = "project-details"
 local EXCLUDED_DIRS = {
   [".git"] = true,
   [".hg"] = true,
@@ -51,6 +52,22 @@ local EXCLUDED_DIRS = {
   ["target"] = true,
   [".codex-cli"] = true,
 }
+
+local function metadata_path(config, project_root)
+  local id = vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
+  return fs.join(config.storage.workspaces_dir, METADATA_DIRNAME, id .. ".json")
+end
+
+local function read_metadata(config, project_root)
+  local metadata = fs.read_json(metadata_path(config, project_root), { version = METADATA_VERSION })
+  metadata.version = metadata.version or METADATA_VERSION
+  return metadata
+end
+
+local function write_metadata(config, project_root, metadata)
+  metadata.version = METADATA_VERSION
+  fs.write_json(metadata_path(config, project_root), metadata)
+end
 local LANGUAGE_LABELS = {
   c = "c",
   cpp = "cpp",
@@ -80,8 +97,6 @@ local LANGUAGE_LABELS = {
   yaml = "yaml",
 }
 
---- Creates a new project details instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.ProjectDetails
 function Details.new(config)
@@ -91,51 +106,9 @@ function Details.new(config)
   return self
 end
 
---- Implements the update_config path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Details:update_config(config)
   self.config = config
-end
-
---- Implements the project_id path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param project_root string
----@return string
-function Details:project_id(project_root)
-  return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
-end
-
---- Implements the metadata_path path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param project_root string
----@return string
-function Details:metadata_path(project_root)
-  return fs.join(self.config.storage.workspaces_dir, "project-details", self:project_id(project_root) .. ".json")
-end
-
---- Implements the read_metadata path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param project_root string
----@return CodexCli.ProjectDetails.Metadata
-function Details:read_metadata(project_root)
-  local metadata = fs.read_json(self:metadata_path(project_root), { version = METADATA_VERSION })
-  metadata.version = metadata.version or METADATA_VERSION
-  return metadata
-end
-
---- Implements the write_metadata path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param project_root string
----@param metadata CodexCli.ProjectDetails.Metadata
-function Details:write_metadata(project_root, metadata)
-  metadata.version = METADATA_VERSION
-  fs.write_json(self:metadata_path(project_root), metadata)
 end
 
 --- Records the latest Codex interaction timestamp for a project.
@@ -143,9 +116,9 @@ end
 ---@param timestamp? integer
 function Details:touch_activity(project, timestamp)
   local project_root = project.root
-  local metadata = self:read_metadata(project_root)
+  local metadata = read_metadata(self.config, project_root)
   metadata.last_codex_activity_at = timestamp or os.time()
-  self:write_metadata(project_root, metadata)
+  write_metadata(self.config, project_root, metadata)
 
   local cached = self.cache[project_root]
   if cached then
@@ -159,32 +132,7 @@ end
 function Details:delete(project_root)
   project_root = fs.normalize(project_root)
   self.cache[project_root] = nil
-  fs.remove(self:metadata_path(project_root))
-end
-
---- Implements the detect_filetype path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param path string
----@return string?
-local function detect_filetype(path)
-  local ft = vim.filetype.match({ filename = path })
-  if not ft or ft == "" then
-    return
-  end
-  return ft
-end
-
---- Implements the language_name path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param filetype string?
----@return string?
-local function language_name(filetype)
-  if not filetype then
-    return
-  end
-  return LANGUAGE_LABELS[filetype] or filetype
+  fs.remove(metadata_path(self.config, project_root))
 end
 
 --- Walks the project tree while skipping known heavy/generated directories.
@@ -202,25 +150,13 @@ local function list_files(root)
           stack[#stack + 1] = path
         end
       elseif entry_type == "file" then
-        local excluded = false
-        for excluded_name in pairs(EXCLUDED_DIRS) do
-          if path:find("/" .. excluded_name .. "/", 1, true) then
-            excluded = true
-            break
-          end
-        end
-        if not excluded then
-          files[#files + 1] = path
-        end
+        files[#files + 1] = path
       end
     end
   end
   return files
 end
 
---- Implements the line_count_for_file path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
 ---@return integer?, boolean
 local function line_count_for_file(path)
@@ -245,9 +181,6 @@ local function line_count_for_file(path)
   return line_count, true
 end
 
---- Implements the compute path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectDetails.Snapshot
 function Details:compute(project)
@@ -270,8 +203,8 @@ function Details:compute(project)
         end
       end
 
-      local filetype = detect_filetype(path)
-      local language = language_name(filetype)
+      local filetype = vim.filetype.match({ filename = path })
+      local language = filetype and filetype ~= "" and (LANGUAGE_LABELS[filetype] or filetype) or nil
       if language then
         language_totals[language] = (language_totals[language] or 0) + 1
         language_file_count = language_file_count + 1
@@ -300,7 +233,7 @@ function Details:compute(project)
     return left.name < right.name
   end)
 
-  local metadata = self:read_metadata(project.root)
+  local metadata = read_metadata(self.config, project.root)
   return {
     file_count = file_count,
     avg_lines_per_file = line_file_count > 0 and (line_total / line_file_count) or nil,
@@ -311,9 +244,6 @@ function Details:compute(project)
   }
 end
 
---- Implements the get path for project details.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.ProjectDetails.Snapshot
 function Details:get(project)

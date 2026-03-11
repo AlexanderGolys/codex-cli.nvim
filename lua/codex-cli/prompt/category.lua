@@ -79,17 +79,11 @@ for _, category in ipairs(categories) do
   by_id[category.id] = category
 end
 
---- Implements the list path for prompt category.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.PromptCategoryDef[]
 function M.list()
   return vim.deepcopy(categories)
 end
 
---- Implements the get path for prompt category.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param id? string
 ---@return CodexCli.PromptCategoryDef
 function M.get(id)

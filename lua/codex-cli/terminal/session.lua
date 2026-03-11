@@ -40,9 +40,6 @@ local notify = require("codex-cli.util.notify")
 local Session = {}
 Session.__index = Session
 
---- Implements the termopen path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function termopen(cmd, opts)
   local fn = vim.fn.termopen or vim.fn.jobstart
   if fn == vim.fn.jobstart then
@@ -51,9 +48,6 @@ local function termopen(cmd, opts)
   return fn(cmd, vim.tbl_isempty(opts) and vim.empty_dict() or opts)
 end
 
---- Implements the start_with_snacks path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param cmd string[]
 ---@param opts vim.fn.jobstart.Opts
 ---@param buf number
@@ -76,9 +70,6 @@ local function start_with_snacks(cmd, opts, buf)
         filetype = "codex_cli_terminal",
       },
     },
---- Implements the override path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     override = function(terminal_cmd, terminal_opts)
       local terminal = Snacks.win(terminal_opts.win)
       vim.b[buf].snacks_terminal = {
@@ -99,8 +90,6 @@ local function start_with_snacks(cmd, opts, buf)
   return started_job
 end
 
---- Creates a new terminal session instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param spec CodexCli.TerminalSession.Spec
 ---@return CodexCli.TerminalSession
 function Session.new(spec)
@@ -154,9 +143,6 @@ function Session:toggle_header()
   return self.header_enabled
 end
 
---- Implements the buf_valid path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return boolean
 function Session:buf_valid()
   return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
@@ -172,9 +158,6 @@ function Session:is_running()
   return vim.fn.jobwait({ self.job_id }, 0)[1] == -1
 end
 
---- Implements the update_buffer_state path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? { sync_header?: boolean }
 function Session:update_buffer_state(opts)
   opts = opts or {}
@@ -215,9 +198,6 @@ function Session:ensure_started()
   local ok, job_id = pcall(vim.api.nvim_buf_call, self.buf, function()
     local start_opts = {
       cwd = self.cwd,
---- Implements the on_exit path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
       on_exit = function(_, code)
         self.job_id = nil
         local suppress_warning = self.suppress_exit_warning
@@ -261,9 +241,6 @@ function Session:destroy()
   self.buf = nil
 end
 
---- Implements the send path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param text string
 ---@return boolean
 function Session:send(text)
@@ -283,9 +260,6 @@ function Session:send(text)
   return true
 end
 
---- Implements the update_identity path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param spec CodexCli.TerminalSession.Spec
 function Session:update_identity(spec)
   self.key = spec.key
@@ -303,9 +277,6 @@ function Session:update_identity(spec)
   self:update_buffer_state()
 end
 
---- Implements the snapshot path for terminal session.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.TerminalSession.Snapshot
 function Session:snapshot()
   local buffer_valid = self:buf_valid()

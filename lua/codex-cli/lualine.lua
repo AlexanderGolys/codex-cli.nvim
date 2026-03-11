@@ -10,9 +10,6 @@ local App = require("codex-cli.app")
 
 local M = {}
 
---- Implements the tabpage_buf path for lualine.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param tabpage? number
 ---@return number?
 local function tabpage_buf(tabpage)
@@ -29,9 +26,6 @@ local function tabpage_buf(tabpage)
   return vim.api.nvim_win_get_buf(win)
 end
 
---- Implements the project path for lualine.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.Lualine.Opts
 ---@return CodexCli.Project?
 function M.project(opts)
@@ -49,9 +43,6 @@ function M.project(opts)
   end
 end
 
---- Implements the project_name path for lualine.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.Lualine.Opts
 ---@return string
 function M.project_name(opts)

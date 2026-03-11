@@ -40,17 +40,12 @@ local ui = require("codex-cli.ui.select")
 local PromptActions = {}
 PromptActions.__index = PromptActions
 
---- Creates a new app prompt actions instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param app CodexCli.App
 ---@return CodexCli.AppPromptActions
 function PromptActions.new(app)
   return setmetatable({ app = app }, PromptActions)
 end
 
---- Implements the resolve_project path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts? CodexCli.AppPromptActions.ResolveOpts
 ---@return CodexCli.Project?
 function PromptActions:resolve_project(opts)
@@ -91,7 +86,7 @@ end
 ---@param callback fun(project: CodexCli.Project, category: CodexCli.PromptCategory)
 function PromptActions:pick_category(project, callback)
   local items = {} ---@type { label: string, category: CodexCli.PromptCategoryDef }[]
-  for _, category in ipairs(Category.list()) do
+  for _, category in ipairs(PromptCategory.list()) do
     items[#items + 1] = {
       label = category.label,
       category = category,
@@ -110,18 +105,12 @@ function PromptActions:pick_category(project, callback)
   end)
 end
 
---- Implements the asset_dir path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param category CodexCli.PromptCategory
 ---@return string
 function PromptActions:asset_dir(category)
   return fs.join(self.app.config:get().storage.workspaces_dir, "prompt-assets", category)
 end
 
---- Implements the asset_path path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param category CodexCli.PromptCategory
 ---@param ext string
 ---@return string
@@ -129,15 +118,6 @@ function PromptActions:asset_path(category, ext)
   local timestamp = os.date("!%Y%m%dT%H%M%SZ")
   local name = vim.fn.sha256(category .. "\n" .. timestamp):sub(1, 16)
   return fs.join(self:asset_dir(category), ("%s.%s"):format(name, ext))
-end
-
---- Implements the category path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param category CodexCli.PromptCategory
----@return CodexCli.PromptCategoryDef
-function PromptActions:category(category)
-  return PromptCategory.get(category)
 end
 
 --- Opens a picker path for app prompt actions and handles the chosen result.
@@ -170,9 +150,6 @@ function PromptActions:pick_target(opts, callback)
   self:pick_category(project, callback)
 end
 
---- Implements the prompt_for_todo path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function PromptActions:prompt_for_todo(project)
   ui.multiline_input({
@@ -212,19 +189,13 @@ function PromptActions:compose_category_prompt(project, definition, category, de
   end)
 end
 
---- Implements the prompt_for_category path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param category CodexCli.PromptCategory
 function PromptActions:prompt_for_category(project, category)
-  local definition = self:category(category)
+  local definition = PromptCategory.get(category)
   self:compose_category_prompt(project, definition, category)
 end
 
---- Implements the prompt_for_visual path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function PromptActions:prompt_for_visual(project)
   ui.input({
@@ -259,17 +230,11 @@ function PromptActions:prompt_for_visual(project)
   end)
 end
 
---- Implements the prompt_for_library path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function PromptActions:prompt_for_library(project)
   local templates = PromptLibrary.list()
   ui.select(templates, {
     prompt = ("Prompt library for %s"):format(project.name),
---- Implements the format_item path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     format_item = function(item)
       return ("%s  %s"):format(item.label, item.title)
     end,
@@ -277,16 +242,13 @@ function PromptActions:prompt_for_library(project)
     if not template then
       return
     end
-    self:compose_category_prompt(project, self:category(template.kind), template.kind, PromptComposer.render(
+    self:compose_category_prompt(project, PromptCategory.get(template.kind), template.kind, PromptComposer.render(
       template.title,
       template.details
     ))
   end)
 end
 
---- Implements the prompt_for_category_kind path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param category CodexCli.PromptCategory
 function PromptActions:prompt_for_category_kind(project, category)
@@ -310,9 +272,6 @@ function PromptActions:prompt_for_category_kind(project, category)
   self:prompt_for_category(project, category)
 end
 
---- Implements the normalize_spec path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param spec { title: string, details?: string }
 ---@return { title: string, details?: string, broken: boolean }
@@ -370,9 +329,6 @@ function PromptActions:add_problem_summary(project, summary)
   })
 end
 
---- Implements the error_sources path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param latest_screenshot? string
 ---@return CodexCli.AppPromptActions.ErrorSource[]
 function PromptActions:error_sources(latest_screenshot)
@@ -406,18 +362,12 @@ function PromptActions:error_sources(latest_screenshot)
   return sources
 end
 
---- Implements the pick_error_source path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param latest_screenshot? string
 ---@param screenshot_dir? string
 function PromptActions:pick_error_source(project, latest_screenshot, screenshot_dir)
   ui.select(self:error_sources(latest_screenshot), {
     prompt = ("Error prompt source for %s"):format(project.name),
---- Implements the format_item path for app prompt actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     format_item = function(item)
       return item.label
     end,

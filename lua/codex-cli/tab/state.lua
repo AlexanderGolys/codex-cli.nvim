@@ -19,8 +19,6 @@
 local State = {}
 State.__index = State
 
---- Creates a new tab state instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param tabpage number
 ---@return CodexCli.TabState
 function State.new(tabpage)
@@ -37,9 +35,6 @@ function State:is_valid()
   return vim.api.nvim_tabpage_is_valid(self.tabpage)
 end
 
---- Implements the has_visible_window path for tab state.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return boolean
 function State:has_visible_window()
   return self.window ~= nil
@@ -47,9 +42,6 @@ function State:has_visible_window()
     and vim.api.nvim_win_get_tabpage(self.window.win) == self.tabpage
 end
 
---- Implements the set_active_project path for tab state.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root? string
 function State:set_active_project(root)
   self.active_project_root = root
@@ -61,9 +53,6 @@ function State:clear_active_project()
   self.active_project_root = nil
 end
 
---- Implements the has_prompted_project path for tab state.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return boolean
 function State:has_prompted_project()
   return self.prompted_project == true
@@ -85,9 +74,6 @@ function State:restore(snapshot)
   self.window = nil
 end
 
---- Implements the set_window path for tab state.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param window? snacks.win
 ---@param session_key? string
 function State:set_window(window, session_key)

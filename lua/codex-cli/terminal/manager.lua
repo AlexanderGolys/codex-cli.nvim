@@ -25,9 +25,6 @@ local Session = require("codex-cli.terminal.session")
 local Manager = {}
 Manager.__index = Manager
 
---- Implements the call_in_tabpage path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param tabpage number
 ---@param fn fun()
 local function call_in_tabpage(tabpage, fn)
@@ -58,8 +55,6 @@ local function call_in_tabpage(tabpage, fn)
   end
 end
 
---- Creates a new terminal manager instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.TerminalManager
 function Manager.new(config)
@@ -69,17 +64,11 @@ function Manager.new(config)
   return self
 end
 
---- Implements the update_config path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Manager:update_config(config)
   self.config = config
 end
 
---- Implements the session_spec path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param target CodexCli.TerminalTarget
 ---@return CodexCli.TerminalSession.Spec
 function Manager:session_spec(target)
@@ -105,9 +94,6 @@ function Manager:session_spec(target)
   }
 end
 
---- Implements the promote_free_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.TerminalSession?
 function Manager:promote_free_session(project)
@@ -122,9 +108,6 @@ function Manager:promote_free_session(project)
   return self.project_sessions[project.root]
 end
 
---- Implements the destroy_project_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 function Manager:destroy_project_session(root)
   local session = self.project_sessions[root]
@@ -135,9 +118,6 @@ function Manager:destroy_project_session(root)
   self.project_sessions[root] = nil
 end
 
---- Implements the update_project_identity path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function Manager:update_project_identity(project)
   local session = self.project_sessions[project.root]
@@ -152,9 +132,6 @@ function Manager:update_project_identity(project)
   session:update_identity(spec)
 end
 
---- Implements the project_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 ---@return CodexCli.TerminalSession?
 function Manager:project_session(root)
@@ -170,9 +147,6 @@ function Manager:is_project_session_running(root)
   return session ~= nil and session:is_running() or false
 end
 
---- Implements the ensure_project_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.TerminalSession?
 function Manager:ensure_project_session(project)
@@ -183,9 +157,6 @@ function Manager:ensure_project_session(project)
   return session
 end
 
---- Implements the session_by_buf path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buf number
 ---@return CodexCli.TerminalSession?
 function Manager:session_by_buf(buf)
@@ -200,9 +171,6 @@ function Manager:session_by_buf(buf)
   end
 end
 
---- Implements the toggle_header_for_buf path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buf number
 ---@return boolean|nil
 function Manager:toggle_header_for_buf(buf)
@@ -213,9 +181,6 @@ function Manager:toggle_header_for_buf(buf)
   return session:toggle_header()
 end
 
---- Implements the get_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param target CodexCli.TerminalTarget
 ---@return CodexCli.TerminalSession?, string?
 function Manager:get_session(target)
@@ -250,9 +215,6 @@ function Manager:get_session(target)
   return self.free_session, replaced_key
 end
 
---- Implements the open_window path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param session CodexCli.TerminalSession
 ---@return snacks.win
 function Manager:open_window(session)
@@ -266,9 +228,6 @@ function Manager:open_window(session)
       filetype = "codex_cli_terminal",
     },
     title = session.title,
---- Implements the on_win path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     on_win = function()
       if self.config.terminal.start_insert then
         vim.cmd.startinsert()
@@ -279,9 +238,6 @@ function Manager:open_window(session)
   return Snacks.win(opts)
 end
 
---- Implements the show_in_tab path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param state CodexCli.TabState
 ---@param session CodexCli.TerminalSession
 function Manager:show_in_tab(state, session)
@@ -301,17 +257,11 @@ function Manager:show_in_tab(state, session)
   state:set_window(window, session.key)
 end
 
---- Implements the hide_in_tab path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param state CodexCli.TabState
 function Manager:hide_in_tab(state)
   state:hide_window()
 end
 
---- Implements the session_by_key path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param key string
 ---@return CodexCli.TerminalSession?
 function Manager:session_by_key(key)
@@ -322,9 +272,6 @@ function Manager:session_by_key(key)
   return self.project_sessions[key]
 end
 
---- Implements the detach_session path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param session_key string
 ---@param states CodexCli.TabState[]
 function Manager:detach_session(session_key, states)
@@ -335,9 +282,6 @@ function Manager:detach_session(session_key, states)
   end
 end
 
---- Implements the snapshot path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.TerminalSession.Snapshot[]
 function Manager:snapshot()
   local ret = {} ---@type CodexCli.TerminalSession.Snapshot[]
@@ -351,9 +295,6 @@ function Manager:snapshot()
   return ret
 end
 
---- Implements the persistence_specs path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.TerminalSession.Spec[]
 function Manager:persistence_specs()
   local specs = {} ---@type CodexCli.TerminalSession.Spec[]
@@ -390,9 +331,6 @@ function Manager:persistence_specs()
   return specs
 end
 
---- Implements the restore_specs path for terminal manager.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param specs CodexCli.TerminalSession.Spec[]
 function Manager:restore_specs(specs)
   specs = specs or {}

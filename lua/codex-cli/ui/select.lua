@@ -4,9 +4,6 @@ local SnacksSelect = require("snacks.picker.select")
 local PromptContext = require("codex-cli.prompt.context")
 local ui_win = require("codex-cli.ui.win")
 
---- Implements the select path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@generic T
 ---@param items T[]
 ---@param opts? vim.ui.select.Opts
@@ -15,9 +12,6 @@ function M.select(items, opts, on_choice)
   return SnacksSelect.select(items, opts, on_choice)
 end
 
---- Implements the input path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts vim.ui.input.Opts
 ---@param on_confirm fun(value?: string)
 function M.input(opts, on_confirm)
@@ -147,9 +141,6 @@ local function insert_text(buf, win, text)
   vim.api.nvim_win_set_cursor(win, { row + #pieces, #pieces[#pieces] - #after })
 end
 
---- Implements the multiline_input path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param opts { prompt: string, default?: string, min_height?: integer, context?: CodexCli.PromptContext.Capture }
 ---@param on_confirm fun(value?: string)
 function M.multiline_input(opts, on_confirm)
@@ -185,21 +176,12 @@ function M.multiline_input(opts, on_confirm)
     border = "rounded",
     title = (" %s "):format(opts.prompt),
     width = width,
---- Implements the height path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     height = function()
       return calc_height()
     end,
---- Implements the row path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     row = function()
       return math.max(math.floor((editor_height - calc_height()) / 2), 1)
     end,
---- Implements the col path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     col = function()
       return math.max(math.floor((editor_width - width) / 2), 1)
     end,
@@ -333,9 +315,6 @@ function M.multiline_input(opts, on_confirm)
   vim.api.nvim_create_autocmd("WinClosed", {
     once = true,
     pattern = tostring(win.win),
---- Implements the callback path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     callback = function()
       close(nil)
     end,
@@ -345,9 +324,6 @@ function M.multiline_input(opts, on_confirm)
   vim.cmd.startinsert()
 end
 
---- Implements the confirm path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param prompt string
 ---@param on_choice fun(confirmed: boolean)
 function M.confirm(prompt, on_choice)
@@ -358,9 +334,6 @@ function M.confirm(prompt, on_choice)
 
   return M.select(items, {
     prompt = prompt,
---- Implements the format_item path for ui select.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
     format_item = function(item)
       return item.label
     end,

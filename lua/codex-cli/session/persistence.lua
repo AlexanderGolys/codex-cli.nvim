@@ -28,48 +28,16 @@ local function is_virtual_session_path(path)
   return path:match("^[%w_.-]+:") ~= nil
 end
 
---- Defines the CodexCli.SessionPersistence.State type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
----@class CodexCli.SessionPersistence.State
----@field version integer
----@field tabs CodexCli.TabState.Snapshot[]
----@field terminal_sessions CodexCli.TerminalSession.Spec[]
-
---- Creates a new session persistence instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
----@return CodexCli.SessionPersistence
-function Persistence.new()
-  local self = setmetatable({}, Persistence)
-  self.storage_dir = fs.join(vim.fn.stdpath("data"), "codex-cli", STATE_DIRNAME)
-  self.legacy_sidecar_suffix = LEGACY_SIDECAR_SUFFIX
-  return self
-end
-
---- Implements the normalize_session_file path for session persistence.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param session_file string
----@return string?
-function Persistence:normalize_session_file(session_file)
+local function normalize_session_file(session_file)
   session_file = vim.trim(session_file or "")
-  if session_file == "" then
+  if session_file == "" or is_virtual_session_path(session_file) then
     return
   end
-
-  if is_virtual_session_path(session_file) then
-    return
-  end
-
   return fs.normalize(session_file)
 end
 
---- Implements the storage_path path for session persistence.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param session_file string
----@return string?
-function Persistence:storage_path(session_file)
-  session_file = self:normalize_session_file(session_file)
+local function storage_path(self, session_file)
+  session_file = normalize_session_file(session_file)
   if not session_file then
     return
   end
@@ -79,22 +47,26 @@ function Persistence:storage_path(session_file)
   return fs.join(self.storage_dir, ("%s-%s.json"):format(basename, digest))
 end
 
---- Implements the legacy_sidecar_path path for session persistence.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
----@param session_file string
----@return string?
-function Persistence:legacy_sidecar_path(session_file)
-  session_file = self:normalize_session_file(session_file)
-  if not session_file then
-    return
-  end
-  return session_file .. self.legacy_sidecar_suffix
+local function legacy_sidecar_path(self, session_file)
+  session_file = normalize_session_file(session_file)
+  return session_file and (session_file .. self.legacy_sidecar_suffix) or nil
 end
 
---- Implements the build_state path for session persistence.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
+--- Defines the CodexCli.SessionPersistence.State type for this module.
+--- This annotation documents structured state so modules can pass data with consistent expectations.
+---@class CodexCli.SessionPersistence.State
+---@field version integer
+---@field tabs CodexCli.TabState.Snapshot[]
+---@field terminal_sessions CodexCli.TerminalSession.Spec[]
+
+---@return CodexCli.SessionPersistence
+function Persistence.new()
+  local self = setmetatable({}, Persistence)
+  self.storage_dir = fs.join(vim.fn.stdpath("data"), "codex-cli", STATE_DIRNAME)
+  self.legacy_sidecar_suffix = LEGACY_SIDECAR_SUFFIX
+  return self
+end
+
 ---@param app CodexCli.App
 ---@return CodexCli.SessionPersistence.State
 function Persistence:build_state(app)
@@ -110,31 +82,27 @@ function Persistence:build_state(app)
   }
 end
 
---- Persists or restores session persistence data for this workflow.
---- It is used by session restoration and command surfaces so behavior remains repeatable.
 ---@param app CodexCli.App
 ---@param session_file string
 function Persistence:save(app, session_file)
-  local storage_path = self:storage_path(session_file)
-  if not storage_path then
+  local path = storage_path(self, session_file)
+  if not path then
     return
   end
-  fs.write_json(storage_path, self:build_state(app))
+  fs.write_json(path, self:build_state(app))
 
-  local legacy_sidecar = self:legacy_sidecar_path(session_file)
+  local legacy_sidecar = legacy_sidecar_path(self, session_file)
   if legacy_sidecar and fs.is_file(legacy_sidecar) then
     fs.remove(legacy_sidecar)
   end
 end
 
---- Persists or restores session persistence data for this workflow.
---- It is used by session restoration and command surfaces so behavior remains repeatable.
 ---@param app CodexCli.App
 ---@param session_file string
 function Persistence:restore(app, session_file)
-  local state_path = self:storage_path(session_file)
+  local state_path = storage_path(self, session_file)
   if not state_path or not fs.is_file(state_path) then
-    state_path = self:legacy_sidecar_path(session_file)
+    state_path = legacy_sidecar_path(self, session_file)
   end
   if not state_path or not fs.is_file(state_path) then
     return

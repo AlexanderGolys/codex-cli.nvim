@@ -8,8 +8,6 @@ local Extmark = require("codex-cli.ui.extmark")
 local TextBlock = {}
 TextBlock.__index = TextBlock
 
---- Creates a new ui text block instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param lines? string[]
 ---@param extmarks? CodexCli.Extmark[]
 ---@return CodexCli.TextBlock
@@ -23,9 +21,6 @@ function TextBlock.new(lines, extmarks)
   return self
 end
 
---- Implements the line_count path for ui text block.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return integer
 function TextBlock:line_count()
   return #self.lines
@@ -38,9 +33,6 @@ function TextBlock:is_empty()
   return #self.lines == 0
 end
 
---- Implements the append_line path for ui text block.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param text string
 ---@param extmarks? CodexCli.Extmark[]
 ---@return integer
@@ -71,9 +63,6 @@ function TextBlock:add_extmarks(marks, row_offset)
   end
 end
 
---- Implements the append_block path for ui text block.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param other CodexCli.TextBlock
 ---@return integer
 function TextBlock:append_block(other)
@@ -83,9 +72,6 @@ function TextBlock:append_block(other)
   return row_offset
 end
 
---- Implements the render path for ui text block.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buf integer
 ---@param ns integer
 function TextBlock:render(buf, ns)

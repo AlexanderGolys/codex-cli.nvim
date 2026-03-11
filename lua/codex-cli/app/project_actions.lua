@@ -10,46 +10,12 @@ local ui = require("codex-cli.ui.select")
 local ProjectActions = {}
 ProjectActions.__index = ProjectActions
 
----@param buf? number
----@return string
-local function current_path(buf)
-  return fs.current_path(buf)
-end
-
----@param path? string
----@return string
-local function cwd_for_path(path)
-  return fs.cwd_for_path(path or current_path())
-end
-
----@param registry CodexCli.ProjectRegistry
----@param path? string
----@return CodexCli.Project?
-local function project_for_path(registry, path)
-  return registry:find_for_path(path or current_path())
-end
-
----@param registry CodexCli.ProjectRegistry
----@param path? string
----@return string?
-local function git_candidate(registry, path)
-  local root = git.get_root(path or current_path())
-  if root and not registry:has_root(root) then
-    return root
-  end
-end
-
---- Creates a new app project actions instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param app CodexCli.App
 ---@return CodexCli.AppProjectActions
 function ProjectActions.new(app)
   return setmetatable({ app = app }, ProjectActions)
 end
 
---- Implements the show_target path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param state CodexCli.TabState
 ---@param target CodexCli.TerminalTarget
 ---@return CodexCli.TerminalSession?
@@ -65,9 +31,6 @@ function ProjectActions:show_target(state, target)
   return session
 end
 
---- Implements the prompt_set_active_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param state CodexCli.TabState
 function ProjectActions:prompt_set_active_project(project, state)
@@ -92,9 +55,6 @@ function ProjectActions:prompt_set_active_project(project, state)
   end)
 end
 
---- Implements the maybe_prompt_active_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buffer? number
 function ProjectActions:maybe_prompt_active_project(buffer)
   local state = self.app:current_tab()
@@ -110,15 +70,12 @@ function ProjectActions:maybe_prompt_active_project(buffer)
     return
   end
 
-  local project = project_for_path(self.app.registry, current_path(buffer))
+  local project = self.app.registry:find_for_path(fs.current_path(buffer))
   if project then
     self:prompt_set_active_project(project, state)
   end
 end
 
---- Implements the activate_project_session path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@return CodexCli.TerminalSession?
 function ProjectActions:activate_project_session(project)
@@ -133,9 +90,6 @@ function ProjectActions:activate_project_session(project)
   return session
 end
 
---- Implements the deactivate_project_session path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function ProjectActions:deactivate_project_session(project)
   self.app.terminals:destroy_project_session(project.root)
@@ -144,9 +98,6 @@ function ProjectActions:deactivate_project_session(project)
   self.app:refresh_state_preview()
 end
 
---- Implements the open_project_workspace_target path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function ProjectActions:open_project_workspace_target(project)
   self:activate_project(project.root)
@@ -263,9 +214,6 @@ function ProjectActions:toggle()
   end
 end
 
---- Implements the resolve_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param value? string|CodexCli.Project
 ---@return CodexCli.Project?
 function ProjectActions:resolve_project(value)
@@ -277,9 +225,6 @@ function ProjectActions:resolve_project(value)
   end
 end
 
---- Implements the rename_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param value? string|CodexCli.Project
 function ProjectActions:rename_project(value)
   local project = self:resolve_project(value)
@@ -307,9 +252,6 @@ function ProjectActions:rename_project(value)
   end)
 end
 
---- Implements the focus_project_session path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 function ProjectActions:focus_project_session(project)
   local state = self.app:current_tab()
@@ -328,9 +270,6 @@ function ProjectActions:focus_project_session(project)
   self.app.project_details_store:touch_activity(project)
 end
 
---- Implements the use_existing_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param message string
 function ProjectActions:use_existing_project(project, message)
@@ -347,8 +286,16 @@ end
 ---@param opts? { name?: string, root?: string }
 function ProjectActions:add_project(opts)
   opts = opts or {}
-  local path = current_path()
-  local root = opts.root or git_candidate(self.app.registry, path) or cwd_for_path(path)
+  local path = fs.current_path()
+  local root = opts.root
+  if not root then
+    local git_root = git.get_root(path)
+    if git_root and not self.app.registry:has_root(git_root) then
+      root = git_root
+    else
+      root = fs.cwd_for_path(path)
+    end
+  end
   root = fs.normalize(root)
 
   local existing = self.app.registry:get(root)
@@ -422,16 +369,16 @@ function ProjectActions:remove_project(value)
   }, remove)
 end
 
---- Implements the maybe_offer_project path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param cwd string
 function ProjectActions:maybe_offer_project(cwd)
   if not self.app.config:get().project_detection.auto_suggest_git_root then
     return
   end
 
-  local root = git_candidate(self.app.registry, cwd)
+  local root = git.get_root(cwd)
+  if root and self.app.registry:has_root(root) then
+    root = nil
+  end
   if not root then
     return
   end
@@ -443,9 +390,6 @@ function ProjectActions:maybe_offer_project(cwd)
   end)
 end
 
---- Implements the toggle_terminal_header path for app project actions.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param buf? number
 function ProjectActions:toggle_terminal_header(buf)
   local toggled = self.app.terminals:toggle_header_for_buf(buf or vim.api.nvim_get_current_buf())

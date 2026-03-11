@@ -16,18 +16,12 @@ local TITLE_SUFFIX = {
   library = "IdeaTitle",
 }
 
---- Implements the kind path for prompt highlight.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param kind? CodexCli.PromptCategory|string
 ---@return CodexCli.PromptCategory
 function M.kind(kind)
   return Category.get(kind).id
 end
 
---- Implements the title_group path for prompt highlight.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param kind? CodexCli.PromptCategory|string
 ---@return string
 function M.title_group(kind)
@@ -36,9 +30,6 @@ function M.title_group(kind)
   return prefix .. suffix
 end
 
---- Implements the preview_group path for prompt highlight.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return string
 function M.preview_group()
   return "CodexCliPromptPreviewText"

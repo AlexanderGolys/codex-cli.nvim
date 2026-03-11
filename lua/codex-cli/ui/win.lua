@@ -36,9 +36,6 @@ function M.close(win)
   pcall(vim.api.nvim_win_close, win, true)
 end
 
---- Implements the set_focus_border path for ui win.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param win integer
 ---@param active boolean
 function M.set_focus_border(win, active)

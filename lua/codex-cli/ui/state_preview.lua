@@ -238,8 +238,6 @@ local function panel_height(self)
   return math.min(max_height, available)
 end
 
---- Creates a new ui state preview instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.StatePreview
 function Preview.new(config)
@@ -254,9 +252,6 @@ function Preview.new(config)
   return self
 end
 
---- Implements the update_config path for ui state preview.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param config CodexCli.Config.Values
 function Preview:update_config(config)
   self.config = config
@@ -272,9 +267,6 @@ end
 --- Creates or reuses state preview buffers.
 --- A small buffer cache avoids recreating state each render and keeps UI snappy.
 function Preview:ensure_buffers()
---- Implements the make_buffer path for ui state preview.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function make_buffer(name, filetype)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].buftype = "nofile"
@@ -295,9 +287,6 @@ end
 --- Applies shared styling for both preview windows.
 --- Keeps numbering, wrapping, and focus cursorline behavior synchronized.
 function Preview:apply_window_style()
---- Implements the apply path for ui state preview.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function apply(win, active)
     if not win_valid(win) then
       return
@@ -316,9 +305,6 @@ function Preview:apply_window_style()
   apply(self.state_win, self.focus == "state")
 end
 
---- Implements the update_cursor path for ui state preview.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 function Preview:update_cursor()
   --- Repositions the command cursor after selection changes.
   --- No-op when command window is unavailable.
@@ -342,9 +328,6 @@ end
 --- Binds keymaps used for closing, navigation, and command execution.
 --- Keeps both panes in sync and delegates to command/project-level handlers.
 function Preview:attach_keymaps()
---- Implements the map path for ui state preview.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
   local function map(buf, lhs, rhs)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
   end

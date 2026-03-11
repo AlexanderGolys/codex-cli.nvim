@@ -10,8 +10,6 @@ local Project = require("codex-cli.project.project")
 local Registry = {}
 Registry.__index = Registry
 
---- Creates a new project registry instance from this module.
---- It is used by callers to bootstrap module state before running higher-level plugin actions.
 ---@param opts { path: string }
 ---@return CodexCli.ProjectRegistry
 function Registry.new(opts)
@@ -23,8 +21,6 @@ function Registry.new(opts)
   return self
 end
 
---- Persists or restores project registry data for this workflow.
---- It is used by session restoration and command surfaces so behavior remains repeatable.
 function Registry:load()
   self.projects = {}
   self.by_root = {}
@@ -41,8 +37,6 @@ function Registry:load()
   end)
 end
 
---- Persists or restores project registry data for this workflow.
---- It is used by session restoration and command surfaces so behavior remains repeatable.
 function Registry:save()
   local records = {} ---@type CodexCli.Project.Record[]
   for _, project in ipairs(self.projects) do
@@ -51,35 +45,23 @@ function Registry:save()
   fs.write_json(self.path, { projects = records })
 end
 
---- Implements the list path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return CodexCli.Project[]
 function Registry:list()
   return vim.deepcopy(self.projects)
 end
 
---- Implements the get path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 ---@return CodexCli.Project?
 function Registry:get(root)
   return self.by_root[fs.normalize(root)]
 end
 
---- Implements the has_root path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 ---@return boolean
 function Registry:has_root(root)
   return self:get(root) ~= nil
 end
 
---- Implements the suggest_name path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param root string
 ---@return string
 function Registry:suggest_name(root)
@@ -134,9 +116,6 @@ function Registry:remove(root)
   return project
 end
 
---- Implements the find_for_path path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param path string
 ---@return CodexCli.Project?
 function Registry:find_for_path(path)
@@ -152,9 +131,6 @@ function Registry:find_for_path(path)
   return best
 end
 
---- Implements the find_by_name_or_root path for project registry.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param value string
 ---@return CodexCli.Project?
 function Registry:find_by_name_or_root(value)

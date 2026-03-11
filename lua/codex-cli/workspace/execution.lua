@@ -67,9 +67,6 @@ local function prompt_prefix_lines(item)
   return lines
 end
 
---- Implements the trim path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function trim(value)
   return vim.trim(value or "")
 end
@@ -115,9 +112,6 @@ local function skills_dir(config)
   return fs.normalize(vim.fn.expand(dir))
 end
 
---- Implements the skill_name path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 local function skill_name(config)
   local name = trim(config.prompt_execution.skill_name)
   return name ~= "" and name or "prompt-nvim-codex-cli"
@@ -164,7 +158,6 @@ local function read_file(path)
   return content
 end
 
---- Creates a new execution helper with a concrete configuration snapshot.
 --- The created object is used by app runtime to dispatch prompt text and read receipts.
 ---@param config CodexCli.Config.Values
 ---@return CodexCli.Workspace.Execution
@@ -201,9 +194,6 @@ function Execution:skill_file()
   return fs.join(self:skill_dir(), "SKILL.md")
 end
 
---- Implements the legacy_skill_file path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@return string?
 function Execution:legacy_skill_file()
   local dir = skills_dir(self.config)
@@ -261,9 +251,6 @@ function Execution:ensure_prompt_skill()
   end
 end
 
---- Implements the receipt_path path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 ---@return string
@@ -271,9 +258,6 @@ function Execution:receipt_path(project, item)
   return self:current_receipt_path(project, item)
 end
 
---- Implements the clear_receipt path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 function Execution:clear_receipt(project, item)
@@ -284,9 +268,6 @@ function Execution:clear_receipt(project, item)
   end
 end
 
---- Implements the dispatch_prompt path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 ---@return string
@@ -321,9 +302,6 @@ function Execution:dispatch_prompt(project, item)
   return table.concat(lines, "\n")
 end
 
---- Implements the read_receipt path for workspace execution.
---- This helper is used by orchestration code so this module stays consistent with the rest of the plugin.
---- Keep its effects aligned with callers that rely on project, queue, and terminal state shape.
 ---@param project CodexCli.Project
 ---@param item CodexCli.QueueItem
 ---@return CodexCli.Workspace.ExecutionReceipt?
