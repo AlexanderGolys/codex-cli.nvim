@@ -43,7 +43,7 @@ require("lazy").setup({
     snacks,
     {
       dir = root,
-      name = "codex-cli.nvim",
+      name = "clodex.nvim",
       dependencies = {
         "folke/snacks.nvim",
       },

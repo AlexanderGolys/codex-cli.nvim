@@ -1,8 +1,8 @@
-# codex-cli.nvim
+# clodex.nvim
 
 Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration for Neovim.
 
-`codex-cli.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived Codex terminal sessions, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
+`clodex.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived Codex terminal sessions, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
 
 The plugin is intentionally Neovim-first rather than agent-first. It keeps the classic Codex CLI experience inside Neovim, then uses Neovim's own context to make prompt authoring faster and more structured. The editor resolves things like files, lines, selections, and diagnostics into plain prompt text before the prompt is sent, so the plugin can stay focused on helping Neovim use AI well instead of centering the whole workflow around agent management.
 
@@ -16,7 +16,7 @@ The plugin is built around a few core ideas:
 
 ## Philosophy
 
-The core idea behind `codex-cli.nvim` is simple:
+The core idea behind `clodex.nvim` is simple:
 
 - keep Codex CLI as the execution engine
 - keep Neovim as the place where prompt context is gathered and shaped
@@ -27,8 +27,8 @@ That means the plugin is not primarily about teaching agents how to operate Neov
 
 Examples of that model:
 
-- a file reference becomes something like `@{lua/codex-cli/ui/select.lua}`
-- a line reference becomes something like `@{lua/codex-cli/ui/select.lua}: line 42`
+- a file reference becomes something like `@{lua/clodex/ui/select.lua}`
+- a line reference becomes something like `@{lua/clodex/ui/select.lua}: line 42`
 - diagnostics become plain text produced by the editor, with enough explanation for the agent to act on them without knowing anything about Neovim
 
 This keeps the system composable. The plugin stays focused on being a strong CLI wrapper with editor-native ergonomics, and if richer agent workflow features become useful later they can be added from that Neovim-first foundation.
@@ -122,6 +122,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 - `error` can pull in screenshot context
 - `visual` can save a clipboard image into prompt assets
+- `error` can prefill the latest Vim notification or traceback when you choose the message-based flow
 - `library` lets you instantiate a saved prompt template
 
 ### Receipt-based prompt execution
@@ -138,7 +139,7 @@ That gives you:
 
 ## Main Features
 
-- Toggle a Codex terminal with `:CodexToggle`.
+- Toggle a Clodex terminal with `:ClodexToggle`.
 - Keep one persistent session per project root.
 - Keep one free non-project session outside registered projects.
 - Track active projects per tabpage.
@@ -150,6 +151,7 @@ That gives you:
 - Poll execution receipts and promote completed prompts into history.
 - Move, copy, rewind, edit, and delete queue items.
 - Preserve session state across Vim sessions.
+- Open a project's `TODO.md` or shared dictionary without leaving the current window.
 - Expose a small `lualine` helper for current-project display.
 
 ## Requirements
@@ -164,7 +166,7 @@ Example with `lazy.nvim`:
 
 ```lua
 {
-  "AlexanderGolys/codex-cli.nvim",
+  "AlexanderGolys/clodex.nvim",
   dependencies = {
     "folke/snacks.nvim",
   },
@@ -180,7 +182,7 @@ Example with `lazy.nvim`:
 Minimal manual setup:
 
 ```lua
-require("codex-cli").setup()
+require("clodex").setup()
 ```
 
 ## Configuration
@@ -188,11 +190,12 @@ require("codex-cli").setup()
 Current defaults:
 
 ```lua
-require("codex-cli").setup({
+require("clodex").setup({
   codex_cmd = { "codex" },
   storage = {
-    projects_file = vim.fn.stdpath("data") .. "/codex-cli/projects.json",
-    workspaces_dir = vim.fn.stdpath("data") .. "/codex-cli/workspaces",
+    projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
+    workspaces_dir = ".clodex/workspaces",
+    session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
   },
   terminal = {
     win = {
@@ -219,6 +222,7 @@ require("codex-cli").setup({
     footer_height = 4,
     preview_max_lines = 5,
     fold_preview = true,
+    date_format = "%H:%M %d.%m.%Y",
   },
   error_prompt = {
     screenshot_dir = nil,
@@ -229,11 +233,11 @@ require("codex-cli").setup({
     },
   },
   prompt_execution = {
-    receipts_dir = vim.fn.stdpath("data") .. "/codex-cli/prompt-executions",
-    relative_dir = ".codex-cli/prompt-executions",
+    receipts_dir = ".clodex/prompt-executions",
+    relative_dir = "",
     poll_ms = 5000,
     skills_dir = nil,
-    skill_name = "prompt-nvim-codex-cli",
+    skill_name = "prompt-nvim-clodex",
   },
 })
 ```
@@ -248,24 +252,34 @@ require("codex-cli").setup({
 `storage.projects_file`
 
 - JSON file containing the registered project list.
+- This remains global by default so the plugin can keep one shared registry of known projects.
 
 `storage.workspaces_dir`
 
-- Per-project queue data and prompt assets are stored here.
+- Queue data and prompt assets are stored under each project's own root here.
+- Relative paths are resolved per project, so the default becomes `<project>/.clodex/workspaces`.
+- Older data from the former global storage root is migrated into the project-local location on access.
+
+`storage.session_state_dir`
+
+- Session persistence snapshots are stored here.
+- Neovim-only project details remain global under `stdpath("data")/clodex/project-details`.
 
 `prompt_execution.receipts_dir`
 
-- Receipt files are written under `stdpath("data")/codex-cli/prompt-executions`.
+- Receipt files are written under each project's local `.clodex/prompt-executions` directory by default.
+- Relative paths are resolved per project, so the default becomes `<project>/.clodex/prompt-executions`.
+- Older receipt files from the former global storage root are migrated into the project-local location when read.
 
 `prompt_execution.relative_dir`
 
-- Legacy project-local receipt path kept only so older in-flight jobs can still be detected and cleaned up.
+- Legacy fallback receipt path retained only for migration/cleanup of older in-flight jobs.
 
 `prompt_execution.skills_dir`
 
 - Optional path to your Codex skills root.
 - When set, the plugin installs a generated skill at `<skills_dir>/<skill_name>/SKILL.md`.
-- Queued prompt dispatch then ends with `$prompt-nvim-codex-cli` instead of inlining the full receipt instructions every time.
+- Queued prompt dispatch then ends with `$prompt-nvim-clodex` instead of inlining the full receipt instructions every time.
 
 `highlights.groups`
 
@@ -275,38 +289,40 @@ require("codex-cli").setup({
 
 Core commands:
 
-- `:CodexToggle`
-- `:CodexStateToggle`
-  - `:CodexProjectAdd`
-- `:CodexProjectRename`
-- `:CodexProjectRemove`
-- `:CodexProjectClear`
-- `:CodexTerminalHeaderToggle`
-- `:CodexQueueWorkspace`
-- `:CodexDebugReload`
+- `:ClodexToggle`
+- `:ClodexStateToggle`
+- `:ClodexProjectAdd`
+- `:ClodexProjectRename`
+- `:ClodexProjectRemove`
+- `:ClodexProjectClear`
+- `:ClodexTerminalHeaderToggle`
+- `:ClodexQueueWorkspace`
+- `:ClodexProjectTodo`
+- `:ClodexProjectDictionary`
+- `:ClodexDebugReload`
 
 Queue and prompt commands:
 
-- `:CodexTodoAdd`
-- `:CodexTodoError`
-- `:CodexTodoImplement`
-- `:CodexTodoImplementAll`
-- `:CodexPromptAdd`
-- `:CodexPromptAddFor`
-- `:CodexPromptTodo`
-- `:CodexPromptError`
-- `:CodexPromptVisual`
-- `:CodexPromptAdjustment`
-- `:CodexPromptRefactor`
-- `:CodexPromptIdea`
-- `:CodexPromptExplain`
-- `:CodexPromptTodoFor`
-- `:CodexPromptErrorFor`
-- `:CodexPromptVisualFor`
-- `:CodexPromptAdjustmentFor`
-- `:CodexPromptRefactorFor`
-- `:CodexPromptIdeaFor`
-- `:CodexPromptExplainFor`
+- `:ClodexTodoAdd`
+- `:ClodexTodoError`
+- `:ClodexTodoImplement`
+- `:ClodexTodoImplementAll`
+- `:ClodexPromptAdd`
+- `:ClodexPromptAddFor`
+- `:ClodexPromptTodo`
+- `:ClodexPromptError`
+- `:ClodexPromptVisual`
+- `:ClodexPromptAdjustment`
+- `:ClodexPromptRefactor`
+- `:ClodexPromptIdea`
+- `:ClodexPromptExplain`
+- `:ClodexPromptTodoFor`
+- `:ClodexPromptErrorFor`
+- `:ClodexPromptVisualFor`
+- `:ClodexPromptAdjustmentFor`
+- `:ClodexPromptRefactorFor`
+- `:ClodexPromptIdeaFor`
+- `:ClodexPromptExplainFor`
 
 ## Queue Workspace
 
@@ -345,7 +361,7 @@ When a queued item is dispatched:
 2. It clears any stale receipt file for that queue item.
 3. It renders the queue item into a Codex prompt.
 4. It appends execution instructions describing where the JSON receipt must be written.
-5. If a prompt skill is configured, it appends `$prompt-nvim-codex-cli`.
+5. If a prompt skill is configured, it appends `$prompt-nvim-clodex`.
 6. Codex performs the work and writes the receipt when done.
 7. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
 8. The plugin polls receipt files on a timer and moves completed items into history.
@@ -374,30 +390,30 @@ These are plain prompt blueprints that can be inserted into the queue as normal 
 
 ## Public Lua API
 
-Public entrypoints live in [`lua/codex-cli/init.lua`](/home/flux/nvim-plugins/codex-cli/lua/codex-cli/init.lua).
+Public entrypoints live in [`lua/clodex/init.lua`](/home/flux/nvim-plugins/clodex.nvim/lua/clodex/init.lua).
 
 Main functions:
 
-- `require("codex-cli").setup(opts)`
-- `require("codex-cli").toggle()`
-- `require("codex-cli").toggle_state_preview()`
-  - `require("codex-cli").add_project(opts)`
-- `require("codex-cli").rename_project(name)`
-- `require("codex-cli").remove_project(value)`
-- `require("codex-cli").clear_active_project()`
-- `require("codex-cli").open_queue_workspace()`
-- `require("codex-cli").add_todo(opts)`
-- `require("codex-cli").add_prompt(opts)`
-- `require("codex-cli").add_prompt_for_project(opts)`
-- `require("codex-cli").add_error_todo(opts)`
-- `require("codex-cli").implement_next_queued_item(opts)`
-- `require("codex-cli").implement_all_queued_items(opts)`
-- `require("codex-cli").debug_reload()`
+- `require("clodex").setup(opts)`
+- `require("clodex").toggle()`
+- `require("clodex").toggle_state_preview()`
+  - `require("clodex").add_project(opts)`
+- `require("clodex").rename_project(name)`
+- `require("clodex").remove_project(value)`
+- `require("clodex").clear_active_project()`
+- `require("clodex").open_queue_workspace()`
+- `require("clodex").add_todo(opts)`
+- `require("clodex").add_prompt(opts)`
+- `require("clodex").add_prompt_for_project(opts)`
+- `require("clodex").add_error_todo(opts)`
+- `require("clodex").implement_next_queued_item(opts)`
+- `require("clodex").implement_all_queued_items(opts)`
+- `require("clodex").debug_reload()`
 
 Statusline helper:
 
-- `require("codex-cli").lualine.project(opts)`
-- `require("codex-cli").lualine.project_name(opts)`
+- `require("clodex").lualine.project(opts)`
+- `require("clodex").lualine.project_name(opts)`
 
 Example:
 
@@ -405,9 +421,9 @@ Example:
 sections = {
   lualine_x = {
     function()
-      return require("codex-cli").lualine.project_name({
+      return require("clodex").lualine.project_name({
         include_detected = true,
-        prefix = "Codex:",
+        prefix = "Clodex:",
       })
     end,
   },
@@ -419,7 +435,7 @@ sections = {
 The codebase is intentionally split by responsibility:
 
 ```text
-lua/codex-cli/
+lua/clodex/
   init.lua
   app.lua
   commands.lua
@@ -434,7 +450,7 @@ lua/codex-cli/
   util/
   workspace/
 plugin/
-  codex-cli.lua
+  clodex.lua
 ```
 
 Important modules:
@@ -479,18 +495,18 @@ The current implementation is centered on project/session management and queued 
 Useful checks while developing:
 
 ```bash
-nvim --headless "+lua require('codex-cli').setup()" +qa
-nvim --headless "+lua print(vim.inspect(require('codex-cli')))" +qa
+nvim --headless "+lua require('clodex').setup()" +qa
+nvim --headless "+lua print(vim.inspect(require('clodex')))" +qa
 ```
 
 Manual validation:
 
-1. Register a project and open `:CodexQueueWorkspace`.
+1. Register a project and open `:ClodexQueueWorkspace`.
 2. Add prompts and move one into `queued`.
-3. Dispatch it with `:CodexTodoImplement`.
+3. Dispatch it with `:ClodexTodoImplement`.
 4. Confirm the prompt is sent to the project session.
 5. Write a matching receipt file and verify the item moves into `history`.
 
 ## License
 
-MIT. See [`LICENSE`](/home/flux/nvim-plugins/codex-cli/LICENSE).
+MIT. See [`LICENSE`](/home/flux/nvim-plugins/clodex.nvim/LICENSE).
