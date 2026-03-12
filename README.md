@@ -122,6 +122,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 - `error` can pull in screenshot context
 - `visual` can save a clipboard image into prompt assets
+- multiline prompt editors can paste a clipboard image into the prompt body with `Ctrl-V`
 - `error` can prefill the latest Vim notification or traceback when you choose the message-based flow
 - `library` lets you instantiate a saved prompt template
 

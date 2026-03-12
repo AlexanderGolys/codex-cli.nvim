@@ -154,14 +154,14 @@ local M = {
       bold = true,
     },
     ClodexQueueQueuedName = {
-      fg = "#d86ba9",
+      fg = "#4aa8d8",
       bold = true,
     },
     ClodexQueueQueuedBracket = {
-      fg = "#ec96c3",
+      fg = "#74c2e8",
     },
     ClodexQueueQueuedCount = {
-      fg = "#f7b3d7",
+      fg = "#9ad8f2",
       bold = true,
     },
     ClodexQueueHistoryName = {

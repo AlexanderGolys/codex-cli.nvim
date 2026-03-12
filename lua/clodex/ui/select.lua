@@ -15,6 +15,7 @@ local PROMPT_EDITOR_WINDOW_GAP = 1
 local PROMPT_EDITOR_BORDER_ROWS = 2
 local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
+local PROMPT_EDITOR_BACKDROP = 40
 
 ---@class Clodex.UiSelect.TextChoice
 ---@field label string
@@ -27,6 +28,12 @@ local PROMPT_EDITOR_ZINDEX = 70
 ---@param opts? vim.ui.select.Opts
 ---@param on_choice fun(item?: T, idx?: number)
 function M.select(items, opts, on_choice)
+  opts = opts or {}
+  opts.snacks = vim.tbl_deep_extend("force", {
+    main = {
+      enter = true,
+    },
+  }, vim.deepcopy(opts.snacks or {}))
   return SnacksSelect.select(items, opts, on_choice)
 end
 
@@ -205,7 +212,7 @@ local function style_prompt_editor(win)
   vim.wo[win].winblend = 0
 end
 
----@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture }
+---@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string? }
 ---@param on_confirm fun(value?: string, action?: "save"|"queue")
 function M.multiline_input(opts, on_confirm)
   opts = opts or {}
@@ -227,7 +234,7 @@ function M.multiline_input(opts, on_confirm)
     math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
   )
   local title_footer = " Start with a short title, then add the implementation details below. "
-  local body_footer = " Enter details   Ctrl-S save   Ctrl-Q queue+run   Esc cancel   & editor context   Ctrl-X prompt shortcut "
+  local body_footer = " Enter details   Ctrl-S save   Ctrl-Q queue+run   Ctrl-V paste image   Esc cancel   & editor context   Ctrl-X prompt shortcut "
 
   local title_buf = vim.api.nvim_create_buf(false, true)
   local body_buf = vim.api.nvim_create_buf(false, true)
@@ -265,7 +272,7 @@ function M.multiline_input(opts, on_confirm)
   local title_win = ui_win.open({
     buf = title_buf,
     enter = true,
-    backdrop = false,
+    backdrop = PROMPT_EDITOR_BACKDROP,
     border = "rounded",
     title = (" %s "):format(opts.prompt),
     title_pos = "center",
@@ -297,7 +304,7 @@ function M.multiline_input(opts, on_confirm)
   local body_win = ui_win.open({
     buf = body_buf,
     enter = false,
-    backdrop = false,
+    backdrop = PROMPT_EDITOR_BACKDROP,
     border = "rounded",
     title = " Details ",
     title_pos = "center",
@@ -537,6 +544,21 @@ function M.multiline_input(opts, on_confirm)
     end)
   end
 
+  --- Saves the current clipboard image and inserts its prompt text at the cursor.
+  --- Storage details are delegated to the caller so this editor stays reusable.
+  local function paste_image()
+    if type(opts.paste_image) ~= "function" then
+      return
+    end
+    local text = opts.paste_image()
+    if not text or text == "" then
+      return
+    end
+    insert_text(body_buf, body_win.win, text)
+    resize()
+    focus_body()
+  end
+
   vim.keymap.set({ "n", "i" }, "<CR>", focus_body, { buffer = title_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<Down>", focus_body, { buffer = title_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<Tab>", focus_body, { buffer = title_buf, silent = true })
@@ -545,6 +567,10 @@ function M.multiline_input(opts, on_confirm)
   end, { buffer = title_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-q>", function()
     submit("queue")
+  end, { buffer = title_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<C-v>", function()
+    focus_body()
+    paste_image()
   end, { buffer = title_buf, silent = true })
   vim.keymap.set("n", "q", function()
     close(nil)
@@ -570,6 +596,7 @@ function M.multiline_input(opts, on_confirm)
   end, { buffer = body_buf, silent = true })
   vim.keymap.set("n", "x", insert_quick_prompt, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "<C-x>", insert_quick_prompt, { buffer = body_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, { buffer = body_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<S-Tab>", focus_title, { buffer = body_buf, silent = true })
   vim.keymap.set("n", "q", function()
     close(nil)
@@ -605,6 +632,9 @@ function M.confirm(prompt, on_choice)
 
   return M.select(items, {
     prompt = prompt,
+    snacks = {
+      focus = "list",
+    },
     format_item = function(item)
       return item.label
     end,

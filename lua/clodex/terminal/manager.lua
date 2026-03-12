@@ -1,4 +1,5 @@
 local Session = require("clodex.terminal.session")
+local TerminalUi = require("clodex.terminal.ui")
 
 --- Defines the Clodex.TerminalTarget.Project type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -227,8 +228,13 @@ function Manager:open_window(session)
     bo = {
       filetype = "clodex_terminal",
     },
-    title = session.title,
+    wo = {
+      statusline = "%!v:lua.require('clodex.terminal.ui').statusline()",
+      winbar = "%!v:lua.require('clodex.terminal.ui').winbar()",
+    },
     on_win = function()
+      TerminalUi.statusline()
+      TerminalUi.winbar()
       if self.config.terminal.start_insert then
         vim.cmd.startinsert()
       end

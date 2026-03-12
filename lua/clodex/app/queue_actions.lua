@@ -45,7 +45,7 @@ function QueueActions:dispatch_item(project, item)
   end
 
   self.app.execution:clear_receipt(project, item)
-  if not session:send(self.app.execution:dispatch_prompt(project, item)) then
+  if not session:dispatch_prompt(self.app.execution:dispatch_prompt(project, item)) then
     return false
   end
   self.app.project_details_store:touch_activity(project)
@@ -171,6 +171,27 @@ function QueueActions:implement_queued_items(project)
 
   if sent > 0 then
     notify.notify(("Implemented %d queued prompt(s) for %s"):format(sent, project.name))
+    self.app:refresh_state_preview()
+  end
+end
+
+---@param project Clodex.Project
+function QueueActions:move_all_planned_items_to_queued(project)
+  local planned_items = vim.deepcopy(self.app.queue:queues(project).planned)
+  if #planned_items == 0 then
+    notify.warn(("No planned items for %s"):format(project.name))
+    return
+  end
+
+  local moved = 0
+  for _, item in ipairs(planned_items) do
+    if self.app.queue:advance(project, item.id) then
+      moved = moved + 1
+    end
+  end
+
+  if moved > 0 then
+    notify.notify(("Moved %d planned prompt(s) to queued for %s"):format(moved, project.name))
     self.app:refresh_state_preview()
   end
 end

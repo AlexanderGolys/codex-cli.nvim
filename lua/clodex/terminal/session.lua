@@ -91,21 +91,10 @@ local function attach_termclose_handler(self)
     })
 end
 
----@param buf integer
----@param fn fun()
-local function with_editable_buffer(buf, fn)
-    local was_modifiable = vim.bo[buf].modifiable
-    vim.bo[buf].modifiable = true
-
-    local ok, err = pcall(fn)
-
-    if not was_modifiable and vim.api.nvim_buf_is_valid(buf) then
-        vim.bo[buf].modifiable = false
-    end
-
-    if not ok then
-        error(err)
-    end
+---@param text string
+---@return string
+local function statusline_escape(text)
+    return (text or ""):gsub("%%", "%%%%")
 end
 
 ---@param spec Clodex.TerminalSession.Spec
@@ -133,27 +122,7 @@ end
 --- This normalizes what users see when entering buffers and when settings change.
 --- It also removes stale headers when header mode is disabled.
 function Session:sync_header()
-    if not self:buf_valid() then
-        return
-    end
-
-    if self.header_enabled then
-        local header = self:header_text()
-        local existing = vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1]
-        if existing ~= header then
-            with_editable_buffer(self.buf, function()
-                vim.api.nvim_buf_set_lines(self.buf, 0, 1, false, { header })
-            end)
-        end
-        return
-    end
-
-    local existing = vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1]
-    if existing and existing:find("^%[Codex CLI%]") then
-        with_editable_buffer(self.buf, function()
-            vim.api.nvim_buf_set_lines(self.buf, 0, 1, false, {})
-        end)
-    end
+    vim.cmd.redrawstatus()
 end
 
 --- Toggles whether the header row is shown in the terminal buffer.
@@ -163,6 +132,54 @@ function Session:toggle_header()
     self.header_enabled = not self.header_enabled
     self:sync_header()
     return self.header_enabled
+end
+
+---@return string
+function Session:winbar_text()
+    if not self.header_enabled then
+        return ""
+    end
+    return (" %s "):format(statusline_escape(self:header_text()))
+end
+
+---@return string
+function Session:last_cli_line()
+    if not self:buf_valid() then
+        return ""
+    end
+    local line_count = vim.api.nvim_buf_line_count(self.buf)
+    if line_count <= 0 then
+        return ""
+    end
+    local line = vim.api.nvim_buf_get_lines(self.buf, line_count - 1, line_count, false)[1] or ""
+    return vim.trim(line)
+end
+
+---@param win integer
+---@return boolean
+function Session:window_shows_bottom(win)
+    if not self:buf_valid() or not vim.api.nvim_win_is_valid(win) then
+        return true
+    end
+    local line_count = vim.api.nvim_buf_line_count(self.buf)
+    if line_count <= 0 then
+        return true
+    end
+    local info = vim.fn.getwininfo(win)[1]
+    return not not (info and info.botline and info.botline >= line_count)
+end
+
+---@param win integer
+---@return string
+function Session:statusline_text(win)
+    if self:window_shows_bottom(win) then
+        return ""
+    end
+    local line = self:last_cli_line()
+    if line == "" then
+        return ""
+    end
+    return (" %s "):format(statusline_escape(line))
 end
 
 ---@return boolean
@@ -196,6 +213,14 @@ function Session:update_buffer_state(opts)
         cwd = self.cwd,
         project_root = self.project_root,
     }
+    vim.keymap.set("n", "<localleader>h", "<Cmd>ClodexTerminalHeaderToggle<CR>", {
+        buffer = self.buf,
+        silent = true,
+    })
+    vim.keymap.set("t", "<localleader>h", "<C-\\><C-n><Cmd>ClodexTerminalHeaderToggle<CR>i", {
+        buffer = self.buf,
+        silent = true,
+    })
     if opts.sync_header ~= false then
         self:sync_header()
     end
@@ -269,6 +294,32 @@ function Session:send(text)
         notify.error(("Failed to send prompt to Codex session at %s"):format(self.cwd))
         return false
     end
+    return true
+end
+
+---@param text string
+---@return boolean
+function Session:dispatch_prompt(text)
+    text = vim.trim(text or "")
+    if text == "" then
+        return false
+    end
+    if not self:ensure_started() or not self.job_id then
+        return false
+    end
+
+    local normalized = text:gsub("\r\n", "\n"):gsub("\n", "\r")
+    local ok = pcall(vim.fn.chansend, self.job_id, normalized)
+    if not ok then
+        notify.error(("Failed to send prompt to Codex session at %s"):format(self.cwd))
+        return false
+    end
+
+    vim.defer_fn(function()
+        if self.job_id then
+            pcall(vim.fn.chansend, self.job_id, "\r")
+        end
+    end, 40)
     return true
 end
 

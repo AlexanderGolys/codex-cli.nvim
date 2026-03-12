@@ -176,6 +176,16 @@ function App:setup_autocmds()
         end,
     })
 
+    vim.api.nvim_create_autocmd("TabNewEntered", {
+        group = self.group,
+        --- Marks freshly opened tabs as already handled for project prompts.
+        --- New tabs are commonly used to switch context, so avoid auto-offering the file's project there.
+        callback = function()
+            self:current_tab():mark_prompted_project()
+            self:refresh_state_preview()
+        end,
+    })
+
     vim.api.nvim_create_autocmd({ "BufEnter", "DirChanged", "FocusGained", "TabEnter" }, {
         group = self.group,
         --- Refreshes preview state and prompts project detection for the current buffer.

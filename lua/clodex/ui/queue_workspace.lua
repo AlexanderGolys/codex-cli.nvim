@@ -1,5 +1,6 @@
 local ui = require("clodex.ui.select")
 local Extmark = require("clodex.ui.extmark")
+local PromptAssets = require("clodex.prompt.assets")
 local PromptComposer = require("clodex.prompt.composer")
 local TextBlock = require("clodex.ui.text_block")
 local PromptHighlight = require("clodex.prompt.highlight")
@@ -259,7 +260,7 @@ local function footer_actions(focus)
         title = " Queue Actions ",
         lines = {
             "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
-            "a: add prompt   e: edit prompt   i/I: implement one/all queued   m/M: move forward/back",
+            "a: add prompt   e: edit prompt   i: implement queued item   I: queue all planned   m/M: move forward/back",
             "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   Ctrl-S: save",
         },
     }
@@ -710,7 +711,7 @@ function Workspace:attach_keymaps()
             self:implement_queue_item()
         end)
         map(buf, "I", function()
-            self:implement_queued_items()
+            self:move_all_planned_items_to_queued()
         end)
         map(buf, "m", function()
             self:move_queue_item()
@@ -1138,6 +1139,17 @@ function Workspace:add_todo()
 
     ui.multiline_input({
         prompt = ("Todo prompt for %s"):format(project.name),
+        paste_image = function()
+            local image_path = PromptAssets.save_clipboard_image(
+                self.config.storage.workspaces_dir,
+                project.root,
+                "todo"
+            )
+            if not image_path then
+                return nil
+            end
+            return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
+        end,
     }, function(body)
         local spec = body and PromptComposer.parse(body) or nil
         if not spec then
@@ -1163,6 +1175,17 @@ function Workspace:edit_queue_item()
     ui.multiline_input({
         prompt = ("Edit prompt for %s"):format(project.name),
         default = PromptComposer.render(item.title, item.details),
+        paste_image = function()
+            local image_path = PromptAssets.save_clipboard_image(
+                self.config.storage.workspaces_dir,
+                project.root,
+                item.kind
+            )
+            if not image_path then
+                return nil
+            end
+            return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
+        end,
     }, function(body)
         local spec = body and PromptComposer.parse(body) or nil
         if not spec then
@@ -1192,14 +1215,14 @@ function Workspace:implement_queue_item()
     self:refresh()
 end
 
-function Workspace:implement_queued_items()
+function Workspace:move_all_planned_items_to_queued()
     local project = self:selected_project()
     if not project then
         notify.warn("No project selected")
         return
     end
 
-    self.app.queue_actions:implement_queued_items(project)
+    self.app.queue_actions:move_all_planned_items_to_queued(project)
     self:refresh()
 end
 

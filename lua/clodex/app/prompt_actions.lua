@@ -1,8 +1,8 @@
+local PromptAssets = require("clodex.prompt.assets")
 local PromptCategory = require("clodex.prompt.category")
 local PromptComposer = require("clodex.prompt.composer")
 local PromptLibrary = require("clodex.prompt.library")
 local PromptTitle = require("clodex.prompt.title")
-local clipboard = require("clodex.util.clipboard")
 local fs = require("clodex.util.fs")
 local messages = require("clodex.util.messages")
 local notify = require("clodex.util.notify")
@@ -40,11 +40,6 @@ local ui = require("clodex.ui.select")
 ---@field app Clodex.App
 local PromptActions = {}
 PromptActions.__index = PromptActions
-
-local function is_absolute_path(path)
-  path = fs.normalize(path)
-  return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
-end
 
 ---@param app Clodex.App
 ---@return Clodex.AppPromptActions
@@ -125,25 +120,24 @@ function PromptActions:pick_category(project, callback)
   end)
 end
 
----@param category Clodex.PromptCategory
 ---@param project Clodex.Project
----@return string
-function PromptActions:asset_dir(project, category)
-  local root = fs.normalize(self.app.config:get().storage.workspaces_dir)
-  if not is_absolute_path(root) then
-    root = fs.join(project.root, root)
-  end
-  return fs.join(root, "prompt-assets", category)
+---@param category Clodex.PromptCategory
+---@return string?
+function PromptActions:save_clipboard_image(project, category)
+  return PromptAssets.save_clipboard_image(self.app.config:get().storage.workspaces_dir, project.root, category)
 end
 
 ---@param project Clodex.Project
 ---@param category Clodex.PromptCategory
----@param ext string
----@return string
-function PromptActions:asset_path(project, category, ext)
-  local timestamp = os.date("!%Y%m%dT%H%M%SZ")
-  local name = vim.fn.sha256(category .. "\n" .. timestamp):sub(1, 16)
-  return fs.join(self:asset_dir(project, category), ("%s.%s"):format(name, ext))
+---@return fun(): string?
+function PromptActions:paste_image_callback(project, category)
+  return function()
+    local image_path = self:save_clipboard_image(project, category)
+    if not image_path then
+      return nil
+    end
+    return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
+  end
 end
 
 --- Opens a picker path for app prompt actions and handles the chosen result.
@@ -180,6 +174,7 @@ end
 function PromptActions:prompt_for_todo(project)
   ui.multiline_input({
     prompt = ("Todo prompt for %s"):format(project.name),
+    paste_image = self:paste_image_callback(project, "todo"),
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
@@ -203,6 +198,7 @@ function PromptActions:compose_category_prompt(project, definition, category, de
   ui.multiline_input({
     prompt = ("%s prompt for %s"):format(definition.label, project.name),
     default = default_body or definition.default_title,
+    paste_image = self:paste_image_callback(project, category),
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
@@ -235,9 +231,8 @@ function PromptActions:prompt_for_visual(project)
       return
     end
 
-    local image_path = self:asset_path(project, "visual", "png")
-    if not clipboard.save_image(image_path) then
-      notify.warn("No PNG image found in the clipboard")
+    local image_path = self:save_clipboard_image(project, "visual")
+    if not image_path then
       return
     end
 
@@ -484,9 +479,8 @@ function PromptActions:pick_error_source(project, latest_screenshot, screenshot_
       ui.input({
         prompt = "Short error summary (optional)",
       }, function(summary)
-        local image_path = self:asset_path(project, "error", "png")
-        if not clipboard.save_image(image_path) then
-          notify.warn("No PNG image found in the clipboard")
+        local image_path = self:save_clipboard_image(project, "error")
+        if not image_path then
           return
         end
         self:add_error_investigation(
@@ -520,6 +514,7 @@ function PromptActions:pick_error_source(project, latest_screenshot, screenshot_
         prompt = "Error message",
         default = default_body,
         min_height = 10,
+        paste_image = self:paste_image_callback(project, "error"),
       }, function(body)
         local message = body and freeform_message(body) or nil
         message = message and vim.trim(message) or ""
