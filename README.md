@@ -1,7 +1,6 @@
 # clodex.nvim
 
 Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration for Neovim.
-
 `clodex.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived Codex terminal sessions, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
 
 The plugin is intentionally Neovim-first rather than agent-first. It keeps the classic Codex CLI experience inside Neovim, then uses Neovim's own context to make prompt authoring faster and more structured. The editor resolves things like files, lines, selections, and diagnostics into plain prompt text before the prompt is sent, so the plugin can stay focused on helping Neovim use AI well instead of centering the whole workflow around agent management.
@@ -128,7 +127,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 ### Receipt-based prompt execution
 
-Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete, then keep draining the project's `queued` lane until it is empty. Items in `planned` remain staged and are not started automatically. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
+Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete, then keep draining the project's workspace file under `queues.queued` until it is empty. Items in `queues.planned` remain staged and are not started automatically. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
 
 That gives you:
 
@@ -173,9 +172,6 @@ Example with `lazy.nvim`:
   },
   opts = {
     codex_cmd = { "codex" },
-    prompt_execution = {
-      skills_dir = vim.fn.expand("~/.codex/skills"),
-    },
   },
 }
 ```
@@ -206,7 +202,7 @@ require("clodex").setup({
     start_insert = true,
   },
   project_detection = {
-    auto_suggest_git_root = true,
+    auto_suggest_git_root = false,
   },
   state_preview = {
     min_width = 36,
@@ -237,7 +233,7 @@ require("clodex").setup({
     receipts_dir = ".clodex/prompt-executions",
     relative_dir = "",
     poll_ms = 5000,
-    skills_dir = nil,
+    skills_dir = ".codex/skills",
     skill_name = "prompt-nvim-clodex",
   },
 })
@@ -254,6 +250,12 @@ require("clodex").setup({
 
 - JSON file containing the registered project list.
 - This remains global by default so the plugin can keep one shared registry of known projects.
+
+`project_detection.auto_suggest_git_root`
+
+- Defaults to `false`.
+- Clodex does not add or suggest projects automatically during normal terminal toggles.
+- Projects should only be registered through explicit user actions such as `:ClodexProjectAdd`.
 
 `storage.workspaces_dir`
 
@@ -278,8 +280,10 @@ require("clodex").setup({
 
 `prompt_execution.skills_dir`
 
-- Optional path to your Codex skills root.
-- When set, the plugin installs a generated skill at `<skills_dir>/<skill_name>/SKILL.md`.
+- Project-local skill root under each project directory.
+- Default is `.codex/skills`, so the generated skill is written at `<project>/.codex/skills/<skill_name>/SKILL.md`.
+- Clodex does not need to modify global Codex config files for queued prompt execution.
+- Set this to an empty string to disable generated skill mode and fall back to inline `$prompt` instructions.
 - Queued prompt dispatch then ends with `$prompt-nvim-clodex` instead of inlining the full receipt instructions every time.
 
 `highlights.groups`
@@ -296,6 +300,7 @@ Core commands:
 - `:ClodexProjectRename`
 - `:ClodexProjectRemove`
 - `:ClodexProjectClear`
+- `:ClodexProjectReadme`
 - `:ClodexTerminalHeaderToggle`
 - `:ClodexQueueWorkspace`
 - `:ClodexProjectTodo`
@@ -306,6 +311,7 @@ Queue and prompt commands:
 
 - `:ClodexTodoAdd`
 - `:ClodexTodoError`
+- `:ClodexTodoErrorFor`
 - `:ClodexTodoImplement`
 - `:ClodexTodoImplementAll`
 - `:ClodexPromptAdd`
@@ -429,6 +435,33 @@ sections = {
     end,
   },
 }
+```
+
+Terminal statusline note:
+
+- Clodex sets its intended local `statusline` and `winbar` for `clodex_terminal` buffers when that filetype is created.
+- When `lualine.nvim` is already loaded, Clodex automatically excludes `clodex_terminal` from lualine's statusline and winbar targets so the native mirrored Codex CLI line stays visible in terminal buffers.
+- If you prefer your own statusline in Codex terminal buffers, disable that behavior in `setup()`:
+
+```lua
+require("clodex").setup({
+  terminal = {
+    prefer_native_statusline = false,
+  },
+})
+```
+
+- If you manage lualine manually and want the equivalent explicit rule, exclude `clodex_terminal` from lualine yourself:
+
+```lua
+require("lualine").setup({
+    options = {
+      disabled_filetypes = {
+        statusline = { "clodex_terminal" },
+        winbar = { "clodex_terminal" },
+      },
+    },
+})
 ```
 
 ## Architecture

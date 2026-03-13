@@ -169,6 +169,16 @@ function M.write_file(path, content)
     file:close()
 end
 
+--- Appends raw string data to a path using binary mode.
+---@param path string
+---@param content string
+function M.append_file(path, content)
+    M.ensure_dir(M.dirname(path))
+    local file = assert(io.open(path, "ab"))
+    file:write(content)
+    file:close()
+end
+
 --- Copies a file by reading and writing its entire content.
 ---@param source string
 ---@param destination string

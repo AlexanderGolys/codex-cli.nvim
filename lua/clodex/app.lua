@@ -1,5 +1,7 @@
 local Config = require("clodex.config")
 local Commands = require("clodex.commands")
+local ExecutionRunner = require("clodex.execution.runner")
+local History = require("clodex.history")
 local ProjectActions = require("clodex.app.project_actions")
 local PromptActions = require("clodex.app.prompt_actions")
 local QueueActions = require("clodex.app.queue_actions")
@@ -15,6 +17,8 @@ local QueueWorkspace = require("clodex.ui.queue_workspace")
 local SessionPersistence = require("clodex.session.persistence")
 local Execution = require("clodex.workspace.execution")
 local Queue = require("clodex.workspace.queue")
+local TerminalUi = require("clodex.terminal.ui")
+local TerminalLualine = require("clodex.terminal.lualine")
 local fs = require("clodex.util.fs")
 
 --- Defines the Clodex.App type for this module.
@@ -31,6 +35,7 @@ local fs = require("clodex.util.fs")
 ---@field project_cheatsheet Clodex.ProjectCheatsheet
 ---@field queue Clodex.Workspace.Queue
 ---@field execution Clodex.Workspace.Execution
+---@field exec_runner Clodex.ExecutionRunner
 ---@field queue_workspace Clodex.QueueWorkspace
 ---@field project_actions Clodex.AppProjectActions
 ---@field prompt_actions Clodex.AppPromptActions
@@ -106,6 +111,56 @@ local function path_in_registered_project(path, projects)
     return false
 end
 
+---@param buf integer
+---@return boolean
+local function snapshot_context_buffer(buf)
+    if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_buf_is_loaded(buf) then
+        return false
+    end
+    if vim.bo[buf].buftype ~= "" then
+        return false
+    end
+    local filetype = vim.bo[buf].filetype
+    return filetype ~= "clodex_state" and filetype ~= "clodex_queue_workspace"
+end
+
+---@return integer?
+local function snapshot_context_buf()
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+        if vim.api.nvim_win_is_valid(win) then
+            local config = vim.api.nvim_win_get_config(win)
+            if (config.relative or "") == "" then
+                local buf = vim.api.nvim_win_get_buf(win)
+                if snapshot_context_buffer(buf) then
+                    return buf
+                end
+            end
+        end
+    end
+
+    local current = vim.api.nvim_get_current_buf()
+    if snapshot_context_buffer(current) then
+        return current
+    end
+end
+
+---@param registry Clodex.ProjectRegistry
+---@param root? string
+---@return Clodex.Project?
+local function active_project_for_root(registry, root)
+    if type(root) ~= "string" or root == "" then
+        return nil
+    end
+
+    local project = registry:get(root)
+    if not project or not fs.is_dir(project.root) then
+        return nil
+    end
+
+    return project
+end
+
 ---@return Clodex.App
 --- Returns the singleton application object, creating it lazily on first access.
 --- This guarantees shared state across modules and prevents duplicate terminal managers.
@@ -135,6 +190,7 @@ end
 function App:setup(opts)
     local values = self.config:setup(opts)
     Config.apply_highlights(values)
+    TerminalLualine.ensure_terminal_disabled(values.terminal.prefer_native_statusline)
     self.registry = Registry.new({ path = values.storage.projects_file })
     self.project_details_store = self.project_details_store or ProjectDetails.new(values)
     self.project_bookmarks = self.project_bookmarks or ProjectBookmarks.new()
@@ -144,13 +200,15 @@ function App:setup(opts)
     self.state_preview = self.state_preview or StatePreview.new(values)
     self.queue = self.queue or Queue.new(values.storage.workspaces_dir)
     self.execution = self.execution or Execution.new(values)
+    self.exec_runner = self.exec_runner or ExecutionRunner.new(self, values)
     self.queue_workspace = self.queue_workspace or QueueWorkspace.new(self, values)
     self.session_persistence:update_storage_dir(values.storage.session_state_dir)
+    History.configure(values.storage.history_file)
     self.terminals:update_config(values)
     self.state_preview:update_config(values)
     self.project_details_store:update_config(values)
     self.execution:update_config(values)
-    self.execution:ensure_prompt_skill()
+    self.exec_runner:update_config(values)
     self.queue_workspace:update_config(values)
     Commands.register()
     self:setup_autocmds()
@@ -172,7 +230,7 @@ function App:setup_autocmds()
         --- This keeps stale per-tab session information from leaking.
         callback = function()
             self.tabs:cleanup()
-            self:refresh_state_preview()
+            self:refresh_views()
         end,
     })
 
@@ -182,7 +240,7 @@ function App:setup_autocmds()
         --- New tabs are commonly used to switch context, so avoid auto-offering the file's project there.
         callback = function()
             self:current_tab():mark_prompted_project()
-            self:refresh_state_preview()
+            self:refresh_views()
         end,
     })
 
@@ -191,10 +249,48 @@ function App:setup_autocmds()
         --- Refreshes preview state and prompts project detection for the current buffer.
         --- Helps users who navigate tabs or directories get immediate context updates.
         callback = function()
-            self:refresh_changed_project_buffers()
+            self:refresh_changed_project_buffer(vim.api.nvim_get_current_buf())
             self:refresh_bookmarks_for_buffer(vim.api.nvim_get_current_buf())
-            self:refresh_state_preview()
+            self:refresh_views()
             self:maybe_prompt_active_project(vim.api.nvim_get_current_buf())
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("FileType", {
+        group = self.group,
+        pattern = "clodex_terminal",
+        --- Applies Clodex terminal chrome when the terminal buffer filetype is established.
+        --- When lualine is present, prefer the native mirrored CLI line unless config opts out.
+        callback = function(args)
+            TerminalLualine.ensure_terminal_disabled(self.config:get().terminal.prefer_native_statusline)
+            local win = vim.fn.bufwinid(args.buf)
+            if type(win) == "number" and win > 0 then
+                TerminalUi.refresh_chrome(win)
+            end
+        end,
+    })
+
+    vim.api.nvim_create_autocmd({ "BufEnter", "ModeChanged", "TermLeave", "TermEnter", "WinScrolled" }, {
+        group = self.group,
+        callback = function()
+            local win = vim.api.nvim_get_current_win()
+            if not win or not vim.api.nvim_win_is_valid(win) then
+                return
+            end
+            local buf = vim.api.nvim_win_get_buf(win)
+            if not buf or not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].filetype ~= "clodex_terminal" then
+                return
+            end
+
+            vim.schedule(function()
+                if not vim.api.nvim_win_is_valid(win) then
+                    return
+                end
+                if not vim.api.nvim_buf_is_valid(buf) or vim.api.nvim_win_get_buf(win) ~= buf then
+                    return
+                end
+                TerminalUi.refresh_chrome(win)
+            end)
         end,
     })
 
@@ -203,7 +299,7 @@ function App:setup_autocmds()
         callback = function(args)
             self:sync_bookmarks_for_buffer(args.buf)
             self:refresh_bookmarks_for_buffer(args.buf)
-            self:refresh_state_preview()
+            self:refresh_views()
         end,
     })
 
@@ -234,14 +330,30 @@ function App:setup_autocmds()
         callback = function()
             Config.apply_highlights(self.config:get())
             self:refresh_all_bookmarks()
-            self.queue_workspace:refresh()
-            self:refresh_state_preview()
+            self:refresh_views()
         end,
     })
 end
 
 --- Reloads unmodified file buffers whose on-disk contents changed under registered projects.
 --- This keeps Neovim synchronized after Codex edits files externally in project sessions.
+---@param buf integer
+function App:refresh_changed_project_buffer(buf)
+    if not should_check_buffer(buf) then
+        return
+    end
+
+    local path = fs.normalize(vim.api.nvim_buf_get_name(buf))
+    if not self.registry:find_for_path(path) then
+        return
+    end
+
+    pcall(vim.api.nvim_buf_call, buf, function()
+        vim.cmd("silent! checktime")
+    end)
+    self:refresh_bookmarks_for_buffer(buf)
+end
+
 function App:refresh_changed_project_buffers()
     local projects = self.registry:list()
     if #projects == 0 then
@@ -252,10 +364,7 @@ function App:refresh_changed_project_buffers()
         if should_check_buffer(buf) then
             local path = fs.normalize(vim.api.nvim_buf_get_name(buf))
             if path_in_registered_project(path, projects) then
-                pcall(vim.api.nvim_buf_call, buf, function()
-                    vim.cmd("silent! checktime")
-                end)
-                self:refresh_bookmarks_for_buffer(buf)
+                self:refresh_changed_project_buffer(buf)
             end
         end
     end
@@ -293,8 +402,8 @@ function App:sync_bookmarks_for_buffer(buf)
     self.project_bookmarks:sync_buffer(self.registry, buf)
 end
 
---- Starts or restarts the periodic prompt-execution polling timer.
---- When polling is enabled, the timer keeps queue state current as background jobs complete.
+--- Starts or restarts the periodic prompt-execution sync timer.
+--- When syncing is enabled, the timer keeps queue state current as background jobs update workspace files.
 function App:setup_execution_timer()
     local poll_ms = self.config:get().prompt_execution.poll_ms
     if poll_ms <= 0 then
@@ -310,7 +419,7 @@ function App:setup_execution_timer()
             poll_ms,
             poll_ms,
             vim.schedule_wrap(function()
-                self.queue_actions:poll_prompt_execution_receipts()
+                self.queue_actions:poll_workspace_updates()
             end)
         )
         return
@@ -321,20 +430,26 @@ function App:setup_execution_timer()
         poll_ms,
         poll_ms,
         --- Poller callback executed on each timer tick.
-        --- Delegates to receipt processing so completed jobs can advance queue state promptly.
+        --- Delegates to workspace sync so externally completed queued items appear promptly.
         vim.schedule_wrap(function()
-            self.queue_actions:poll_prompt_execution_receipts()
+            self.queue_actions:poll_workspace_updates()
         end)
     )
 end
 
 ---@param session_file string
 function App:save_session_state(session_file)
+    if not self.config:get().session.persist_current_project then
+        return
+    end
     self.session_persistence:save(self, session_file ~= "" and session_file or vim.v.this_session)
 end
 
 ---@param session_file string
 function App:restore_session_state(session_file)
+    if not self.config:get().session.persist_current_project then
+        return
+    end
     self.session_persistence:restore(self, session_file ~= "" and session_file or vim.v.this_session)
 end
 
@@ -392,7 +507,7 @@ end
 function App:resolve_target_from_path(state, path, mutate)
     local active_root = state.active_project_root
     if active_root then
-        local active_project = self.registry:get(active_root)
+        local active_project = active_project_for_root(self.registry, active_root)
         if active_project then
             return {
                 kind = "project",
@@ -406,6 +521,9 @@ function App:resolve_target_from_path(state, path, mutate)
 
     local project = self.registry:find_for_path(path)
     if project then
+        if mutate and state.active_project_root ~= project.root then
+            state:set_active_project(project.root)
+        end
         return {
             kind = "project",
             project = project,
@@ -422,7 +540,8 @@ end
 --- Captures a complete app state snapshot used by persistence and state previews.
 --- The snapshot combines registry, tabs, sessions, and detection state for diagnostics.
 function App:state_snapshot()
-    local path = fs.current_path()
+    local context_buf = snapshot_context_buf()
+    local path = fs.current_path(context_buf)
     local state = self:current_tab()
     local current_tab = state:snapshot()
     local sessions = self.terminals:snapshot()
@@ -452,7 +571,7 @@ function App:state_snapshot()
 
     return {
         current_path = path,
-        active_project = state.active_project_root and self.registry:get(state.active_project_root) or nil,
+        active_project = active_project_for_root(self.registry, state.active_project_root),
         detected_project = self.registry:find_for_path(path),
         resolved_target = self:resolve_target_from_path(state, path, false),
         current_tab = current_tab,
@@ -465,9 +584,17 @@ end
 
 function App:refresh_state_preview()
     self.state_preview:refresh(self)
-    if self.queue_workspace then
+end
+
+function App:refresh_queue_workspace()
+    if self.queue_workspace and self.queue_workspace:is_open() then
         self.queue_workspace:refresh()
     end
+end
+
+function App:refresh_views()
+    self:refresh_state_preview()
+    self:refresh_queue_workspace()
 end
 
 App.toggle_state_preview = function(self)
@@ -521,6 +648,7 @@ function App:add_prompt_for_project(opts)
     end)
 end
 
+App.open_project_readme_file = forward("project_actions", "open_project_readme_file")
 App.open_project_todo_file = forward("project_actions", "open_project_todo_file")
 App.open_project_dictionary_file = forward("project_actions", "open_project_dictionary_file")
 App.open_project_cheatsheet_file = forward("project_actions", "open_project_cheatsheet_file")
@@ -549,5 +677,8 @@ App.add_project = forward("project_actions", "add_project")
 App.remove_project = forward("project_actions", "remove_project")
 App.maybe_offer_project = forward("project_actions", "maybe_offer_project")
 App.toggle_terminal_header = forward("project_actions", "toggle_terminal_header")
+App.open_history = function()
+    History.open()
+end
 
 return App

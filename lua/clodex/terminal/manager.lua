@@ -1,3 +1,4 @@
+local fs = require("clodex.util.fs")
 local Session = require("clodex.terminal.session")
 local TerminalUi = require("clodex.terminal.ui")
 
@@ -70,6 +71,20 @@ function Manager:update_config(config)
   self.config = config
 end
 
+---@param project Clodex.Project
+---@return boolean
+function Manager:free_session_matches_project(project)
+  if not self.free_session then
+    return false
+  end
+
+  if self.free_session.project_root == project.root then
+    return true
+  end
+
+  return fs.is_relative_to(self.free_session.cwd, project.root)
+end
+
 ---@param target Clodex.TerminalTarget
 ---@return Clodex.TerminalSession.Spec
 function Manager:session_spec(target)
@@ -98,11 +113,12 @@ end
 ---@param project Clodex.Project
 ---@return Clodex.TerminalSession?
 function Manager:promote_free_session(project)
-  if not self.free_session or self.free_session.cwd ~= project.root then
+  if not self:free_session_matches_project(project) then
     return self.project_sessions[project.root]
   end
 
   local spec = self:session_spec({ kind = "project", project = project })
+  spec.cwd = self.free_session.cwd
   self.free_session:update_identity(spec)
   self.project_sessions[project.root] = self.free_session
   self.free_session = nil
@@ -145,7 +161,14 @@ end
 ---@return boolean
 function Manager:is_project_session_running(root)
   local session = self:project_session(root)
-  return session ~= nil and session:is_running() or false
+  if session ~= nil and session:is_running() then
+    return true
+  end
+
+  local project = {
+    root = root,
+  }
+  return self.free_session_matches_project(project) and self.free_session:is_running() or false
 end
 
 ---@param project Clodex.Project
@@ -217,8 +240,9 @@ function Manager:get_session(target)
 end
 
 ---@param session Clodex.TerminalSession
+---@param parent_win? integer
 ---@return snacks.win
-function Manager:open_window(session)
+function Manager:open_window(session, parent_win)
   local Snacks = require("snacks")
   local opts = Snacks.win.resolve("terminal", self.config.terminal.win, {
     buf = session.buf,
@@ -240,23 +264,54 @@ function Manager:open_window(session)
       end
     end,
   })
+  if type(parent_win) == "number" and vim.api.nvim_win_is_valid(parent_win) then
+    opts.win = parent_win
+  end
+  opts.title = opts.title or session.title
 
   return Snacks.win(opts)
+end
+
+---@param tabpage number
+---@param preferred? integer
+---@return integer?
+local function split_parent_window(tabpage, preferred)
+  if type(preferred) == "number" and vim.api.nvim_win_is_valid(preferred) then
+    local config = vim.api.nvim_win_get_config(preferred)
+    if vim.api.nvim_win_get_tabpage(preferred) == tabpage and (config.relative or "") == "" then
+      return preferred
+    end
+  end
+
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local config = vim.api.nvim_win_get_config(win)
+      if (config.relative or "") == "" then
+        return win
+      end
+    end
+  end
 end
 
 ---@param state Clodex.TabState
 ---@param session Clodex.TerminalSession
 function Manager:show_in_tab(state, session)
+  local parent_win = split_parent_window(state.tabpage, state.window and state.window.win or nil)
   if state:has_visible_window() then
+    local previous = state.session_key and self:session_by_key(state.session_key) or nil
+    if previous then
+      previous:archive_history_chunk()
+    end
     state:hide_window()
   end
 
   local window
   call_in_tabpage(state.tabpage, function()
-    window = self:open_window(session)
+    window = self:open_window(session, parent_win)
   end)
   window:on("WinClosed", function()
     if state.window == window then
+      session:archive_history_chunk()
       state:clear_window()
     end
   end, { win = true })
@@ -265,6 +320,10 @@ end
 
 ---@param state Clodex.TabState
 function Manager:hide_in_tab(state)
+  local session = state.session_key and self:session_by_key(state.session_key) or nil
+  if session then
+    session:archive_history_chunk()
+  end
   state:hide_window()
 end
 
@@ -281,6 +340,10 @@ end
 ---@param session_key string
 ---@param states Clodex.TabState[]
 function Manager:detach_session(session_key, states)
+  local session = self:session_by_key(session_key)
+  if session then
+    session:archive_history_chunk()
+  end
   for _, state in ipairs(states) do
     if state.session_key == session_key then
       state:hide_window()
@@ -350,12 +413,14 @@ function Manager:restore_specs(specs)
   end
 
   for _, spec in ipairs(specs) do
-    local session = Session.new(spec)
-    if session:ensure_started() then
-      if spec.kind == "project" and spec.project_root then
-        self.project_sessions[spec.project_root] = session
-      elseif spec.kind == "free" then
-        self.free_session = session
+    if fs.is_dir(spec.cwd) then
+      local session = Session.new(spec)
+      if session:ensure_started() then
+        if spec.kind == "project" and spec.project_root then
+          self.project_sessions[spec.project_root] = session
+        elseif spec.kind == "free" then
+          self.free_session = session
+        end
       end
     end
   end

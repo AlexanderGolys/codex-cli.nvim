@@ -1,54 +1,48 @@
 local fs = require("clodex.util.fs")
-local git = require("clodex.util.git")
-
---- Parsed receipt payload emitted by completed queue prompts.
---- This metadata is read back to update queue history and track completion details.
----@class Clodex.Workspace.ExecutionReceipt
----@field summary string
----@field commit? string
----@field completed_at? string
 
 --- Generates and persists prompt-instruction payloads used by the Codex execution pipeline.
---- This object bridges queue items to terminal jobs and completion receipts.
+--- This object bridges queue items to terminal jobs and project-local workspace mutations.
 ---@class Clodex.Workspace.Execution
 ---@field config Clodex.Config.Values
 local Execution = {}
 Execution.__index = Execution
 
-local RECEIPT_VERSION = 1
 local SKILL_TEMPLATE = [[---
 name: %s
-description: Handle clodex.nvim queued prompt executions that end by writing a JSON receipt file exactly as requested.
+description: Handle clodex.nvim queued prompt executions by updating the local workspace queue file when the work is complete.
 ---
 
-# Prompt Receipt
+# Queue Completion
 
 Use this skill when a prompt includes `$%s`.
 
-When the prompt provides an execution receipt path and a required JSON shape before the skill call:
+When the prompt provides a project workspace path and queued item id before the skill call:
 
 1. Finish the requested work first.
-2. Write the receipt only after the work is complete.
-3. Write valid JSON to the exact path provided by the prompt.
-4. Match the requested shape exactly.
-5. Do not change unrelated files while creating the receipt.
-6. If more prompts are waiting in the project's `Queued` lane, continue with the next queued prompt immediately after finishing the current one.
-7. Repeat until the project's `Queued` lane is empty. Do not start prompts that are only in `Planned`.
+2. Update the exact workspace JSON file provided by the prompt only after the work is complete.
+3. Find the queue item with the provided id in `queues.queued`.
+4. Move that same item into `queues.history` without changing its `id`.
+5. Set `history_summary`, `history_commit` when available, `history_completed_at`, and refresh `updated_at`.
+6. If the item is already in `queues.history`, update it in place instead of duplicating it.
+7. If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.
+8. Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.
 ]]
 
---- Builds the markdown guidance block that is appended to prompts requiring receipts.
---- It includes the file path and expected JSON shape so downstream agents can write completion data consistently.
+--- Builds the markdown guidance block that is appended to prompts requiring workspace updates.
+--- It includes the file path and queued item id so downstream agents can complete work in-place.
 --- This block is injected for both direct prompts and skill-directed prompts.
-local function completion_instruction_lines(receipt_path, receipt_json)
+local function completion_instruction_lines(workspace_path, item_id)
   return {
-    ("Execution receipt path: `%s`"):format(receipt_path),
-    "Write the execution receipt only after the work is complete.",
-    "Use this exact shape:",
-    "```json",
-    receipt_json,
-    "```",
-    "If more prompts are waiting in the project's `Queued` lane, continue with the next queued prompt immediately after finishing the current one.",
-    "Repeat until the project's `Queued` lane is empty. Do not start prompts that are only in `Planned`.",
+    ("Project workspace path: `%s`"):format(workspace_path),
+    ("Current queued item id: `%s`"):format(item_id),
+    "After the work is complete, update that workspace file directly.",
+    "Move the item with this id from `queues.queued` to the front of `queues.history` without changing its `id`.",
+    "Set `history_summary` to a short summary of the implemented change or blocker.",
+    "Set `history_commit` when a commit exists, otherwise leave it unset.",
+    "Set `history_completed_at` and `updated_at` to a UTC timestamp like `2026-03-13T16:40:17Z`.",
+    "If the item is already in `queues.history`, update it in place instead of duplicating it.",
+    "If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.",
+    "Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.",
   }
 end
 
@@ -64,6 +58,9 @@ local function prompt_prefix_lines(item)
     lines[#lines + 1] = "Use that local image file as part of the implementation context."
     lines[#lines + 1] = ""
   end
+  lines[#lines + 1] = "Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task."
+  lines[#lines + 1] = "Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request."
+  lines[#lines + 1] = ""
   return lines
 end
 
@@ -76,18 +73,19 @@ local function is_absolute_path(path)
   return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
 end
 
---- Computes a stable directory name for one project's queued prompt receipts.
+--- Computes a stable directory name for one project's local execution data.
 ---@param project_root string
 ---@return string
 local function project_id(project_root)
   return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
 end
 
---- Resolves the canonical receipt root, which defaults to the local `.clodex` directory.
+--- Resolves the canonical project-local execution root.
+--- The old `receipts_dir` option is still honored as the base artifacts directory for compatibility.
 ---@param config Clodex.Config.Values
 ---@param project_root string
 ---@return string
-local function receipts_dir(config, project_root)
+local function execution_dir(config, project_root)
   local dir = trim(config.prompt_execution.receipts_dir)
   if dir ~= "" then
     local expanded = fs.normalize(vim.fn.expand(dir))
@@ -99,35 +97,37 @@ local function receipts_dir(config, project_root)
   return fs.join(project_root, ".clodex", "prompt-executions")
 end
 
-local function legacy_global_receipts_dir(project_root)
-  return fs.join(vim.fn.stdpath("data"), "clodex", "prompt-executions", project_id(project_root))
+---@param root_dir string
+---@param project_root string
+---@return string
+local function workspace_storage_dir(root_dir, project_root)
+  local normalized = fs.normalize(root_dir)
+  if is_absolute_path(normalized) then
+    return normalized
+  end
+  return fs.join(project_root, normalized)
 end
 
-local function legacy_codex_cli_global_receipts_dir(project_root)
-  return fs.join(vim.fn.stdpath("data"), "codex-cli", "prompt-executions", project_id(project_root))
+---@param config Clodex.Config.Values
+---@param project_root string
+---@return string
+local function workspace_path(config, project_root)
+  local storage_dir = workspace_storage_dir(config.storage.workspaces_dir, project_root)
+  return fs.join(storage_dir, project_id(project_root) .. ".json")
 end
 
---- Resolves the legacy per-project receipt directory when configured.
+--- Resolves the configured project-local directory where generated skill files are stored.
+--- Returns nil when skill mode is disabled.
+--- This controls whether `$prompt` or `$<skill>` execution mode is active.
 ---@param config Clodex.Config.Values
 ---@param project_root string
 ---@return string?
-local function legacy_receipts_dir(config, project_root)
-  local dir = trim(config.prompt_execution.relative_dir)
-  if dir == "" then
-    return nil
-  end
-  return fs.join(project_root, dir)
-end
-
---- Resolves the configured directory where generated skill files are stored.
---- Returns nil when skill mode is not configured.
---- This controls whether `$prompt` or `$<skill>` execution mode is active.
-local function skills_dir(config)
+local function skills_dir(config, project_root)
   local dir = trim(config.prompt_execution.skills_dir)
   if dir == "" then
     return nil
   end
-  return fs.normalize(vim.fn.expand(dir))
+  return fs.join(project_root, dir)
 end
 
 local function skill_name(config)
@@ -144,39 +144,21 @@ local function generated_skill_content(config)
   return SKILL_TEMPLATE:format(name, name)
 end
 
---- Resolves the final on-disk skill directory, supporting nested configured roots.
---- If configured directory points elsewhere, this appends the canonical skill folder name.
+--- Resolves the final on-disk project-local skill directory.
 ---@param config Clodex.Config.Values
+---@param project_root string
 ---@return string?
-local function installed_skill_dir(config)
-  local dir = skills_dir(config)
+local function installed_skill_dir(config, project_root)
+  local dir = skills_dir(config, project_root)
   if not dir then
     return nil
   end
 
   local name = skill_name(config)
-  if fs.basename(dir) == name then
-    return dir
-  end
   return fs.join(dir, name)
 end
 
---- Reads a file fully from disk.
---- Returns nil if the file is missing or unreadable, allowing cleanup logic to skip safely.
----@param path string
----@return string?
-local function read_file(path)
-  local file = io.open(path, "rb")
-  if not file then
-    return nil
-  end
-
-  local content = file:read("*a")
-  file:close()
-  return content
-end
-
---- The created object is used by app runtime to dispatch prompt text and read receipts.
+--- The created object is used by app runtime to dispatch prompt text and write project-local helpers.
 ---@param config Clodex.Config.Values
 ---@return Clodex.Workspace.Execution
 function Execution.new(config)
@@ -195,113 +177,48 @@ end
 --- This branch influences how queue items are formatted before being sent to the terminal.
 ---@return boolean
 function Execution:uses_prompt_skill()
-  return skills_dir(self.config) ~= nil
+  return trim(self.config.prompt_execution.skill_name) ~= "" and trim(self.config.prompt_execution.skills_dir) ~= ""
 end
 
---- Returns the effective skill directory and asserts it exists when skill mode is enabled.
---- Code paths that require writing or reading skill artifacts should use this before IO.
----@return string
-function Execution:skill_dir()
-  return assert(installed_skill_dir(self.config))
-end
-
---- Returns the path to the generated SKILL.md file.
---- Callers use this when persisting or verifying prompt execution setup.
----@return string
-function Execution:skill_file()
-  return fs.join(self:skill_dir(), "SKILL.md")
-end
-
----@return string?
-function Execution:legacy_skill_file()
-  local dir = skills_dir(self.config)
-  if not dir then
-    return nil
-  end
-
-  local path = fs.join(dir, "SKILL.md")
-  if path == self:skill_file() then
-    return nil
-  end
-  return path
-end
-
---- Returns the project-scoped directory used for queued prompt receipts.
+--- Returns the effective project-local skill directory and asserts it exists when skill mode is enabled.
 ---@param project Clodex.Project
 ---@return string
-function Execution:project_receipts_dir(project)
-  return fs.join(receipts_dir(self.config, project.root), project_id(project.root))
+function Execution:skill_dir(project)
+  return assert(installed_skill_dir(self.config, project.root))
 end
 
---- Returns the current canonical receipt path for one queued prompt item.
+--- Returns the path to the generated project-local SKILL.md file.
 ---@param project Clodex.Project
----@param item Clodex.QueueItem
 ---@return string
-function Execution:current_receipt_path(project, item)
-  return fs.join(self:project_receipts_dir(project), item.id .. ".json")
+function Execution:skill_file(project)
+  return fs.join(self:skill_dir(project), "SKILL.md")
 end
 
---- Returns the legacy project-local receipt path when that migration path exists.
+--- Returns the project-scoped directory used for local execution artifacts.
 ---@param project Clodex.Project
----@param item Clodex.QueueItem
----@return string?
-function Execution:legacy_receipt_path(project, item)
-  local dir = legacy_receipts_dir(self.config, project.root)
-  if not dir then
-    return nil
-  end
-  return fs.join(dir, item.id .. ".json")
+---@return string
+function Execution:project_execution_dir(project)
+  return fs.join(execution_dir(self.config, project.root), project_id(project.root))
 end
 
---- Updates the generated skill file and removes legacy duplicates if they match the new content.
---- This keeps tool-call contract consistency while avoiding stale instructions.
-function Execution:ensure_prompt_skill()
+--- Updates the generated project-local skill file for one project.
+--- This keeps queued execution self-contained inside the project workspace.
+---@param project Clodex.Project
+function Execution:ensure_prompt_skill(project)
   if not self:uses_prompt_skill() then
     return
   end
 
   local content = generated_skill_content(self.config)
-  fs.write_file(self:skill_file(), content)
-
-  local legacy = self:legacy_skill_file()
-  if legacy and fs.is_file(legacy) and read_file(legacy) == content then
-    fs.remove(legacy)
-  end
-end
-
----@param project Clodex.Project
----@param item Clodex.QueueItem
----@return string
-function Execution:receipt_path(project, item)
-  return self:current_receipt_path(project, item)
-end
-
----@param project Clodex.Project
----@param item Clodex.QueueItem
-function Execution:clear_receipt(project, item)
-  fs.remove(self:current_receipt_path(project, item))
-  fs.remove(fs.join(legacy_global_receipts_dir(project.root), item.id .. ".json"))
-  fs.remove(fs.join(legacy_codex_cli_global_receipts_dir(project.root), item.id .. ".json"))
-  local legacy = self:legacy_receipt_path(project, item)
-  if legacy then
-    fs.remove(legacy)
-  end
+  fs.write_file(self:skill_file(project), content)
 end
 
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@return string
 function Execution:dispatch_prompt(project, item)
-  local receipt_path = self:current_receipt_path(project, item)
-  fs.ensure_dir(fs.dirname(receipt_path))
-  local receipt = {
-    version = RECEIPT_VERSION,
-    summary = "Short summary of the implemented change",
-    commit = git.head_commit(project.root, true) or "HEAD",
-    completed_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-  }
-  local receipt_json = vim.json.encode(receipt)
-  local instruction_lines = completion_instruction_lines(receipt_path, receipt_json)
+  self:ensure_prompt_skill(project)
+  local instruction_lines = completion_instruction_lines(workspace_path(self.config, project.root), item.id)
 
   local prompt_lines = prompt_prefix_lines(item)
   prompt_lines[#prompt_lines + 1] = item.prompt
@@ -320,56 +237,6 @@ function Execution:dispatch_prompt(project, item)
   lines[#lines + 1] = "$prompt"
   vim.list_extend(lines, instruction_lines)
   return table.concat(lines, "\n")
-end
-
----@param project Clodex.Project
----@param item Clodex.QueueItem
----@return Clodex.Workspace.ExecutionReceipt?
-function Execution:read_receipt(project, item)
-  local current_path = self:current_receipt_path(project, item)
-  local data = fs.read_json(current_path, nil)
-  if type(data) ~= "table" then
-    local global_legacy = fs.join(legacy_global_receipts_dir(project.root), item.id .. ".json")
-    data = fs.read_json(global_legacy, nil)
-    if type(data) == "table" then
-      fs.write_json(current_path, data)
-      fs.remove(global_legacy)
-    end
-  end
-  if type(data) ~= "table" then
-    local codex_cli_legacy = fs.join(legacy_codex_cli_global_receipts_dir(project.root), item.id .. ".json")
-    data = fs.read_json(codex_cli_legacy, nil)
-    if type(data) == "table" then
-      fs.write_json(current_path, data)
-      fs.remove(codex_cli_legacy)
-    end
-  end
-  if type(data) ~= "table" then
-    local legacy = self:legacy_receipt_path(project, item)
-    if legacy then
-      data = fs.read_json(legacy, nil)
-      if type(data) == "table" and legacy ~= current_path then
-        fs.write_json(current_path, data)
-        fs.remove(legacy)
-      end
-    end
-  end
-  if type(data) ~= "table" then
-    return
-  end
-
-  local summary = vim.trim(data.summary or "")
-  if summary == "" then
-    return
-  end
-
-  local commit = vim.trim(data.commit or "")
-  local completed_at = vim.trim(data.completed_at or "")
-  return {
-    summary = summary,
-    commit = commit ~= "" and commit or git.head_commit(project.root, true),
-    completed_at = completed_at ~= "" and completed_at or os.date("!%Y-%m-%dT%H:%M:%SZ"),
-  }
 end
 
 return Execution

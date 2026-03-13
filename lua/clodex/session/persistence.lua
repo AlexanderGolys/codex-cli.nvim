@@ -28,6 +28,29 @@ local function normalize_session_file(session_file)
   return fs.normalize(session_file)
 end
 
+---@param tabpage integer
+---@return string?
+local function tab_visible_path(tabpage)
+  if not vim.api.nvim_tabpage_is_valid(tabpage) then
+    return nil
+  end
+
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local config = vim.api.nvim_win_get_config(win)
+      if (config.relative or "") == "" then
+        local buf = vim.api.nvim_win_get_buf(win)
+        if vim.api.nvim_buf_is_valid(buf) then
+          local path = vim.api.nvim_buf_get_name(buf)
+          if path ~= "" and not fs.is_virtual_path(path) then
+            return fs.normalize(path)
+          end
+        end
+      end
+    end
+  end
+end
+
 local function storage_path(self, session_file)
   session_file = normalize_session_file(session_file)
   if not session_file then
@@ -49,7 +72,6 @@ end
 ---@class Clodex.SessionPersistence.State
 ---@field version integer
 ---@field tabs Clodex.TabState.Snapshot[]
----@field terminal_sessions Clodex.TerminalSession.Spec[]
 
 ---@param storage_dir? string
 ---@return Clodex.SessionPersistence
@@ -69,14 +91,30 @@ end
 ---@return Clodex.SessionPersistence.State
 function Persistence:build_state(app)
   local tabs = {} ---@type Clodex.TabState.Snapshot[]
-  for _, snapshot in ipairs(app.tabs:snapshot()) do
+  local tabpages = vim.api.nvim_list_tabpages()
+  table.sort(tabpages, function(left, right)
+    return left < right
+  end)
+
+  for _, tabpage in ipairs(tabpages) do
+    local state = app.tabs:get(tabpage)
+    local snapshot = state:snapshot()
+    if not snapshot.active_project_root then
+      local path = tab_visible_path(tabpage)
+      local project = path and app.registry:find_for_path(path) or nil
+      if project then
+        snapshot.active_project_root = project.root
+      end
+    end
+    snapshot.has_visible_window = false
+    snapshot.session_key = nil
+    snapshot.window_id = nil
     tabs[#tabs + 1] = snapshot
   end
 
   return {
     version = STATE_VERSION,
     tabs = tabs,
-    terminal_sessions = app.terminals:persistence_specs(),
   }
 end
 
@@ -111,10 +149,9 @@ function Persistence:restore(app, session_file)
     return
   end
 
+  app.registry:load()
   app.tabs:restore(state.tabs or {})
-  app.terminals:restore_specs(state.terminal_sessions or {})
-  app:restore_session_windows(state.tabs or {})
-  app:refresh_state_preview()
+  app:refresh_views()
 end
 
 return Persistence

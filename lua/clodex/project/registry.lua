@@ -10,13 +10,6 @@ local Project = require("clodex.project.project")
 local Registry = {}
 Registry.__index = Registry
 
-local LEGACY_PROJECTS_DIRNAME = "codex-cli"
-
----@return string
-local function legacy_projects_path()
-  return fs.join(vim.fn.stdpath("data"), LEGACY_PROJECTS_DIRNAME, "projects.json")
-end
-
 ---@param data any
 ---@return Clodex.Project[]
 local function parse_projects(data)
@@ -38,33 +31,6 @@ local function parse_projects(data)
   return projects
 end
 
----@param existing Clodex.Project[]
----@param incoming Clodex.Project[]
----@return Clodex.Project[], boolean
-local function merge_projects(existing, incoming)
-  local merged = {} ---@type Clodex.Project[]
-  local by_root = {} ---@type table<string, Clodex.Project>
-  local changed = false
-
-  for _, project in ipairs(existing) do
-    by_root[project.root] = project
-    merged[#merged + 1] = project
-  end
-
-  for _, project in ipairs(incoming) do
-    if not by_root[project.root] then
-      by_root[project.root] = project
-      merged[#merged + 1] = project
-      changed = true
-    end
-  end
-
-  table.sort(merged, function(left, right)
-    return left.name:lower() < right.name:lower()
-  end)
-  return merged, changed
-end
-
 ---@param opts { path: string }
 ---@return Clodex.ProjectRegistry
 function Registry.new(opts)
@@ -80,25 +46,8 @@ function Registry:load()
   self.projects = {}
   self.by_root = {}
 
-  local projects = parse_projects(fs.read_json(self.path, { projects = {} }))
-  local legacy_path = legacy_projects_path()
-  local legacy_projects = parse_projects(fs.read_json(legacy_path, { projects = {} }))
-  local changed
-  projects, changed = merge_projects(projects, legacy_projects)
-
-  if changed then
-    self.projects = projects
-    for _, project in ipairs(projects) do
-      self.by_root[project.root] = project
-    end
-    pcall(function()
-      self:save()
-    end)
-    return
-  end
-
-  self.projects = projects
-  for _, project in ipairs(projects) do
+  self.projects = parse_projects(fs.read_json(self.path, { projects = {} }))
+  for _, project in ipairs(self.projects) do
     self.by_root[project.root] = project
   end
 end
@@ -120,6 +69,16 @@ end
 ---@return Clodex.Project?
 function Registry:get(root)
   return self.by_root[fs.normalize(root)]
+end
+
+---@param name string
+---@return Clodex.Project?
+function Registry:find_by_name(name)
+  for _, project in ipairs(self.projects) do
+    if project.name == name then
+      return project
+    end
+  end
 end
 
 ---@param root string
@@ -205,11 +164,7 @@ function Registry:find_by_name_or_root(value)
     return self.by_root[normalized]
   end
 
-  for _, project in ipairs(self.projects) do
-    if project.name == value then
-      return project
-    end
-  end
+  return self:find_by_name(value)
 end
 
 return Registry

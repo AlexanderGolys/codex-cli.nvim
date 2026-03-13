@@ -40,13 +40,13 @@ end
 
 M.toggle = call("toggle")
 M.toggle_state_preview = call("toggle_state_preview")
-M.open_terminal = M.toggle
 M.add_project = call("add_project")
 M.rename_project = call("rename_project")
 M.remove_project = call("remove_project")
 M.toggle_terminal_header = call("toggle_terminal_header")
 M.clear_active_project = call("clear_active_project")
 M.open_queue_workspace = call("open_queue_workspace")
+M.open_project_readme_file = call("open_project_readme_file")
 M.open_project_todo_file = call("open_project_todo_file")
 M.open_project_dictionary_file = call("open_project_dictionary_file")
 M.open_project_cheatsheet_file = call("open_project_cheatsheet_file")
@@ -62,6 +62,7 @@ M.implement_all_queued_items = call("implement_all_queued_items")
 M.add_prompt = call("add_prompt")
 M.add_prompt_for_project = call("add_prompt_for_project")
 M.add_error_todo = call("add_error_todo")
+M.open_history = call("open_history")
 
 function M.debug_reload()
     local opts = current_config()

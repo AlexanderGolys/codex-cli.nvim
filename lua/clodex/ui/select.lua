@@ -16,6 +16,15 @@ local PROMPT_EDITOR_BORDER_ROWS = 2
 local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
 local PROMPT_EDITOR_BACKDROP = 40
+local active_input
+
+---@param input? snacks.win
+local function clear_active_input(input)
+  if input ~= nil and active_input ~= input then
+    return
+  end
+  active_input = nil
+end
 
 ---@class Clodex.UiSelect.TextChoice
 ---@field label string
@@ -30,6 +39,7 @@ local PROMPT_EDITOR_BACKDROP = 40
 function M.select(items, opts, on_choice)
   opts = opts or {}
   opts.snacks = vim.tbl_deep_extend("force", {
+    focus = "list",
     main = {
       enter = true,
     },
@@ -40,7 +50,46 @@ end
 ---@param opts vim.ui.input.Opts
 ---@param on_confirm fun(value?: string)
 function M.input(opts, on_confirm)
-  return SnacksInput.input(opts, on_confirm)
+  opts = vim.deepcopy(opts or {})
+  opts.win = opts.win or {}
+
+  local previous_on_close = opts.win.on_close
+  opts.win.on_close = function(win)
+    clear_active_input(win)
+    if previous_on_close then
+      previous_on_close(win)
+    end
+  end
+
+  M.close_active_input()
+
+  local win
+  win = SnacksInput.input(opts, function(value)
+    clear_active_input(win)
+    on_confirm(value)
+  end)
+  active_input = win
+
+  vim.schedule(function()
+    if active_input ~= win or not win or not win:valid() then
+      return
+    end
+    win:focus()
+    vim.cmd("startinsert!")
+  end)
+
+  return win
+end
+
+--- Closes any tracked one-line input popup that is still alive.
+--- This prevents stale rename/search prompts from outliving their parent panels.
+function M.close_active_input()
+  local win = active_input
+  active_input = nil
+  if not win or not win:valid() then
+    return
+  end
+  win:close()
 end
 
 ---@param items Clodex.UiSelect.TextChoice[]
@@ -234,7 +283,7 @@ function M.multiline_input(opts, on_confirm)
     math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
   )
   local title_footer = " Start with a short title, then add the implementation details below. "
-  local body_footer = " Enter details   Ctrl-S save   Ctrl-Q queue+run   Ctrl-V paste image   Esc cancel   & editor context   Ctrl-X prompt shortcut "
+  local body_footer = " Enter details   Ctrl-S save   Ctrl-Q queue+exec   Ctrl-V paste image   Esc cancel   & editor context   Ctrl-X prompt shortcut "
 
   local title_buf = vim.api.nvim_create_buf(false, true)
   local body_buf = vim.api.nvim_create_buf(false, true)
@@ -439,6 +488,7 @@ function M.multiline_input(opts, on_confirm)
         token = item.token,
         label = item.label,
         detail = item.detail,
+        disabled = item.disabled,
         preview = {
           text = table.concat({
             ("# %s"):format(item.label),
@@ -469,6 +519,11 @@ function M.multiline_input(opts, on_confirm)
         return
       end
 
+      if item.disabled then
+        focus_body()
+        return
+      end
+
       local expansion = PromptContext.expand_token(item.token, prompt_context())
       if expansion then
         insert_text(body_buf, body_win.win, expansion)
@@ -492,6 +547,7 @@ function M.multiline_input(opts, on_confirm)
         text = item.text,
         label = item.label,
         detail = spec.title,
+        disabled = item.disabled,
         preview = {
           text = table.concat({
             ("# %s"):format(item.label),
@@ -515,6 +571,10 @@ function M.multiline_input(opts, on_confirm)
       prompt = "Prompt shortcuts",
     }, function(item)
       if not item then
+        focus_body()
+        return
+      end
+      if item.disabled then
         focus_body()
         return
       end

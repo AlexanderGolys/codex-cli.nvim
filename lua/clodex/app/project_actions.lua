@@ -38,7 +38,7 @@ local function open_project_file(self, project, path, default_lines)
     self:activate_project(project.root)
     vim.cmd.edit(vim.fn.fnameescape(path))
     self.app.project_details_store:touch_activity(project)
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
 end
 
 ---@param app Clodex.App
@@ -102,7 +102,7 @@ function ProjectActions:prompt_set_active_project(project, state)
                 project = project,
             })
         end
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end)
 end
 
@@ -146,7 +146,7 @@ function ProjectActions:deactivate_project_session(project)
     self.app.terminals:destroy_project_session(project.root)
     self.app.terminals:detach_session(project.root, self.app.tabs:list())
     notify.notify(("Stopped Codex session for %s"):format(project.name))
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
 end
 
 ---@param project Clodex.Project
@@ -160,7 +160,7 @@ function ProjectActions:open_project_workspace_target(project)
 
     local state = self.app:current_tab()
     if not self.app.terminals:ensure_project_session(project) then
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
         return
     end
 
@@ -169,14 +169,26 @@ function ProjectActions:open_project_workspace_target(project)
         project = project,
     })
     self.app.project_details_store:touch_activity(project)
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
+end
+
+--- Opens the current project's todo file in the active window.
+--- The file lives at `TODO.md` in the project root and is created on demand.
+---@param project? Clodex.Project
+function ProjectActions:open_project_readme_file(project)
+    project = current_or_target_project(self, project)
+    local path = project and (fs.find_readme(project.root) or fs.join(project.root, "README.md")) or ""
+    open_project_file(self, project, path, {
+        ("# %s"):format(project and project.name or "Project"),
+        "",
+    })
 end
 
 --- Opens the current project's todo file in the active window.
 --- The file lives at `TODO.md` in the project root and is created on demand.
 ---@param project? Clodex.Project
 function ProjectActions:open_project_todo_file(project)
-    project = project or self.app:resolve_target(self.app:current_tab()).project
+    project = current_or_target_project(self, project)
     local path = project and fs.join(project.root, "TODO.md") or ""
     open_project_file(self, project, path, {
         ("# %s TODO"):format(project and project.name or "Project"),
@@ -188,7 +200,7 @@ end
 --- The dictionary lives under `.clodex/PROJECT_DICTIONARY.md` and is created on demand.
 ---@param project? Clodex.Project
 function ProjectActions:open_project_dictionary_file(project)
-    project = project or self.app:resolve_target(self.app:current_tab()).project
+    project = current_or_target_project(self, project)
     local path = project and fs.join(project.root, ".clodex", "PROJECT_DICTIONARY.md") or ""
     open_project_file(self, project, path, {
         ("# %s Project Dictionary"):format(project and project.name or "Project"),
@@ -254,7 +266,7 @@ function ProjectActions:add_project_cheatsheet_item(project)
                 lines = self.app.project_cheatsheet:read_lines(project),
             })
         end
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end)
 end
 
@@ -306,7 +318,7 @@ function ProjectActions:open_project_notes_picker(project)
         self:activate_project(project.root)
         vim.cmd.edit(vim.fn.fnameescape(choice.note.path))
         self.app.project_details_store:touch_activity(project)
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end)
 end
 
@@ -330,7 +342,7 @@ function ProjectActions:create_project_note(project)
         vim.cmd.edit(vim.fn.fnameescape(path))
         self.app.project_details_store:touch_activity(project)
         notify.notify(("Created project note for %s: %s"):format(project.name, title))
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end)
 end
 
@@ -373,7 +385,7 @@ function ProjectActions:add_project_bookmark(project)
             self.app.project_bookmarks:decorate_buffer(project, vim.api.nvim_get_current_buf())
             self.app.project_details_store:touch_activity(project)
             notify.notify(("Added bookmark for %s: %s"):format(project.name, bookmark.title))
-            self.app:refresh_state_preview()
+            self.app:refresh_views()
         end)
     end)
 end
@@ -433,7 +445,7 @@ end
 --- This is the low-level state mutation used by project-switch actions.
 function ProjectActions:activate_project(root)
     self.app:current_tab():set_active_project(root)
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
 end
 
 --- Clears the active project for current tab.
@@ -444,11 +456,11 @@ function ProjectActions:clear_active_project()
     state:clear_active_project()
     if state:has_visible_window() then
         if not self:show_target(state, self.app:resolve_target(state)) then
-            self.app:refresh_state_preview()
+            self.app:refresh_views()
             return
         end
     end
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
 end
 
 --- Sets the current tab's active project and refreshes the resolved terminal target.
@@ -457,12 +469,14 @@ end
 function ProjectActions:set_current_project(project)
     local state = self.app:current_tab()
     state:set_active_project(project.root)
-    if not self:show_target(state, self.app:resolve_target(state)) then
-        self.app:refresh_state_preview()
-        return
+    if state:has_visible_window() then
+        if not self:show_target(state, self.app:resolve_target(state)) then
+            self.app:refresh_views()
+            return
+        end
     end
     self.app.project_details_store:touch_activity(project)
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
     notify.notify(("Set current project to %s"):format(project.name))
 end
 
@@ -481,12 +495,12 @@ function ProjectActions:toggle()
         self.app.terminals:detach_session(replaced_key, self.app.tabs:list())
     end
     if not session then
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
         return
     end
     if state:is_showing(session.key) then
         self.app.terminals:hide_in_tab(state)
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
         return
     end
     self.app.terminals:show_in_tab(state, session)
@@ -494,10 +508,7 @@ function ProjectActions:toggle()
     if target.kind == "project" then
         self.app.project_details_store:touch_activity(target.project)
     end
-    self.app:refresh_state_preview()
-    if target.kind == "free" then
-        self:maybe_offer_project(target.cwd)
-    end
+    self.app:refresh_views()
 end
 
 ---@param value? string|Clodex.Project
@@ -507,7 +518,7 @@ function ProjectActions:resolve_project(value)
         return value
     end
     if type(value) == "string" and value ~= "" then
-        return self.app.registry:find_by_name_or_root(value)
+        return self.app.registry:get(value) or self.app.registry:find_by_name(value)
     end
 end
 
@@ -533,7 +544,7 @@ function ProjectActions:prompt_project_rename(project)
         })
         self.app.terminals:update_project_identity(updated)
         notify.notify(("Renamed project to %s"):format(updated.name))
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end)
 end
 
@@ -569,7 +580,8 @@ function ProjectActions:perform_project_removal(project)
     self.app.terminals:destroy_project_session(project.root)
     self.app.tabs:clear_project(project.root)
     self.app.terminals:detach_session(project.root, self.app.tabs:list())
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
+    notify.notify(("Removed project %s"):format(project.name))
 end
 
 ---@param project Clodex.Project
@@ -583,7 +595,7 @@ function ProjectActions:focus_project_session(project)
         kind = "project",
         project = project,
     }) then
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
         return
     end
 
@@ -597,7 +609,7 @@ function ProjectActions:use_existing_project(project, message)
     self:activate_project(project.root)
     self:focus_project_session(project)
     notify.notify(message:format(project.name))
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
 end
 
 ---@param opts? { name?: string, root?: string }
@@ -639,7 +651,7 @@ function ProjectActions:add_project(opts)
         self.app.terminals:promote_free_session(project)
         self:activate_project(project.root)
         self:focus_project_session(project)
-        self.app:refresh_state_preview()
+        self.app:refresh_views()
     end
 
     if opts.name then

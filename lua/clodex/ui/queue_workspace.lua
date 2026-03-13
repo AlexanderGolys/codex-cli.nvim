@@ -2,6 +2,7 @@ local ui = require("clodex.ui.select")
 local Extmark = require("clodex.ui.extmark")
 local PromptAssets = require("clodex.prompt.assets")
 local PromptComposer = require("clodex.prompt.composer")
+local PromptContext = require("clodex.prompt.context")
 local TextBlock = require("clodex.ui.text_block")
 local PromptHighlight = require("clodex.prompt.highlight")
 local ui_win = require("clodex.ui.win")
@@ -49,6 +50,7 @@ local Category = require("clodex.prompt.category")
 ---@field project_item_rows integer[]
 ---@field queue_rows Clodex.QueueWorkspace.QueueRow[]
 ---@field queue_item_rows integer[]
+---@field suppress_open_until? integer
 local Workspace = {}
 Workspace.__index = Workspace
 
@@ -75,6 +77,9 @@ local PROJECT_DETAIL_LABELS = {
     "Lang:",
     "Mod:",
 }
+local ELLIPSIS = "..."
+local PANEL_BORDER_COLS = 2
+local PANEL_GAP_COLS = 1
 
 local function win_valid(win)
     return win ~= nil and vim.api.nvim_win_is_valid(win)
@@ -84,10 +89,14 @@ local function buf_valid(buf)
     return buf ~= nil and vim.api.nvim_buf_is_valid(buf)
 end
 
----@param buf? integer
+---@param win? integer
 ---@return integer
-local function buffer_line_count(buf)
-    if not buf_valid(buf) then
+local function window_buffer_line_count(win)
+    if not win_valid(win) then
+        return 0
+    end
+    local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
+    if not ok or not buf_valid(buf) then
         return 0
     end
     return vim.api.nvim_buf_line_count(buf)
@@ -98,6 +107,76 @@ local function clamp(index, max_value)
         return 1
     end
     return math.min(math.max(index, 1), max_value)
+end
+
+---@return integer
+local function now_ms()
+    return vim.uv.now()
+end
+
+---@param self Clodex.QueueWorkspace
+---@param delay_ms? integer
+local function clear_open_suppression_later(self, delay_ms)
+    vim.defer_fn(function()
+        self.suppress_open_until = nil
+    end, delay_ms or 250)
+end
+
+---@param text string
+---@param max_width integer
+---@return string
+local function truncate_display(text, max_width)
+    text = tostring(text or "")
+    if max_width <= 0 then
+        return ""
+    end
+    if vim.fn.strdisplaywidth(text) <= max_width then
+        return text
+    end
+    if max_width <= #ELLIPSIS then
+        return ELLIPSIS:sub(1, max_width)
+    end
+
+    local target_width = max_width - #ELLIPSIS
+    local parts = {} ---@type string[]
+    local width = 0
+    local chars = vim.fn.strchars(text)
+    for index = 0, chars - 1 do
+        local char = vim.fn.strcharpart(text, index, 1)
+        local char_width = vim.fn.strdisplaywidth(char)
+        if width + char_width > target_width then
+            break
+        end
+        parts[#parts + 1] = char
+        width = width + char_width
+    end
+
+    return table.concat(parts) .. ELLIPSIS
+end
+
+---@param self Clodex.QueueWorkspace
+---@return integer
+local function project_panel_width(self)
+    if win_valid(self.project_win) then
+        return math.max(vim.api.nvim_win_get_width(self.project_win) - 2, 1)
+    end
+
+    return math.max(select(3, self:layout()) - 2, 1)
+end
+
+---@param project Clodex.Project
+---@param summary Clodex.ProjectQueueSummary
+---@param max_width integer
+---@return string
+local function project_title_text(project, summary, max_width)
+    local prefix = summary.session_running and "● " or "// "
+    local suffix = ("  P:%d Q:%d H:%d"):format(
+        summary.counts.planned,
+        summary.counts.queued,
+        summary.counts.history
+    )
+    local name_width = math.max(max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(suffix), 1)
+    return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width)
 end
 
 ---@param projects Clodex.Project[]
@@ -371,9 +450,12 @@ local function normalize_search(value)
 end
 
 ---@param config Clodex.Config.Values
----@param details Clodex.ProjectDetails
+---@param details? Clodex.ProjectDetails
 ---@return string
 local function summary_search_text(config, details)
+    if not details then
+        return ""
+    end
     return table.concat({
         details.remote_name or "",
         format_languages(details.languages),
@@ -385,7 +467,7 @@ local function summary_search_text(config, details)
 end
 
 ---@param project Clodex.Project
----@param details Clodex.ProjectDetails
+---@param details? Clodex.ProjectDetails
 ---@param query string
 ---@return boolean
 local function project_matches_search(project, details, query, config)
@@ -405,10 +487,17 @@ end
 
 ---@param app Clodex.App
 ---@param summary Clodex.ProjectQueueSummary
+---@param details? Clodex.ProjectDetails
 ---@return string[]
-local function project_detail_lines(app, summary)
+local function project_detail_lines(app, summary, details)
     local config = app.config:get()
-    local details = app.project_details_store:get(summary.project)
+    details = details or app.project_details_store:get_cached(summary.project)
+    if not details then
+        return {
+            "    Files:-  Avg LOC:-  Remote:-  Codex:-",
+            "    Lang:-  Mod:-",
+        }
+    end
     return {
         ("    Files:%d  Avg LOC:%s  Remote:%s  Codex:%s"):format(
             details.file_count,
@@ -474,7 +563,7 @@ function Workspace:filtered_projects()
 
     local filtered = {} ---@type Clodex.Project[]
     for _, project in ipairs(projects) do
-        local details = self.app.project_details_store:get(project)
+        local details = self.app.project_details_store:get_cached(project)
         if project_matches_search(project, details, query, self.config) then
             filtered[#filtered + 1] = project
         end
@@ -515,10 +604,12 @@ function Workspace:layout()
     local width = resolve_size(columns, cfg.width, 72)
     local height = resolve_size(lines, cfg.height, 18)
     local footer_height = math.max(cfg.footer_height, 2)
+    local chrome_width = PANEL_BORDER_COLS * 2 + PANEL_GAP_COLS
+    local content_width = math.max(width - chrome_width, 56)
     local row = math.max(math.floor((lines - height - footer_height - 1) / 2), 1)
     local col = math.max(math.floor((columns - width) / 2), 1)
-    local project_width = math.max(math.floor(width * cfg.project_width), 24)
-    local queue_width = math.max(width - project_width - 1, 32)
+    local project_width = math.max(math.floor(content_width * cfg.project_width), 24)
+    local queue_width = math.max(content_width - project_width, 32)
     return row, col, project_width, queue_width, height, footer_height
 end
 
@@ -556,7 +647,7 @@ function Workspace:open()
         buf = self.queue_buf,
         enter = false,
         row = row,
-        col = col + project_width + 1,
+        col = col + project_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
         width = queue_width,
         height = height,
         style = "minimal",
@@ -569,7 +660,7 @@ function Workspace:open()
         enter = false,
         row = row + height + 1,
         col = col,
-        width = project_width + queue_width + 1,
+        width = project_width + queue_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
         height = footer_height,
         style = "minimal",
         border = "rounded",
@@ -609,12 +700,22 @@ end
 --- Closes or deactivates ui queue workspace behavior for the current context.
 --- This is used by command flows when a view or session should stop being active.
 function Workspace:close()
-    for _, win in ipairs({ self.project_win, self.queue_win, self.footer_win }) do
-        ui_win.close(win)
-    end
+    require("clodex.ui.select").close_active_input()
+    local wins = {
+        self.project_win,
+        self.queue_win,
+        self.footer_win,
+    }
+
+    -- Clear workspace window handles before closing any floats so autocommand-driven
+    -- refreshes during teardown do not try to render into windows that are mid-close.
     self.project_win = nil
     self.queue_win = nil
     self.footer_win = nil
+
+    for _, win in ipairs(wins) do
+        ui_win.close(win)
+    end
 end
 
 function Workspace:attach_keymaps()
@@ -651,8 +752,7 @@ function Workspace:attach_keymaps()
         end
         self.queue_index = index
         self:set_focus("queue")
-        self:update_cursor()
-        self:render_footer()
+        self:refresh()
         if confirm then
             self:open_selected_project()
         end
@@ -792,16 +892,16 @@ end
 function Workspace:update_cursor()
     if win_valid(self.project_win) then
         local row = self.project_item_rows[self.project_index] or 1
-        local max_row = buffer_line_count(self.project_buf)
+        local max_row = window_buffer_line_count(self.project_win)
         if max_row > 0 then
-            vim.api.nvim_win_set_cursor(self.project_win, { clamp(row, max_row), 0 })
+            pcall(vim.api.nvim_win_set_cursor, self.project_win, { clamp(row, max_row), 0 })
         end
     end
     if win_valid(self.queue_win) then
         local selectable = self.queue_item_rows[self.queue_index] or 1
-        local max_row = buffer_line_count(self.queue_buf)
+        local max_row = window_buffer_line_count(self.queue_win)
         if max_row > 0 then
-            vim.api.nvim_win_set_cursor(self.queue_win, { clamp(selectable, max_row), 0 })
+            pcall(vim.api.nvim_win_set_cursor, self.queue_win, { clamp(selectable, max_row), 0 })
         end
     end
 end
@@ -866,6 +966,9 @@ function Workspace:render_projects()
     self.project_rows = {}
     self.project_item_rows = {}
     local block = TextBlock.new()
+    local selected_project = self.projects[self.project_index]
+    local selected_root = selected_project and selected_project.root or nil
+    local max_width = project_panel_width(self)
 
     if self.project_search ~= "" then
         local search_text = ("Filter: %s"):format(self.project_search)
@@ -886,15 +989,10 @@ function Workspace:render_projects()
 
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
-        local prefix = summary.session_running and "●" or "//"
-        local title = string.format(
-            "%s %s  P:%d Q:%d H:%d",
-            prefix,
-            project.name,
-            summary.counts.planned,
-            summary.counts.queued,
-            summary.counts.history
-        )
+        local details = project.root == selected_root
+            and self.app.project_details_store:get(project)
+            or self.app.project_details_store:get_cached(project)
+        local title = project_title_text(project, summary, max_width)
         self.project_rows[#self.project_rows + 1] = {
             kind = "item",
             text = title,
@@ -911,7 +1009,8 @@ function Workspace:render_projects()
         end
         block:append_line(title, item_extmarks)
 
-        for _, detail in ipairs(project_detail_lines(self.app, summary)) do
+        for _, detail in ipairs(project_detail_lines(self.app, summary, details)) do
+            detail = truncate_display(detail, max_width)
             self.project_rows[#self.project_rows + 1] = {
                 kind = "detail",
                 text = detail,
@@ -1089,6 +1188,10 @@ function Workspace:deactivate_selected_project()
 end
 
 function Workspace:open_selected_project()
+    if self.suppress_open_until and self.suppress_open_until > now_ms() then
+        return
+    end
+
     local project = self:selected_project()
     if not project then
         self:add_project()
@@ -1139,6 +1242,7 @@ function Workspace:add_todo()
 
     ui.multiline_input({
         prompt = ("Todo prompt for %s"):format(project.name),
+        context = PromptContext.capture({ project = project }),
         paste_image = function()
             local image_path = PromptAssets.save_clipboard_image(
                 self.config.storage.workspaces_dir,
@@ -1175,6 +1279,7 @@ function Workspace:edit_queue_item()
     ui.multiline_input({
         prompt = ("Edit prompt for %s"):format(project.name),
         default = PromptComposer.render(item.title, item.details),
+        context = PromptContext.capture({ project = project }),
         paste_image = function()
             local image_path = PromptAssets.save_clipboard_image(
                 self.config.storage.workspaces_dir,
@@ -1379,14 +1484,19 @@ function Workspace:delete_queue_item()
         return
     end
 
+    -- Guard against the confirmation picker submit key falling through to the
+    -- workspace Enter mapping and opening the selected project.
+    self.suppress_open_until = now_ms() + 500
     vim.schedule(function()
         ui.confirm(("Delete '%s'?"):format(item.title), function(confirmed)
             if not confirmed then
+                clear_open_suppression_later(self)
                 return
             end
             self.app.queue_actions:delete_queue_item(project, item.id)
             self.queue_index = 1
             self:refresh()
+            clear_open_suppression_later(self)
         end)
     end)
 end
@@ -1398,16 +1508,21 @@ function Workspace:delete_project()
         return
     end
 
+    -- Guard against the confirmation picker submit key falling through to the
+    -- workspace Enter mapping and opening the selected project.
+    self.suppress_open_until = now_ms() + 500
     vim.schedule(function()
         ui.confirm(("Remove project %s?"):format(project.name), function(confirmed)
             if not confirmed then
+                clear_open_suppression_later(self)
                 return
             end
-            self.app:remove_project(project)
-            local projects = self:filtered_projects()
-            self.project_index = clamp(self.project_index, #projects)
+            self.app.project_actions:perform_project_removal(project)
+            self.projects = self:filtered_projects()
+            self.project_index = clamp(self.project_index, #self.projects)
             self.queue_index = 1
             self:refresh()
+            clear_open_suppression_later(self)
         end)
     end)
 end

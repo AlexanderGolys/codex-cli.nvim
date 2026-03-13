@@ -1,3 +1,5 @@
+local fs = require("clodex.util.fs")
+local History = require("clodex.history")
 local notify = require("clodex.util.notify")
 
 --- Defines the Clodex.TerminalSession.Spec type for this module.
@@ -24,6 +26,7 @@ local notify = require("clodex.util.notify")
 ---@field buf? number
 ---@field job_id? integer
 ---@field suppress_exit_warning boolean
+---@field archived_line_count integer
 
 --- Defines the Clodex.TerminalSession.Snapshot type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -105,7 +108,52 @@ function Session.new(spec)
         spec.header_enabled = spec.kind == "free"
     end
     spec.suppress_exit_warning = false
+    spec.archived_line_count = 0
     return setmetatable(spec, Session)
+end
+
+---@return string
+function Session:history_project_label()
+    if self.kind == "project" then
+        return self.title:gsub("^Clodex:%s*", "")
+    end
+    return self.cwd
+end
+
+---@return string[]
+function Session:unarchived_lines()
+    if not self:buf_valid() then
+        return {}
+    end
+
+    local line_count = vim.api.nvim_buf_line_count(self.buf)
+    if line_count <= self.archived_line_count then
+        return {}
+    end
+
+    local lines = vim.api.nvim_buf_get_lines(self.buf, self.archived_line_count, line_count, false)
+    while #lines > 0 and vim.trim(lines[1]) == "" do
+        table.remove(lines, 1)
+    end
+    while #lines > 0 and vim.trim(lines[#lines]) == "" do
+        table.remove(lines, #lines)
+    end
+    return lines
+end
+
+function Session:archive_history_chunk()
+    local lines = self:unarchived_lines()
+    if #lines == 0 then
+        if self:buf_valid() then
+            self.archived_line_count = vim.api.nvim_buf_line_count(self.buf)
+        end
+        return
+    end
+
+    History.append_conversation(self:history_project_label(), lines)
+    if self:buf_valid() then
+        self.archived_line_count = vim.api.nvim_buf_line_count(self.buf)
+    end
 end
 
 --- Returns the title line shown in the terminal header when enabled.
@@ -175,6 +223,11 @@ function Session:statusline_text(win)
     if self:window_shows_bottom(win) then
         return ""
     end
+    return self:statusline_line_text()
+end
+
+---@return string
+function Session:statusline_line_text()
     local line = self:last_cli_line()
     if line == "" then
         return ""
@@ -213,6 +266,9 @@ function Session:update_buffer_state(opts)
         cwd = self.cwd,
         project_root = self.project_root,
     }
+    -- Keep Neovim's terminal title metadata aligned with the Clodex session identity.
+    -- Snacks and user statusline/winbar setups may read `b:term_title` for inactive terminals.
+    vim.b[self.buf].term_title = self.title
     vim.keymap.set("n", "<localleader>h", "<Cmd>ClodexTerminalHeaderToggle<CR>", {
         buffer = self.buf,
         silent = true,
@@ -235,11 +291,22 @@ function Session:ensure_started()
         return true
     end
 
+    if not fs.is_dir(self.cwd) then
+        self.job_id = nil
+        if self:buf_valid() then
+            pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
+        end
+        self.buf = nil
+        notify.error(("Codex session directory does not exist: %s"):format(self.cwd))
+        return false
+    end
+
     if self:buf_valid() then
         pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
     end
 
     self.buf = vim.api.nvim_create_buf(false, true)
+    self.archived_line_count = 0
     self:update_buffer_state({ sync_header = false })
 
     local ok, terminal = pcall(start_with_snacks, self.cmd, {
@@ -266,6 +333,7 @@ end
 --- Stops any running process and deletes terminal buffer state.
 --- It is called during project shutdown and when switching away from removed sessions.
 function Session:destroy()
+    self:archive_history_chunk()
     if self:is_running() then
         self.suppress_exit_warning = true
         pcall(vim.fn.jobstop, self.job_id)

@@ -1,10 +1,10 @@
 local PromptAssets = require("clodex.prompt.assets")
 local PromptCategory = require("clodex.prompt.category")
 local PromptComposer = require("clodex.prompt.composer")
+local PromptContext = require("clodex.prompt.context")
 local PromptLibrary = require("clodex.prompt.library")
 local PromptTitle = require("clodex.prompt.title")
 local fs = require("clodex.util.fs")
-local messages = require("clodex.util.messages")
 local notify = require("clodex.util.notify")
 local ui = require("clodex.ui.select")
 
@@ -12,7 +12,10 @@ local ui = require("clodex.ui.select")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.AppPromptActions.ResolveOpts
 ---@field project? Clodex.Project
+---@field project_root? string
+---@field project_name? string
 ---@field project_value? string
+---@field project_required? boolean
 
 --- Defines the Clodex.AppPromptActions.PickPromptOpts type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -52,11 +55,20 @@ end
 function PromptActions:resolve_project(opts)
   opts = opts or {}
   local project = opts.project
+  if not project and opts.project_root then
+    project = self.app.registry:get(opts.project_root)
+  end
+  if not project and opts.project_name then
+    project = self.app.registry:find_by_name(opts.project_name)
+  end
   if not project and opts.project_value then
     project = self.app.registry:find_by_name_or_root(opts.project_value)
   end
   if project then
     return project
+  end
+  if opts.project_required then
+    return nil
   end
 
   local state = self.app:current_tab()
@@ -174,13 +186,14 @@ end
 function PromptActions:prompt_for_todo(project)
   ui.multiline_input({
     prompt = ("Todo prompt for %s"):format(project.name),
+    context = PromptContext.capture({ project = project }),
     paste_image = self:paste_image_callback(project, "todo"),
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
       return
     end
-    local queue_opts = action == "queue" and { queue = "queued", implement = true } or nil
+    local queue_opts = action == "queue" and { queue = "queued", implement = true, run_mode = "exec" } or nil
     self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
@@ -198,13 +211,14 @@ function PromptActions:compose_category_prompt(project, definition, category, de
   ui.multiline_input({
     prompt = ("%s prompt for %s"):format(definition.label, project.name),
     default = default_body or definition.default_title,
+    context = PromptContext.capture({ project = project }),
     paste_image = self:paste_image_callback(project, category),
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
       return
     end
-    local queue_opts = action == "queue" and { queue = "queued", implement = true } or nil
+    local queue_opts = action == "queue" and { queue = "queued", implement = true, run_mode = "exec" } or nil
     self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
@@ -432,7 +446,7 @@ function PromptActions:pick_error_source(project, latest_screenshot, screenshot_
       clipboard_screenshot = "Save the current clipboard image as the main artifact.",
       file_screenshot = latest_screenshot and ("Reuse `%s` from the screenshot directory."):format(fs.basename(latest_screenshot))
         or "Reuse the latest screenshot from disk.",
-      message = "Paste a raw error message or traceback. The latest Vim error is prefilled when available.",
+      message = "Paste a raw error message or traceback from this project.",
       summary = "Start from a one-line description and expand it into an investigation prompt.",
       custom = "Open the full title-and-body prompt composer.",
     }
@@ -507,13 +521,10 @@ function PromptActions:pick_error_source(project, latest_screenshot, screenshot_
         )
         return
       end
-
-      local last_error = messages.last_error_traceback()
-      local default_body = last_error and PromptComposer.render("Error message", last_error) or nil
       ui.multiline_input({
         prompt = "Error message",
-        default = default_body,
         min_height = 10,
+        context = PromptContext.capture({ project = project }),
         paste_image = self:paste_image_callback(project, "error"),
       }, function(body)
         local message = body and freeform_message(body) or nil

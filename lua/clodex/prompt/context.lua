@@ -8,6 +8,7 @@ local unpack_values = table.unpack or unpack
 ---@field token string
 ---@field label string
 ---@field detail string
+---@field disabled? boolean
 
 --- Captures editor state used for prompt expansion.
 --- The prompt UI keeps one snapshot so completion stays stable while the prompt buffer is open.
@@ -15,7 +16,7 @@ local unpack_values = table.unpack or unpack
 ---@field buf integer
 ---@field win integer
 ---@field file_path string
----@field project_root string
+---@field project_root? string
 ---@field relative_path string
 ---@field cursor_row integer
 ---@field cursor_col integer
@@ -34,11 +35,13 @@ local unpack_values = table.unpack or unpack
 ---@field id string
 ---@field label string
 ---@field text string
+---@field disabled? boolean
 
 --- Defines the Clodex.PromptContext type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.PromptContext
 local M = {}
+local PROJECT_DIAGNOSTICS_DISABLED = "Disabled in this session"
 
 local TOKEN_SPECS = {
   {
@@ -79,7 +82,7 @@ local TOKEN_SPECS = {
   {
     token = "&all_diagnostics",
     label = "&all_diagnostics",
-    detail = "Insert diagnostics from every loaded project buffer.",
+    detail = "Insert every diagnostic from the current project.",
   },
 }
 
@@ -196,14 +199,27 @@ local function current_line_diags(context)
   return vim.diagnostic.get(context.buf, { lnum = context.cursor_row - 1 })
 end
 
-local function all_diagnostics()
-  return vim.diagnostic.get(nil)
+local function project_diagnostics(context)
+  local diags = {} ---@type vim.Diagnostic[]
+  for _, diag in ipairs(vim.diagnostic.get(nil)) do
+    local path = diag.bufnr and vim.api.nvim_buf_get_name(diag.bufnr) or ""
+    if path ~= "" and fs.is_relative_to(path, context.project_root) then
+      diags[#diags + 1] = diag
+    end
+  end
+  return diags
 end
+
+---@class Clodex.PromptContext.CaptureOpts
+---@field project? Clodex.Project
+---@field project_root? string
 
 --- Captures the best available editor buffer/window for prompt expansions.
 --- Floating plugin windows are skipped so prompt state comes from the user's code buffer instead.
+---@param opts? Clodex.PromptContext.CaptureOpts
 ---@return Clodex.PromptContext.Capture?
-function M.capture()
+function M.capture(opts)
+  opts = opts or {}
   local win = resolve_source_window()
   if not win then
     return nil
@@ -222,7 +238,9 @@ function M.capture()
     return vim.fn.expand("<cword>")
   end)
   local file_path = fs.current_path(buf)
-  local project_root = git.get_root(file_path) or fs.cwd_for_path(file_path)
+  local project_root = opts.project and opts.project.root
+    or (opts.project_root and fs.normalize(opts.project_root))
+    or git.get_root(file_path)
 
   return {
     buf = buf,
@@ -254,6 +272,7 @@ function M.tokens(context)
 
   local items = {}
   for _, spec in ipairs(TOKEN_SPECS) do
+    local item = vim.deepcopy(spec)
     local available = true
     if spec.token == "&selection" and not context.selection_text then
       available = false
@@ -261,8 +280,12 @@ function M.tokens(context)
     if spec.token == "&diagnostic" and #current_line_diags(context) == 0 then
       available = false
     end
+    if spec.token == "&all_diagnostics" and not context.project_root then
+      item.disabled = true
+      item.detail = ("%s (%s)"):format(item.detail, PROJECT_DIAGNOSTICS_DISABLED)
+    end
     if available then
-      items[#items + 1] = vim.deepcopy(spec)
+      items[#items + 1] = item
     end
   end
   return items
@@ -326,8 +349,8 @@ function M.expand_token(token, context)
   end
 
   if token == "&all_diagnostics" then
-    return format_diagnostics(all_diagnostics(), context.file_path, context.project_root)
-      or "No Neovim diagnostics are currently reported in loaded buffers."
+    return format_diagnostics(project_diagnostics(context), context.file_path, context.project_root)
+      or ("No Neovim diagnostics are currently reported under project root `%s`."):format(context.project_root)
   end
 end
 
@@ -370,8 +393,9 @@ function M.quick_prompts(context)
     },
     {
       id = "fix-all-diagnostics",
-      label = "Fix all diagnostics",
+      label = context and context.project_root and "Fix all diagnostics" or "Fix all diagnostics (disabled)",
       text = "Fix the project diagnostics in a sensible order, grouping related issues together and noting any follow-up validation.\n\n&all_diagnostics",
+      disabled = not (context and context.project_root),
     },
   }
 

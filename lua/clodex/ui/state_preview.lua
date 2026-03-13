@@ -463,6 +463,7 @@ end
 --- Closes both preview windows and releases tracked window ids.
 --- Buffer reuse allows quick re-open with preserved display content.
 function Preview:hide()
+  require("clodex.ui.select").close_active_input()
   for _, win in ipairs({ self.command_win, self.state_win }) do
     ui_win.close(win)
   end
@@ -503,6 +504,12 @@ end
 ---@param snapshot Clodex.App.StateSnapshot
 function Preview:render_state(snapshot)
   self.max_state_width = 0
+  local active_project_states = {} ---@type Clodex.App.ProjectStateSnapshot[]
+  for _, project_state in ipairs(snapshot.project_states) do
+    if project_state.session_active then
+      active_project_states[#active_project_states + 1] = project_state
+    end
+  end
 
   local block = TextBlock.new()
   push_line(self, block, "Focus", {
@@ -523,16 +530,16 @@ function Preview:render_state(snapshot)
   append_field(self, block, "window", snapshot.current_tab.window_id or "none")
 
   push_line(self, block, "")
-  push_line(self, block, "Projects", {
-    Extmark.inline(0, 0, #"Projects", "ClodexStateSection"),
+  push_line(self, block, "Active Sessions", {
+    Extmark.inline(0, 0, #"Active Sessions", "ClodexStateSection"),
   })
-  if #snapshot.project_states == 0 then
+  if #active_project_states == 0 then
     push_line(self, block, "> none", {
       Extmark.inline(0, 0, 1, "ClodexStateMarker"),
       Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
     })
   else
-    for _, project_state in ipairs(snapshot.project_states) do
+    for _, project_state in ipairs(active_project_states) do
       append_project_state(self, block, project_state)
     end
   end

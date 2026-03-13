@@ -1,5 +1,6 @@
 local Category = require("clodex.prompt.category")
 local fs = require("clodex.util.fs")
+local util = require("clodex.util")
 
 --- Queue names represent the supported lanes for prompt entries: planned, queued, and history.
 --- They are used by persistence and queue transitions to coordinate scheduling and history visibility.
@@ -75,16 +76,6 @@ local function legacy_global_storage_dir()
   return fs.join(vim.fn.stdpath("data"), "clodex", "workspaces")
 end
 
-local function legacy_codex_cli_global_storage_dir()
-  return fs.join(vim.fn.stdpath("data"), "codex-cli", "workspaces")
-end
-
----@param project_root string
----@return string
-local function legacy_local_storage_dir(project_root)
-  return fs.join(project_root, ".codex-cli", "workspaces")
-end
-
 local function workspace_path(root_dir, project_root)
   root_dir = project_storage_dir(root_dir, project_root)
   local id = vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
@@ -151,30 +142,12 @@ local function load_data(root_dir, project_root)
     end
   end
   if type(data) ~= "table" then
-    local legacy_codex_cli_path = workspace_path(legacy_codex_cli_global_storage_dir(), project_root)
-    data = fs.read_json(legacy_codex_cli_path, nil)
-    if type(data) == "table" and fs.is_file(legacy_codex_cli_path) then
-      fs.write_json(path, data)
-      fs.remove(legacy_codex_cli_path)
-    end
-  end
-  if type(data) ~= "table" then
     local renamed_path = renamed_local_workspace_path(root_dir, project_root, path)
     if renamed_path then
       data = fs.read_json(renamed_path, nil)
       if type(data) == "table" then
         fs.write_json(path, data)
         fs.remove(renamed_path)
-      end
-    end
-  end
-  if type(data) ~= "table" then
-    local legacy_local_path = unique_workspace_file(legacy_local_storage_dir(project_root), path)
-    if legacy_local_path then
-      data = fs.read_json(legacy_local_path, nil)
-      if type(data) == "table" then
-        fs.write_json(path, data)
-        fs.remove(legacy_local_path)
       end
     end
   end
@@ -201,7 +174,6 @@ local function migrate_project_asset(root_dir, project_root, item)
 
   local legacy_assets_dirs = {
     fs.join(legacy_global_storage_dir(), "prompt-assets"),
-    fs.join(legacy_codex_cli_global_storage_dir(), "prompt-assets"),
   }
   local is_legacy_asset = false
   for _, legacy_assets_dir in ipairs(legacy_assets_dirs) do
@@ -236,13 +208,10 @@ local function now()
   return os.date("!%Y-%m-%dT%H:%M:%SZ")
 end
 
----@param project_root string
----@param title string
----@param timestamp string
----@param seed? string
----@return string
-local function item_id(project_root, title, timestamp, seed)
-  return vim.fn.sha256(project_root .. "\n" .. timestamp .. "\n" .. title .. "\n" .. (seed or "")):sub(1, 16)
+---@param value any
+---@return boolean
+local function has_item_id(value)
+  return type(value) == "string" and vim.trim(value) ~= ""
 end
 
 ---@param title string
@@ -272,6 +241,10 @@ function Queue:load(project)
   local changed = false
   for _, queue_name in ipairs(ORDER) do
     for _, item in ipairs(data.queues[queue_name]) do
+      if not has_item_id(item.id) then
+        item.id = util.uuid_v4()
+        changed = true
+      end
       item.kind = Category.is_valid(item.kind) and item.kind or "todo"
       changed = migrate_project_asset(self.root_dir, project.root, item) or changed
     end
@@ -291,6 +264,24 @@ end
 ---@param project_root string
 function Queue:delete_workspace(project_root)
   fs.remove(workspace_path(self.root_dir, project_root))
+end
+
+---@param project Clodex.Project
+---@return string
+function Queue:workspace_path(project)
+  return workspace_path(self.root_dir, project.root)
+end
+
+---@param project Clodex.Project
+---@return string?
+function Queue:workspace_revision(project)
+  local stat = fs.stat(self:workspace_path(project))
+  if not stat or not stat.mtime then
+    return nil
+  end
+
+  local mtime = stat.mtime
+  return ("%s:%s:%s"):format(mtime.sec or 0, mtime.nsec or 0, stat.size or 0)
 end
 
 ---@param project Clodex.Project
@@ -317,7 +308,7 @@ function Queue:add_todo(project, spec)
   local timestamp = now()
   local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
   local item = {
-    id = item_id(project.root, spec.title, timestamp),
+    id = util.uuid_v4(),
     kind = Category.is_valid(spec.kind) and spec.kind or "todo",
     title = vim.trim(spec.title),
     details = spec.details and vim.trim(spec.details) or nil,
@@ -369,7 +360,7 @@ function Queue:put_item(project, queue_name, item, opts)
   local timestamp = now()
   local moved = vim.deepcopy(item)
   if opts.copy then
-    moved.id = item_id(project.root, moved.title, timestamp, moved.id)
+    moved.id = util.uuid_v4()
     moved.created_at = timestamp
   end
   moved.updated_at = timestamp

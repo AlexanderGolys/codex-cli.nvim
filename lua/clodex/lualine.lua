@@ -11,6 +11,20 @@ local App = require("clodex.app")
 local M = {}
 
 ---@param tabpage? number
+---@return string?
+local function tabpage_project_root(tabpage)
+  tabpage = tabpage or vim.api.nvim_get_current_tabpage()
+  if not vim.api.nvim_tabpage_is_valid(tabpage) then
+    return nil
+  end
+
+  local ok, root = pcall(vim.api.nvim_tabpage_get_var, tabpage, "clodex_active_project_root")
+  if ok and type(root) == "string" and root ~= "" then
+    return root
+  end
+end
+
+---@param tabpage? number
 ---@return number?
 local function tabpage_buf(tabpage)
   if not tabpage then
@@ -31,15 +45,23 @@ end
 function M.project(opts)
   opts = opts or {}
   local app = App.instance()
-  local state = app.tabs:get(opts.tabpage)
-  local project = state.active_project_root and app.registry:get(state.active_project_root) or nil
+  local root = tabpage_project_root(opts.tabpage)
+  if not root then
+    local state = app.tabs:get(opts.tabpage)
+    root = state.active_project_root
+  end
+
+  local project = root and app.registry:get(root) or nil
   if project then
     return project
   end
 
   if opts.include_detected then
-    local path = app.detector:current_path(tabpage_buf(opts.tabpage))
-    return app.detector:project_for_path(path)
+    local buf = tabpage_buf(opts.tabpage)
+    local path = buf and vim.api.nvim_buf_get_name(buf) or ""
+    if path ~= "" then
+      return app.registry:find_for_path(path)
+    end
   end
 end
 

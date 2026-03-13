@@ -32,7 +32,7 @@ local git = require("clodex.util.git")
 local Details = {}
 Details.__index = Details
 
-local CACHE_TTL_SECONDS = 30
+local CACHE_TTL_SECONDS = 300
 local METADATA_VERSION = 1
 local METADATA_DIRNAME = "project-details"
 local MAX_SCANNED_FILES = 5000
@@ -130,6 +130,16 @@ end
 ---@param config Clodex.Config.Values
 function Details:update_config(config)
   self.config = config
+end
+
+---@param project Clodex.Project
+---@return Clodex.ProjectDetails.Snapshot?
+function Details:get_cached(project)
+  local cached = self.cache[project.root]
+  if not cached then
+    return nil
+  end
+  return vim.deepcopy(cached.snapshot)
 end
 
 --- Records the latest Codex interaction timestamp for a project.

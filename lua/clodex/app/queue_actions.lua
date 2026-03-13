@@ -1,3 +1,4 @@
+local History = require("clodex.history")
 local notify = require("clodex.util.notify")
 
 --- Moves/restricts options for queue rewind operations in queue actions.
@@ -16,12 +17,14 @@ local notify = require("clodex.util.notify")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.AppQueueActions
 ---@field app Clodex.App
+---@field workspace_revisions table<string, string?>
 local QueueActions = {}
 QueueActions.__index = QueueActions
 
 ---@class Clodex.AppQueueActions.AddTodoOpts
 ---@field queue? Clodex.QueueName
 ---@field implement? boolean
+---@field run_mode? "interactive"|"exec"
 
 local PREVIOUS_QUEUE = {
   queued = "planned",
@@ -31,7 +34,15 @@ local PREVIOUS_QUEUE = {
 ---@param app Clodex.App
 ---@return Clodex.AppQueueActions
 function QueueActions.new(app)
-  return setmetatable({ app = app }, QueueActions)
+  return setmetatable({
+    app = app,
+    workspace_revisions = {},
+  }, QueueActions)
+end
+
+---@param project Clodex.Project
+function QueueActions:remember_workspace_revision(project)
+  self.workspace_revisions[project.root] = self.app.queue:workspace_revision(project)
 end
 
 ---@param project Clodex.Project
@@ -44,33 +55,43 @@ function QueueActions:dispatch_item(project, item)
     return false
   end
 
-  self.app.execution:clear_receipt(project, item)
   if not session:dispatch_prompt(self.app.execution:dispatch_prompt(project, item)) then
     return false
   end
+  self:remember_workspace_revision(project)
   self.app.project_details_store:touch_activity(project)
   return true
 end
 
---- Checks queued items for completion receipts and updates queue/history state.
---- It runs as a polling loop and refreshes UI state when any queued item finishes.
-function QueueActions:poll_prompt_execution_receipts()
+---@param project Clodex.Project
+---@param item Clodex.QueueItem
+---@return boolean
+function QueueActions:dispatch_item_direct(project, item)
+  if not self.app.exec_runner:start(project, item) then
+    return false
+  end
+
+  self:remember_workspace_revision(project)
+  self.app.project_details_store:touch_activity(project)
+  return true
+end
+
+--- Checks project-local workspace files for external queue updates.
+--- This keeps the editor in sync when queued prompts complete by mutating workspace JSON directly.
+function QueueActions:poll_workspace_updates()
   local changed = false
   for _, project in ipairs(self.app.registry:list()) do
-    for _, item in ipairs(self.app.queue:queues(project).queued) do
-      local receipt = self.app.execution:read_receipt(project, item)
-      if receipt then
-        self.app.queue:complete_queued_item(project, item.id, receipt)
-        self.app.execution:clear_receipt(project, item)
-        notify.notify(("Prompt completed for %s: %s"):format(project.name, item.title))
-        changed = true
-      end
+    local revision = self.app.queue:workspace_revision(project)
+    if self.workspace_revisions[project.root] == nil then
+      self.workspace_revisions[project.root] = revision
+    elseif self.workspace_revisions[project.root] ~= revision then
+      self.workspace_revisions[project.root] = revision
+      changed = true
     end
   end
 
   if changed then
-    self.app:refresh_changed_project_buffers()
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
   end
 end
 
@@ -100,14 +121,29 @@ function QueueActions:add_project_todo(project, spec, opts)
     image_path = spec.image_path,
     queue = queue_name,
   })
-  if queue_name == "queued" and opts.implement and self:dispatch_item(project, item) then
-    notify.notify(("Queued and started prompt for %s: %s"):format(project.name, normalized.title))
+  History.append_prompt_added(project.name, normalized.title, normalized.details, spec.kind)
+  local started = false
+  if queue_name == "queued" and opts.implement then
+    if opts.run_mode == "exec" then
+      started = self:dispatch_item_direct(project, item)
+    else
+      started = self:dispatch_item(project, item)
+    end
+  end
+
+  if queue_name == "queued" and started then
+    if opts.run_mode == "exec" then
+      notify.notify(("Queued and started direct prompt for %s: %s"):format(project.name, normalized.title))
+    else
+      notify.notify(("Queued and started prompt for %s: %s"):format(project.name, normalized.title))
+    end
   elseif queue_name == "queued" then
     notify.notify(("Queued prompt for %s: %s"):format(project.name, normalized.title))
   else
     notify.notify(("Added todo to %s: %s"):format(project.name, normalized.title))
   end
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self.app:refresh_views()
   return item
 end
 
@@ -134,9 +170,9 @@ function QueueActions:edit_queue_item(project, item_id, spec)
     return
   end
 
-  self.app.execution:clear_receipt(project, item)
   notify.notify(("Updated prompt for %s: %s"):format(project.name, item.title))
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self.app:refresh_views()
 end
 
 ---@param project Clodex.Project
@@ -150,7 +186,7 @@ function QueueActions:implement_queue_item(project, item_id)
 
   if self:dispatch_item(project, item) then
     notify.notify(("Implemented queued prompt for %s: %s"):format(project.name, item.title))
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
   end
 end
 
@@ -171,7 +207,7 @@ function QueueActions:implement_queued_items(project)
 
   if sent > 0 then
     notify.notify(("Implemented %d queued prompt(s) for %s"):format(sent, project.name))
-    self.app:refresh_state_preview()
+    self.app:refresh_views()
   end
 end
 
@@ -192,7 +228,8 @@ function QueueActions:move_all_planned_items_to_queued(project)
 
   if moved > 0 then
     notify.notify(("Moved %d planned prompt(s) to queued for %s"):format(moved, project.name))
-    self.app:refresh_state_preview()
+    self:remember_workspace_revision(project)
+    self.app:refresh_views()
   end
 end
 
@@ -218,15 +255,12 @@ end
 ---@param project Clodex.Project
 ---@param item_id string
 function QueueActions:advance_queue_item(project, item_id)
-  local queue_name, _, item = self.app.queue:find_item(project, item_id)
   if not self.app.queue:advance(project, item_id) then
     notify.warn("Item cannot be moved further")
     return
   end
-  if queue_name == "queued" and item then
-    self.app.execution:clear_receipt(project, item)
-  end
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self.app:refresh_views()
 end
 
 ---@param project Clodex.Project
@@ -239,9 +273,6 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
   if not previous_queue or not item then
     notify.warn("Item cannot be moved back")
     return
-  end
-  if queue_name == "queued" then
-    self.app.execution:clear_receipt(project, item)
   end
 
   if opts.copy then
@@ -259,7 +290,8 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
     })
   end
 
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self.app:refresh_views()
 end
 
 ---@param project Clodex.Project
@@ -273,9 +305,6 @@ function QueueActions:move_queue_item_to_project(project, item_id, target_projec
   if not queue_name or not target_queue or not item then
     notify.warn("Queue item not found")
     return
-  end
-  if queue_name == "queued" then
-    self.app.execution:clear_receipt(project, item)
   end
 
   if not opts.copy and not self.app.queue:take_item(project, item_id) then
@@ -293,21 +322,20 @@ function QueueActions:move_queue_item_to_project(project, item_id, target_projec
   end
 
   notify.notify(("Moved '%s' to %s"):format(item.title, target_project.name))
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self:remember_workspace_revision(target_project)
+  self.app:refresh_views()
 end
 
 ---@param project Clodex.Project
 ---@param item_id string
 function QueueActions:delete_queue_item(project, item_id)
-  local _, _, item = self.app.queue:find_item(project, item_id)
   if not self.app.queue:delete_item(project, item_id) then
     notify.warn("Queue item not found")
     return
   end
-  if item then
-    self.app.execution:clear_receipt(project, item)
-  end
-  self.app:refresh_state_preview()
+  self:remember_workspace_revision(project)
+  self.app:refresh_views()
 end
 
 return QueueActions

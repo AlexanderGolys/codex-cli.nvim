@@ -6,11 +6,13 @@ local fs = require("clodex.util.fs")
 ---@field projects_file string
 ---@field workspaces_dir string
 ---@field session_state_dir string
+---@field history_file string
 
 --- Terminal UI/runtime options for Codex subprocess windows.
 ---@class Clodex.Config.Terminal
 ---@field win snacks.win.Config|{}
 ---@field start_insert boolean
+---@field prefer_native_statusline boolean
 
 --- Project autodetection behavior configured by the active buffer resolver.
 ---@class Clodex.Config.ProjectDetection
@@ -43,13 +45,17 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.Highlights
 ---@field groups table<string, Clodex.Config.HighlightSpec>
 
---- Settings driving prompt dispatch and external completion polling.
+--- Settings driving prompt dispatch and external workspace-sync polling.
 ---@class Clodex.Config.PromptExecution
----@field receipts_dir string
----@field relative_dir? string # Legacy project-local receipt path retained only for migration/cleanup.
+---@field receipts_dir string # Backward-compatible base directory for project-local execution artifacts.
+---@field relative_dir? string # Legacy field retained only for config compatibility.
 ---@field poll_ms integer
----@field skills_dir? string
+---@field skills_dir? string # Project-local path under each project root; empty string disables generated skill mode.
 ---@field skill_name string
+
+--- Session integration toggles for tab-scoped Clodex state.
+---@class Clodex.Config.Session
+---@field persist_current_project boolean
 
 --- Runtime-config data structure consumed across managers and UI modules.
 ---@class Clodex.Config.Values
@@ -62,6 +68,7 @@ local fs = require("clodex.util.fs")
 ---@field error_prompt Clodex.Config.ErrorPrompt
 ---@field highlights Clodex.Config.Highlights
 ---@field prompt_execution Clodex.Config.PromptExecution
+---@field session Clodex.Config.Session
 
 --- Root config object exported by `require("clodex.config")`.
 ---@class Clodex.Config
@@ -70,60 +77,65 @@ local Config = {}
 Config.__index = Config
 
 local function default_storage_root()
-  return fs.join(vim.fn.stdpath("data"), "clodex")
+    return fs.join(vim.fn.stdpath("data"), "clodex")
 end
 
 local function defaults()
-  local storage_root = default_storage_root()
-  return {
-    codex_cmd = { "codex" },
-    storage = {
-      projects_file = fs.join(storage_root, "projects.json"),
-      workspaces_dir = fs.join(".clodex", "workspaces"),
-      session_state_dir = fs.join(storage_root, "session-state"),
-    },
-    terminal = {
-      win = {
-        position = "right",
-        width = 0.45,
-      },
-      start_insert = true,
-    },
-    project_detection = {
-      auto_suggest_git_root = true,
-    },
-    state_preview = {
-      min_width = 36,
-      max_width = 72,
-      max_height = 0,
-      row = 1,
-      col = 2,
-      winblend = 18,
-    },
+    local storage_root = default_storage_root()
+    return {
+        codex_cmd = { "codex" },
+        storage = {
+            projects_file = fs.join(storage_root, "projects.json"),
+            workspaces_dir = fs.join(".clodex", "workspaces"),
+            session_state_dir = fs.join(storage_root, "session-state"),
+            history_file = fs.join(storage_root, "history.md"),
+        },
+        terminal = {
+            win = {
+                position = "right",
+                width = 0.4,
+            },
+            start_insert = true,
+            prefer_native_statusline = true,
+        },
+        project_detection = {
+            auto_suggest_git_root = false,
+        },
+        state_preview = {
+            min_width = 36,
+            max_width = 72,
+            max_height = 0,
+            row = 1,
+            col = 2,
+            winblend = 18,
+        },
 
-    queue_workspace = {
-      width = 0.98,
-      height = 0.98,
-      project_width = 0.32,
-      footer_height = 4,
-      preview_max_lines = 5,
-      fold_preview = true,
-      date_format = "%H:%M %d.%m.%Y",
-    },
+        queue_workspace = {
+            width = 1,
+            height = 1,
+            project_width = 0.3,
+            footer_height = 3,
+            preview_max_lines = 5,
+            fold_preview = true,
+            date_format = "%H:%M %d.%m.%Y",
+        },
 
-    error_prompt = {
-      screenshot_dir = nil,
-    },
+        error_prompt = {
+            screenshot_dir = nil,
+        },
 
-    highlights = vim.deepcopy(HighlightConfig),
-    prompt_execution = {
-      receipts_dir = fs.join(".clodex", "prompt-executions"),
-      relative_dir = "",
-      poll_ms = 5000,
-      skills_dir = nil,
-      skill_name = "prompt-nvim-clodex",
-    },
-  }
+        highlights = vim.deepcopy(HighlightConfig),
+        prompt_execution = {
+            receipts_dir = fs.join(".clodex", "prompt-executions"),
+            relative_dir = "",
+            poll_ms = 5000,
+            skills_dir = fs.join(".codex", "skills"),
+            skill_name = "prompt-nvim-clodex",
+        },
+        session = {
+            persist_current_project = true,
+        },
+    }
 end
 
 --- Checks whether a value is a dictionary-like table for merge operations.
@@ -131,7 +143,7 @@ end
 ---@param value any
 ---@return boolean
 local function is_dict_like(value)
-  return type(value) == "table" and (vim.tbl_isempty(value) or not vim.islist(value))
+    return type(value) == "table" and (vim.tbl_isempty(value) or not vim.islist(value))
 end
 
 --- Checks whether a value is a keyed table compatible with config overwrite paths.
@@ -139,146 +151,135 @@ end
 ---@param value any
 ---@return boolean
 local function is_dict(value)
-  return type(value) == "table" and (vim.tbl_isempty(value) or not value[1])
+    return type(value) == "table" and (vim.tbl_isempty(value) or not value[1])
 end
 
 --- Loads a named highlight safely from Neovim and returns an empty spec on failure.
 ---@param name string
 ---@return vim.api.keyset.highlight
 local function get_hl(name)
-  if type(name) ~= "string" or name == "" then
-    return {}
-  end
+    if type(name) ~= "string" or name == "" then
+        return {}
+    end
 
-  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-  return ok and hl or {}
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+    return ok and hl or {}
 end
 
----@param value Clodex.Config.HighlightColor?
----@param attr "fg"|"bg"|"sp"
----@return string|integer?
+
 --- Resolves a highlight source into a concrete color based on fallback attributes.
 ---@param value Clodex.Config.HighlightColor?
 ---@param attr "fg"|"bg"|"sp"
 ---@return string|integer?
 local function resolve_color(value, attr)
-  if type(value) == "string" or type(value) == "number" then
-    return value
-  end
-  if type(value) ~= "table" then
-    return nil
-  end
-
-  local source_attr = value.attr or attr
-  local sources = type(value.from) == "table" and value.from or { value.from }
-  for _, source in ipairs(sources) do
-    local resolved = get_hl(source)[source_attr]
-    if resolved ~= nil then
-      return resolved
+    if type(value) == "string" or type(value) == "number" then
+        return value
     end
-  end
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local source_attr = value.attr or attr
+    local sources = type(value.from) == "table" and value.from or { value.from }
+    for _, source in ipairs(sources) do
+        local resolved = get_hl(source)[source_attr]
+        if resolved ~= nil then
+            return resolved
+        end
+    end
 end
 
----@param spec Clodex.Config.HighlightSpec
----@return vim.api.keyset.highlight
+
 --- Normalizes one configured highlight description into `vim.api.nvim_set_hl` shape.
 ---@param spec Clodex.Config.HighlightSpec
 ---@return vim.api.keyset.highlight
 local function resolve_highlight_spec(spec)
-  local resolved = {} ---@type vim.api.keyset.highlight
-  if type(spec) ~= "table" then
-    return resolved
-  end
-
-  if spec.link then
-    resolved.link = spec.link
-  end
-
-  resolved.fg = resolve_color(spec.fg, "fg")
-  resolved.bg = resolve_color(spec.bg, "bg")
-  resolved.sp = resolve_color(spec.sp, "sp")
-
-  for _, key in ipairs({
-    "blend",
-    "bold",
-    "italic",
-    "underline",
-    "undercurl",
-    "reverse",
-    "strikethrough",
-    "default",
-    "force",
-    "ctermfg",
-    "ctermbg",
-    "cterm",
-  }) do
-    if spec[key] ~= nil then
-      resolved[key] = spec[key]
+    local resolved = {} ---@type vim.api.keyset.highlight
+    if type(spec) ~= "table" then
+        return resolved
     end
-  end
 
-  return resolved
+    if spec.link then
+        resolved.link = spec.link
+    end
+
+    resolved.fg = resolve_color(spec.fg, "fg")
+    resolved.bg = resolve_color(spec.bg, "bg")
+    resolved.sp = resolve_color(spec.sp, "sp")
+
+    for _, key in ipairs({
+        "blend",
+        "bold",
+        "italic",
+        "underline",
+        "undercurl",
+        "reverse",
+        "strikethrough",
+        "default",
+        "force",
+        "ctermfg",
+        "ctermbg",
+        "cterm",
+    }) do
+        if spec[key] ~= nil then
+            resolved[key] = spec[key]
+        end
+    end
+
+    return resolved
 end
 
----@generic T
----@param ... T
----@return T
 --- Merges nested dictionaries and scalar values while preserving explicit overrides.
 ---@generic T
 ---@param ... T
 ---@return T
 function Config.merge(...)
-  local ret = select(1, ...)
-  for index = 2, select("#", ...) do
-    local value = select(index, ...)
-    if is_dict_like(ret) and is_dict(value) then
-      for key, nested in pairs(value) do
-        ret[key] = Config.merge(ret[key], nested)
-      end
-    elseif value ~= nil then
-      ret = value
+    local ret = select(1, ...)
+    for index = 2, select("#", ...) do
+        local value = select(index, ...)
+        if is_dict_like(ret) and is_dict(value) then
+            for key, nested in pairs(value) do
+                ret[key] = Config.merge(ret[key], nested)
+            end
+        elseif value ~= nil then
+            ret = value
+        end
     end
-  end
-  return ret
+    return ret
 end
 
----@return Clodex.Config
 ---@return Clodex.Config
 function Config.new()
-  local self = setmetatable({}, Config)
-  self.values = defaults()
-  return self
+    local self = setmetatable({}, Config)
+    self.values = defaults()
+    return self
 end
 
----@param opts? Clodex.Config.Values|{}
----@return Clodex.Config.Values
 --- Applies setup values, maps legacy highlight keys, and caches active values.
 ---@param opts? Clodex.Config.Values|{}
 ---@return Clodex.Config.Values
 function Config:setup(opts)
-  self.values = Config.merge(defaults(), opts or {})
-  return self.values
+    self.values = Config.merge(defaults(), opts or {})
+    return self.values
 end
 
----@param values Clodex.Config.Values
 --- Writes configured highlight groups to Neovim whenever setup is called or reloaded.
 ---@param values Clodex.Config.Values
 function Config.apply_highlights(values)
-  local groups = values and values.highlights and values.highlights.groups or nil
-  if type(groups) ~= "table" then
-    return
-  end
+    local groups = values and values.highlights and values.highlights.groups or nil
+    if type(groups) ~= "table" then
+        return
+    end
 
-  for name, spec in pairs(groups) do
-    vim.api.nvim_set_hl(0, name, resolve_highlight_spec(spec))
-  end
+    for name, spec in pairs(groups) do
+        vim.api.nvim_set_hl(0, name, resolve_highlight_spec(spec))
+    end
 end
 
----@return Clodex.Config.Values
 --- Returns the currently active merged config values.
 ---@return Clodex.Config.Values
 function Config:get()
-  return self.values
+    return self.values
 end
 
 return Config
