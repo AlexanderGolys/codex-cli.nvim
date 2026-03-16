@@ -1,20 +1,20 @@
 local M = {}
 
 local did_register = false
-local Prompt = require("clodex.prompt")
-local PRIMARY_COMMAND_PREFIX = "Clodex"
+local Prompt = require('clodex.prompt')
+local PRIMARY_COMMAND_PREFIX = 'Clodex'
 local REQUIRE_CLODEX = function()
-    return require("clodex")
+    return require('clodex')
 end
 
 local command_suffix = {
-    todo = "Todo",
-    error = "Error",
-    visual = "Visual",
-    adjustment = "Adjustment",
-    refactor = "Refactor",
-    idea = "Idea",
-    explain = "Explain",
+    todo = 'Todo',
+    error = 'Error',
+    visual = 'Visual',
+    adjustment = 'Adjustment',
+    refactor = 'Refactor',
+    idea = 'Idea',
+    explain = 'Explain',
 }
 
 ---@param suffix string
@@ -51,248 +51,236 @@ end
 
 local BASE_COMMANDS = {
     {
-        suffix = "Toggle",
-        desc = "Toggle Codex terminal",
+        suffix = 'Toggle',
+        desc = 'Toggle Codex terminal',
         run = function(_, clodex)
             clodex.toggle()
         end,
     },
     {
-        suffix = "StateToggle",
-        desc = "Toggle Codex state preview panel",
+        suffix = 'StateToggle',
+        desc = 'Toggle Codex state preview panel',
         run = function(_, clodex)
             clodex.toggle_state_preview()
         end,
     },
     {
-        suffix = "ProjectAdd",
-        desc = "Add current directory as a Clodex project",
-        nargs = "?",
+        suffix = 'ProjectAdd',
+        desc = 'Add current directory as a Clodex project',
+        nargs = '?',
         run = function(command, clodex)
-            clodex.add_project({ name = command.args ~= "" and command.args or nil })
+            clodex.add_project({ name = command.args ~= '' and command.args or nil })
         end,
     },
     {
-        suffix = "ProjectRename",
-        desc = "Rename a Clodex project",
-        nargs = "?",
-        run = function(command, clodex)
-            clodex.rename_project(command.args ~= "" and command.args or nil)
-        end,
-    },
-    {
-        suffix = "ProjectRemove",
-        desc = "Remove a Clodex project",
-        nargs = "?",
-        run = function(command, clodex)
-            clodex.remove_project(command.args ~= "" and command.args or nil)
-        end,
-    },
-    {
-        suffix = "TerminalHeaderToggle",
-        desc = "Toggle header line in the active Codex terminal buffer",
+        suffix = 'TerminalHeaderToggle',
+        desc = 'Toggle header line in the active Codex terminal buffer',
         run = function(_, clodex)
             clodex.toggle_terminal_header()
         end,
     },
     {
-        suffix = "ProjectClear",
-        desc = "Clear the active Clodex project for the current tab",
-        run = function(_, clodex)
-            clodex.clear_active_project()
-        end,
-    },
-    {
-        suffix = "QueueWorkspace",
-        desc = "Open Clodex project queue workspace",
+        suffix = 'QueueWorkspace',
+        desc = 'Open Clodex project queue workspace',
         run = function(_, clodex)
             clodex.open_queue_workspace()
         end,
     },
     {
-        suffix = "History",
-        desc = "Open global Clodex conversation history",
+        suffix = 'History',
+        desc = 'Open global Clodex conversation history',
         run = function(_, clodex)
             clodex.open_history()
         end,
     },
     {
-        suffix = "ProjectReadme",
+        suffix = 'ProjectReadme',
         desc = "Open the current project's README.md",
         run = function(_, clodex)
             clodex.open_project_readme_file()
         end,
     },
     {
-        suffix = "ProjectTodo",
-        desc = "Open the current project's TODO.md",
-        run = function(_, clodex)
-            clodex.open_project_todo_file()
-        end,
-    },
-    {
-        suffix = "ProjectDictionary",
+        suffix = 'ProjectDictionary',
         desc = "Open the current project's dictionary",
         run = function(_, clodex)
             clodex.open_project_dictionary_file()
         end,
     },
     {
-        suffix = "ProjectCheatsheet",
+        suffix = 'ProjectCheatsheet',
         desc = "Open the current project's cheatsheet",
         run = function(_, clodex)
             clodex.open_project_cheatsheet_file()
         end,
     },
     {
-        suffix = "ProjectCheatsheetToggle",
+        suffix = 'ProjectCheatsheetToggle',
         desc = "Toggle the current project's cheatsheet preview",
         run = function(_, clodex)
             clodex.toggle_project_cheatsheet_preview()
         end,
     },
     {
-        suffix = "ProjectCheatsheetAdd",
-        desc = "Add a one-line cheatsheet item",
+        suffix = 'ProjectCheatsheetAdd',
+        desc = 'Add a one-line cheatsheet item',
         run = function(_, clodex)
             clodex.add_project_cheatsheet_item()
         end,
     },
     {
-        suffix = "ProjectNotes",
+        suffix = 'ProjectNotes',
         desc = "Open the current project's notes picker",
         run = function(_, clodex)
             clodex.open_project_notes_picker()
         end,
     },
     {
-        suffix = "ProjectNoteAdd",
-        desc = "Create a project note",
+        suffix = 'ProjectNoteAdd',
+        desc = 'Create a project note',
         run = function(_, clodex)
             clodex.create_project_note()
         end,
     },
     {
-        suffix = "ProjectBookmarks",
+        suffix = 'ProjectBookmarks',
         desc = "Open the current project's bookmarks picker",
         run = function(_, clodex)
             clodex.open_project_bookmarks_picker()
         end,
     },
     {
-        suffix = "ProjectBookmarkAdd",
+        suffix = 'ProjectBookmarkAdd',
         desc = "Add a bookmark for the current line",
         run = function(_, clodex)
             clodex.add_project_bookmark()
         end,
     },
     {
-        suffix = "TodoAdd",
+        suffix = 'TodoAdd',
         desc = "Add a todo prompt to a project's planned queue",
-        nargs = "?",
+        nargs = '?',
         run = function(command, clodex)
             clodex.add_todo({
-                project_value = command.args ~= "" and command.args or nil,
+                project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = "TodoError",
-        desc = "Add an error-investigation todo prompt",
-        nargs = "?",
+        suffix = 'ErrorAdd',
+        desc = 'Add an error-investigation todo prompt',
+        nargs = '?',
         run = function(command, clodex)
             clodex.add_error_todo({
-                project_value = command.args ~= "" and command.args or nil,
+                project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = "TodoErrorFor",
-        desc = "Pick a project and add an error-investigation todo prompt",
-        nargs = "?",
+        suffix = 'ErrorAddFor',
+        desc = 'Pick a project and add an error-investigation prompt',
+        nargs = '?',
         run = function(command, clodex)
             clodex.add_error_todo({
                 project_required = true,
-                project_value = command.args ~= "" and command.args or nil,
+                project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = "TodoImplement",
-        desc = "Implement the next queued prompt for a project",
-        nargs = "?",
+        suffix = 'Implement',
+        desc = 'Implement the next queued prompt for a project',
+        nargs = '?',
         run = function(command, clodex)
             clodex.implement_next_queued_item({
-                project_value = command.args ~= "" and command.args or nil,
+                project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = "TodoImplementAll",
-        desc = "Implement all queued prompts for a project",
-        nargs = "?",
+        suffix = 'TodoImplementAll',
+        desc = 'Implement all queued prompts for a project',
+        nargs = '?',
         run = function(command, clodex)
             clodex.implement_all_queued_items({
-                project_value = command.args ~= "" and command.args or nil,
+                project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = "PromptAdd",
-        desc = "Add a prompt to the current or detected project",
+        suffix = 'PromptAdd',
+        desc = 'Add a prompt to the current or detected project',
         run = function(_, clodex)
             clodex.add_prompt()
         end,
     },
     {
-        suffix = "PromptAddFor",
-        desc = "Pick a project and prompt category to add",
+        suffix = 'PromptAddFor',
+        desc = 'Pick a project and prompt category to add',
         run = function(_, clodex)
             clodex.add_prompt_for_project()
         end,
     },
     {
-        suffix = "DebugReload",
-        desc = "Reload clodex modules for debugging",
+        suffix = 'DebugReload',
+        desc = 'Reload clodex modules for debugging',
         run = function(_, clodex)
             clodex.debug_reload()
         end,
     },
 } ---@type Clodex.CommandDefinition[]
 
+local COMMAND_ALIASES = {
+    { alias_suffix = 'ProjectTodo', target_suffix = 'TodoAdd' },
+    { alias_suffix = 'TodoError', target_suffix = 'ErrorAdd' },
+    { alias_suffix = 'TodoErrorFor', target_suffix = 'ErrorAddFor' },
+    { alias_suffix = 'TodoImplement', target_suffix = 'Implement' },
+} ---@type { alias_suffix: string, target_suffix: string }[]
+
 local REGISTERED_KEYMAPS = {} ---@type { mode: string, lhs: string }[]
 local GLOBAL_KEYMAPS = {
     {
-        field = "toggle",
-        mode = "n",
-        action = "toggle",
-        desc = "Toggle Codex terminal",
+        field = 'toggle',
+        mode = 'n',
+        action = 'toggle',
+        desc = 'Toggle Codex terminal',
     },
     {
-        field = "queue_workspace",
-        mode = "n",
-        action = "open_queue_workspace",
-        desc = "Open Clodex project queue workspace",
+        field = 'queue_workspace',
+        mode = 'n',
+        action = 'open_queue_workspace',
+        desc = 'Open Clodex project queue workspace',
     },
     {
-        field = "state_preview",
-        mode = "n",
-        action = "toggle_state_preview",
-        desc = "Toggle Codex state preview panel",
+        field = 'state_preview',
+        mode = 'n',
+        action = 'toggle_state_preview',
+        desc = 'Toggle Codex state preview panel',
     },
 } ---@type Clodex.GlobalKeymapDefinition[]
 
 ---@param definition Clodex.CommandDefinition
 ---@return Clodex.CommandSpec
-local function command_spec(definition)
+local function command_spec(definition, name)
     return {
-        name = command_name(definition.suffix),
+        name = name or command_name(definition.suffix),
         desc = definition.desc,
         nargs = definition.nargs,
         handler = function(command)
             definition.run(command, REQUIRE_CLODEX())
         end,
     }
+end
+
+---@param target_suffix string
+---@param alias_suffix string
+---@return Clodex.CommandSpec?
+local function command_alias_spec(target_suffix, alias_suffix)
+    for _, definition in ipairs(BASE_COMMANDS) do
+        if definition.suffix == target_suffix then
+            return command_spec(definition, command_name(alias_suffix))
+        end
+    end
 end
 
 ---@param category Clodex.PromptCategoryDef
@@ -305,19 +293,19 @@ local function category_command_specs(category)
 
     return {
         command_spec({
-            suffix = "Prompt" .. suffix,
-            desc = ("Add a %s prompt"):format(category.label:lower()),
-            nargs = "?",
+            suffix = 'Prompt' .. suffix,
+            desc = ('Add a %s prompt'):format(category.label:lower()),
+            nargs = '?',
             run = function(command, clodex)
                 clodex.add_prompt({
-                    project_value = command.args ~= "" and command.args or nil,
+                    project_value = command.args ~= '' and command.args or nil,
                     category = category.id,
                 })
             end,
         }),
         command_spec({
-            suffix = "Prompt" .. suffix .. "For",
-            desc = ("Pick a project and add a %s prompt"):format(category.label:lower()),
+            suffix = 'Prompt' .. suffix .. 'For',
+            desc = ('Pick a project and add a %s prompt'):format(category.label:lower()),
             run = function(_, clodex)
                 clodex.add_prompt_for_project({
                     category = category.id,
@@ -334,6 +322,13 @@ local function command_specs()
     local specs = {} ---@type Clodex.CommandSpec[]
     for _, definition in ipairs(BASE_COMMANDS) do
         specs[#specs + 1] = command_spec(definition)
+    end
+
+    for _, alias in ipairs(COMMAND_ALIASES) do
+        local alias_spec = command_alias_spec(alias.target_suffix, alias.alias_suffix)
+        if alias_spec then
+            specs[#specs + 1] = alias_spec
+        end
     end
 
     for _, category in ipairs(Prompt.categories.list()) do
@@ -357,9 +352,9 @@ function M.list_keymaps(values)
     local configured = values.keymaps or {}
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
         local lhs = configured[definition.field]
-        if type(lhs) == "string" and lhs ~= "" then
+        if type(lhs) == 'string' and lhs ~= '' then
             keymaps[#keymaps + 1] = {
-                context = "Global",
+                context = 'Global',
                 mode = definition.mode,
                 lhs = lhs,
                 desc = definition.desc,
@@ -379,11 +374,11 @@ function M.register_keymaps(values)
     local configured = values.keymaps or {}
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
         local lhs = configured[definition.field]
-        if type(lhs) == "string" and lhs ~= "" then
+        if type(lhs) == 'string' and lhs ~= '' then
             vim.keymap.set(definition.mode, lhs, function()
                 REQUIRE_CLODEX()[definition.action]()
             end, {
-                desc = ("Clodex: %s"):format(definition.desc),
+                desc = ('Clodex: %s'):format(definition.desc),
                 silent = true,
             })
             REGISTERED_KEYMAPS[#REGISTERED_KEYMAPS + 1] = {
