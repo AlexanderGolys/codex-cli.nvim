@@ -43,7 +43,9 @@ function M.set_focus_border(win, active)
     return
   end
   local border = active and ACTIVE_BORDER or INACTIVE_BORDER
-  vim.wo[win].winhl = ("NormalFloat:ClodexQueueNormal,FloatBorder:%s,CursorLine:ClodexQueueSelection"):format(border)
+  vim.wo[win].winhl = (
+    "NormalFloat:ClodexQueueNormal,FloatBorder:%s,CursorLine:ClodexQueueSelection,Cursor:ClodexQueueNormal"
+  ):format(border)
   vim.wo[win].winblend = 0
 end
 

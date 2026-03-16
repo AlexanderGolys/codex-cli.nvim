@@ -71,8 +71,6 @@ local PROJECT_SEARCH_FIELDS = {
 local ITEM_TITLE_PREFIX_WIDTH = 2
 local PROJECT_DETAIL_LABELS = {
     "Files:",
-    "Avg LOC:",
-    "Remote:",
     "Lang:",
 }
 local GITHUB_ICON = ""
@@ -163,19 +161,45 @@ local function project_panel_width(self)
     return math.max(select(3, self:layout()) - 2, 1)
 end
 
+---@param summary Clodex.ProjectQueueSummary
+---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
+local function project_count_suffix(summary)
+    local entries = {
+        { text = tostring(summary.counts.planned), hl_group = "ClodexQueueTodoCount" },
+        { text = tostring(summary.counts.queued), hl_group = "ClodexQueueQueuedCount" },
+        { text = tostring(summary.counts.history), hl_group = "ClodexQueueHistoryCount" },
+    }
+    local parts = { "  " }
+    local spans = {} ---@type { start_col: integer, end_col: integer, hl_group: string }[]
+    local offset = #parts[1]
+
+    for index, entry in ipairs(entries) do
+        parts[#parts + 1] = entry.text
+        spans[#spans + 1] = {
+            start_col = offset,
+            end_col = offset + #entry.text,
+            hl_group = entry.hl_group,
+        }
+        offset = offset + #entry.text
+        if index < #entries then
+            parts[#parts + 1] = "/"
+            offset = offset + 1
+        end
+    end
+
+    return table.concat(parts), spans
+end
+
+-- @@@clodex.panel.project.title
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
 ---@param max_width integer
----@return string
+---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
 local function project_title_text(project, summary, max_width)
-    local prefix = summary.session_running and "● " or "// "
-    local suffix = ("  P:%d Q:%d H:%d"):format(
-        summary.counts.planned,
-        summary.counts.queued,
-        summary.counts.history
-    )
+    local prefix = summary.session_running and "󰚩 " or "󱙻 "
+    local suffix, spans = project_count_suffix(summary)
     local name_width = math.max(max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(suffix), 1)
-    return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width)
+    return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width), spans
 end
 
 ---@param projects Clodex.Project[]
@@ -338,7 +362,7 @@ local function footer_actions(focus)
         title = " Queue Actions ",
         lines = {
             "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
-            "a: add prompt   e: edit prompt   i: implement queued item   I: queue all planned   m/M: move forward/back",
+            "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
             "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   Ctrl-S: save",
         },
     }
@@ -370,16 +394,7 @@ local function history_suffix(item)
     return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
 end
 
----@param items Clodex.QueueItem[]
----@return table<Clodex.PromptCategory, integer>
-local function queue_kind_counts(items)
-    local counts = {} ---@type table<Clodex.PromptCategory, integer>
-    for _, item in ipairs(items) do
-        local kind = prompt_item_kind(item)
-        counts[kind] = (counts[kind] or 0) + 1
-    end
-    return counts
-end
+
 
 ---@param timestamp? integer
 ---@param config Clodex.Config.Values
@@ -443,15 +458,6 @@ local function format_languages(languages)
     return table.concat(parts, ", ")
 end
 
----@param value? number
----@return string
-local function format_avg_lines(value)
-    if not value then
-        return "-"
-    end
-    return ("%.1f"):format(value)
-end
-
 ---@param detail string
 ---@return Clodex.Extmark[]
 ---@param has_remote boolean
@@ -472,9 +478,9 @@ local function project_detail_extmarks(detail, has_remote)
         end
     end
 
-    local remote_pos = detail:find("Remote:", 1, true)
-    if remote_pos then
-        local icon_start = remote_pos - 1 + #("Remote: ")
+    local icon_pos = detail:find(GITHUB_ICON, 1, true)
+    if icon_pos then
+        local icon_start = icon_pos - 1
         local icon_end = icon_start + #GITHUB_ICON
         local remote_icon_hl = has_remote and "ClodexProjectRemoteAttached" or "ClodexProjectRemoteDetached"
         marks[#marks + 1] = Extmark.inline(0, icon_start, icon_end, remote_icon_hl)
@@ -502,7 +508,6 @@ local function summary_search_text(config, details)
         format_timestamp(details.last_codex_activity_at, config),
         format_timestamp(details.last_file_modified_at, config),
         tostring(details.file_count or ""),
-        format_avg_lines(details.avg_lines_per_file),
     }, " ")
 end
 
@@ -534,14 +539,13 @@ local function project_detail_lines(app, summary, details)
     details = details or app.project_details_store:get_cached(summary.project)
     if not details then
         return {
-            "    Files:-  Avg LOC:-  Remote: " .. GITHUB_ICON,
+            "    Files:-  " .. GITHUB_ICON,
             "    Lang:-  -",
         }
     end
     return {
-        ("    Files:%d  Avg LOC:%s  Remote:%s"):format(
+        ("    Files:%d  %s"):format(
             details.file_count,
-            format_avg_lines(details.avg_lines_per_file),
             " " .. GITHUB_ICON
         ),
         ("    Lang:%s  %s"):format(
@@ -797,7 +801,7 @@ function Workspace:attach_keymaps()
         end
     end
 
-    for _, buf in ipairs({ self.project_buf, self.queue_buf }) do
+    for _, buf in ipairs({ self.project_buf, self.queue_buf, self.footer_buf }) do
         map(buf, "q", function()
             self:close()
         end)
@@ -843,14 +847,23 @@ function Workspace:attach_keymaps()
         map(buf, "a", function()
             self:add_todo()
         end)
+        map(buf, "D", function()
+            self:delete_project()
+        end)
+        map(buf, "/", function()
+            self:prompt_project_search()
+        end)
+        map(buf, "<BS>", function()
+            self:clear_project_search()
+        end)
+    end
+
+    for _, buf in ipairs({ self.queue_buf, self.footer_buf }) do
         map(buf, "e", function()
             self:edit_queue_item()
         end)
         map(buf, "i", function()
             self:implement_queue_item()
-        end)
-        map(buf, "I", function()
-            self:move_all_planned_items_to_queued()
         end)
         map(buf, "m", function()
             self:move_queue_item()
@@ -868,16 +881,8 @@ function Workspace:attach_keymaps()
             self:move_queue_item_to_adjacent_project(1)
         end)
         map(buf, "d", function()
+            self:set_focus("queue")
             self:delete_queue_item()
-        end)
-        map(buf, "D", function()
-            self:delete_project()
-        end)
-        map(buf, "/", function()
-            self:prompt_project_search()
-        end)
-        map(buf, "<BS>", function()
-            self:clear_project_search()
         end)
     end
 
@@ -1007,6 +1012,7 @@ function Workspace:render_projects()
     local block = TextBlock.new()
     local selected_project = self.projects[self.project_index]
     local selected_root = selected_project and selected_project.root or nil
+    local active_root = self.app:current_tab().active_project_root
     local max_width = project_panel_width(self)
 
     if self.project_search ~= "" then
@@ -1031,20 +1037,31 @@ function Workspace:render_projects()
         local details = project.root == selected_root
             and self.app.project_details_store:get(project)
             or self.app.project_details_store:get_cached(project)
-        local title = project_title_text(project, summary, max_width)
+        local title, count_spans = project_title_text(project, summary, max_width)
+        local count_suffix = project_count_suffix(summary)
         self.project_rows[#self.project_rows + 1] = {
             kind = "item",
             text = title,
             project = project,
         }
         self.project_item_rows[#self.project_item_rows + 1] = #self.project_rows
-        local item_hl = summary.session_running and "ClodexQueueProjectActive" or "ClodexQueueProjectInactive"
+        local is_active_project = active_root ~= nil and project.root == active_root
+        local item_hl = is_active_project and "ClodexQueueProjectCurrent"
+            or summary.session_running and "ClodexQueueProjectActive"
+            or "ClodexQueueProjectInactive"
         local item_extmarks = {
             Extmark.inline(0, 0, #title, item_hl),
         }
-        local counts_start = title:find("P:")
+        local counts_start = title:find(count_suffix, 1, true)
         if counts_start then
-            item_extmarks[#item_extmarks + 1] = Extmark.inline(0, counts_start - 1, #title, "ClodexQueueCounts")
+            for _, span in ipairs(count_spans) do
+                item_extmarks[#item_extmarks + 1] = Extmark.inline(
+                    0,
+                    counts_start - 1 + span.start_col,
+                    counts_start - 1 + span.end_col,
+                    span.hl_group
+                )
+            end
         end
         block:append_line(title, item_extmarks)
 
@@ -1365,8 +1382,20 @@ function Workspace:implement_queue_item()
         return
     end
 
-    self.app.queue_actions:implement_queue_item(project, item.id)
-    self:refresh()
+    if not self.app.queue_actions:implement_queue_item(project, item.id) then
+        self:refresh()
+        return
+    end
+
+    self:close()
+    vim.schedule(function()
+        local state = self.app:current_tab()
+        self.app.project_actions:activate_project(project.root)
+        self.app.project_actions:show_target(state, {
+            kind = "project",
+            project = project,
+        })
+    end)
 end
 
 function Workspace:move_all_planned_items_to_queued()

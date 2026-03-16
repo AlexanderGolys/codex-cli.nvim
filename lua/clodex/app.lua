@@ -74,8 +74,40 @@ local fs = require("clodex.util.fs")
 local App = {}
 App.__index = App
 
-local singleton ---@type Clodex.App?
+---@alias Clodex.AppForwardGroup "project_actions"|"prompt_actions"|"queue_actions"
+---@class Clodex.AppForwardSpec
+---@field field Clodex.AppForwardGroup
+---@field method string
 
+local singleton ---@type Clodex.App?
+local FORWARDED_METHODS = {
+    open_project_readme_file = { field = "project_actions", method = "open_project_readme_file" },
+    open_project_todo_file = { field = "project_actions", method = "open_project_todo_file" },
+    open_project_dictionary_file = { field = "project_actions", method = "open_project_dictionary_file" },
+    open_project_cheatsheet_file = { field = "project_actions", method = "open_project_cheatsheet_file" },
+    toggle_project_cheatsheet_preview = { field = "project_actions", method = "toggle_project_cheatsheet_preview" },
+    add_project_cheatsheet_item = { field = "project_actions", method = "add_project_cheatsheet_item" },
+    open_project_notes_picker = { field = "project_actions", method = "open_project_notes_picker" },
+    create_project_note = { field = "project_actions", method = "create_project_note" },
+    add_project_bookmark = { field = "project_actions", method = "add_project_bookmark" },
+    open_project_bookmarks_picker = { field = "project_actions", method = "open_project_bookmarks_picker" },
+    implement_next_queued_item = { field = "queue_actions", method = "implement_next_queued_item" },
+    implement_all_queued_items = { field = "queue_actions", method = "implement_all_queued_items" },
+    add_error_todo = { field = "prompt_actions", method = "add_error_todo" },
+    activate_project = { field = "project_actions", method = "activate_project" },
+    set_current_project = { field = "project_actions", method = "set_current_project" },
+    clear_active_project = { field = "project_actions", method = "clear_active_project" },
+    toggle = { field = "project_actions", method = "toggle" },
+    rename_project = { field = "project_actions", method = "rename_project" },
+    add_project = { field = "project_actions", method = "add_project" },
+    remove_project = { field = "project_actions", method = "remove_project" },
+    maybe_offer_project = { field = "project_actions", method = "maybe_offer_project" },
+    toggle_terminal_header = { field = "project_actions", method = "toggle_terminal_header" },
+} ---@type table<string, Clodex.AppForwardSpec>
+
+---@param field Clodex.AppForwardGroup
+---@param method string
+---@return fun(self: Clodex.App, ...): any
 local function forward(field, method)
     return function(self, ...)
         return self[field][method](self[field], ...)
@@ -122,6 +154,28 @@ local function snapshot_context_buffer(buf)
     end
     local filetype = vim.bo[buf].filetype
     return filetype ~= "clodex_state" and filetype ~= "clodex_queue_workspace"
+end
+
+---@param config Clodex.Config.Values
+---@param buf integer
+local function reconnect_terminal_on_enter(config, buf)
+    if not config.terminal.start_insert then
+        return
+    end
+    if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].filetype ~= "clodex_terminal" then
+        return
+    end
+
+    local win = vim.api.nvim_get_current_win()
+    vim.schedule(function()
+        if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then
+            return
+        end
+        if vim.api.nvim_get_mode().mode:sub(1, 1) == "t" then
+            return
+        end
+        vim.cmd.startinsert()
+    end)
 end
 
 ---@return integer?
@@ -211,6 +265,7 @@ function App:setup(opts)
     self.exec_runner:update_config(values)
     self.queue_workspace:update_config(values)
     Commands.register()
+    Commands.register_keymaps(values)
     self:setup_autocmds()
     self:setup_execution_timer()
     self:refresh_state_preview()
@@ -248,11 +303,13 @@ function App:setup_autocmds()
         group = self.group,
         --- Refreshes preview state and prompts project detection for the current buffer.
         --- Helps users who navigate tabs or directories get immediate context updates.
-        callback = function()
-            self:refresh_changed_project_buffer(vim.api.nvim_get_current_buf())
-            self:refresh_bookmarks_for_buffer(vim.api.nvim_get_current_buf())
+        callback = function(args)
+            local buf = args.buf or vim.api.nvim_get_current_buf()
+            self:refresh_changed_project_buffer(buf)
+            self:refresh_bookmarks_for_buffer(buf)
             self:refresh_views()
-            self:maybe_prompt_active_project(vim.api.nvim_get_current_buf())
+            self:maybe_prompt_active_project(buf)
+            reconnect_terminal_on_enter(self.config:get(), buf)
         end,
     })
 
@@ -631,7 +688,13 @@ end
 ---@return Clodex.Project[]
 function App:projects_for_queue_workspace()
     local projects = self.registry:list()
+    local active_root = self:current_tab().active_project_root
     table.sort(projects, function(left, right)
+        local left_active = active_root ~= nil and left.root == active_root
+        local right_active = active_root ~= nil and right.root == active_root
+        if left_active ~= right_active then
+            return left_active
+        end
         local left_running = self:is_project_session_running(left)
         local right_running = self:is_project_session_running(right)
         if left_running ~= right_running then
@@ -667,19 +730,10 @@ function App:add_prompt_for_project(opts)
     end)
 end
 
-App.open_project_readme_file = forward("project_actions", "open_project_readme_file")
-App.open_project_todo_file = forward("project_actions", "open_project_todo_file")
-App.open_project_dictionary_file = forward("project_actions", "open_project_dictionary_file")
-App.open_project_cheatsheet_file = forward("project_actions", "open_project_cheatsheet_file")
-App.toggle_project_cheatsheet_preview = forward("project_actions", "toggle_project_cheatsheet_preview")
-App.add_project_cheatsheet_item = forward("project_actions", "add_project_cheatsheet_item")
-App.open_project_notes_picker = forward("project_actions", "open_project_notes_picker")
-App.create_project_note = forward("project_actions", "create_project_note")
-App.add_project_bookmark = forward("project_actions", "add_project_bookmark")
-App.open_project_bookmarks_picker = forward("project_actions", "open_project_bookmarks_picker")
-App.implement_next_queued_item = forward("queue_actions", "implement_next_queued_item")
-App.implement_all_queued_items = forward("queue_actions", "implement_all_queued_items")
-App.add_error_todo = forward("prompt_actions", "add_error_todo")
+for name, spec in pairs(FORWARDED_METHODS) do
+    App[name] = forward(spec.field, spec.method)
+end
+
 App.open_queue_workspace = function(self)
     if self.queue_workspace:is_open() then
         self.queue_workspace:close()
@@ -687,15 +741,6 @@ App.open_queue_workspace = function(self)
     end
     self.queue_workspace:open()
 end
-App.activate_project = forward("project_actions", "activate_project")
-App.set_current_project = forward("project_actions", "set_current_project")
-App.clear_active_project = forward("project_actions", "clear_active_project")
-App.toggle = forward("project_actions", "toggle")
-App.rename_project = forward("project_actions", "rename_project")
-App.add_project = forward("project_actions", "add_project")
-App.remove_project = forward("project_actions", "remove_project")
-App.maybe_offer_project = forward("project_actions", "maybe_offer_project")
-App.toggle_terminal_header = forward("project_actions", "toggle_terminal_header")
 App.open_history = function()
     History.open()
 end

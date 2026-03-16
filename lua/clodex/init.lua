@@ -1,13 +1,70 @@
+---@alias Clodex.PublicAction
+---| "toggle"
+---| "toggle_state_preview"
+---| "add_project"
+---| "rename_project"
+---| "remove_project"
+---| "toggle_terminal_header"
+---| "clear_active_project"
+---| "open_queue_workspace"
+---| "open_project_readme_file"
+---| "open_project_todo_file"
+---| "open_project_dictionary_file"
+---| "open_project_cheatsheet_file"
+---| "toggle_project_cheatsheet_preview"
+---| "add_project_cheatsheet_item"
+---| "open_project_notes_picker"
+---| "create_project_note"
+---| "add_project_bookmark"
+---| "open_project_bookmarks_picker"
+---| "add_todo"
+---| "implement_next_queued_item"
+---| "implement_all_queued_items"
+---| "add_prompt"
+---| "add_prompt_for_project"
+---| "add_error_todo"
+---| "open_history"
+
 --- Defines the clodex type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class clodex
 local M = {}
 M.lualine = require("clodex.lualine")
 
+local PUBLIC_ACTIONS = {
+    "toggle",
+    "toggle_state_preview",
+    "add_project",
+    "rename_project",
+    "remove_project",
+    "toggle_terminal_header",
+    "clear_active_project",
+    "open_queue_workspace",
+    "open_project_readme_file",
+    "open_project_todo_file",
+    "open_project_dictionary_file",
+    "open_project_cheatsheet_file",
+    "toggle_project_cheatsheet_preview",
+    "add_project_cheatsheet_item",
+    "open_project_notes_picker",
+    "create_project_note",
+    "add_project_bookmark",
+    "open_project_bookmarks_picker",
+    "add_todo",
+    "implement_next_queued_item",
+    "implement_all_queued_items",
+    "add_prompt",
+    "add_prompt_for_project",
+    "add_error_todo",
+    "open_history",
+} ---@type Clodex.PublicAction[]
+
 local function app()
     return require("clodex.app").instance()
 end
 
+---@param method Clodex.PublicAction
+---@return fun(...): any
 local function call(method)
     return function(...)
         local instance = app()
@@ -38,31 +95,9 @@ function M.register()
     require("clodex.commands").register()
 end
 
-M.toggle = call("toggle")
-M.toggle_state_preview = call("toggle_state_preview")
-M.add_project = call("add_project")
-M.rename_project = call("rename_project")
-M.remove_project = call("remove_project")
-M.toggle_terminal_header = call("toggle_terminal_header")
-M.clear_active_project = call("clear_active_project")
-M.open_queue_workspace = call("open_queue_workspace")
-M.open_project_readme_file = call("open_project_readme_file")
-M.open_project_todo_file = call("open_project_todo_file")
-M.open_project_dictionary_file = call("open_project_dictionary_file")
-M.open_project_cheatsheet_file = call("open_project_cheatsheet_file")
-M.toggle_project_cheatsheet_preview = call("toggle_project_cheatsheet_preview")
-M.add_project_cheatsheet_item = call("add_project_cheatsheet_item")
-M.open_project_notes_picker = call("open_project_notes_picker")
-M.create_project_note = call("create_project_note")
-M.add_project_bookmark = call("add_project_bookmark")
-M.open_project_bookmarks_picker = call("open_project_bookmarks_picker")
-M.add_todo = call("add_todo")
-M.implement_next_queued_item = call("implement_next_queued_item")
-M.implement_all_queued_items = call("implement_all_queued_items")
-M.add_prompt = call("add_prompt")
-M.add_prompt_for_project = call("add_prompt_for_project")
-M.add_error_todo = call("add_error_todo")
-M.open_history = call("open_history")
+for _, method in ipairs(PUBLIC_ACTIONS) do
+    M[method] = call(method)
+end
 
 function M.debug_reload()
     local opts = current_config()

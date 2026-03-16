@@ -35,7 +35,7 @@ local FLOAT_BORDER_COLS = 2
 local FLOAT_RIGHT_MARGIN_COLS = 1
 local FLOAT_CONTENT_PADDING_COLS = 2
 local COMMAND_WIDTH_MIN = 28
-local COMMAND_WIDTH_MAX = 40
+local COMMAND_WIDTH_MAX = 84
 local PANEL_GAP_COLS = 1
 
 --- Checks whether a floating window is valid before accessing win options.
@@ -189,22 +189,20 @@ local function append_tab(self, block, tab)
 end
 
 ---@param command Clodex.CommandSpec
---- Returns a short display name for a command by removing plugin prefix.
---- This keeps command labels compact in the state floating list.
----@return string
-local function command_label(command)
-  return command.name:gsub("^Clodex", "")
-end
-
----@param command Clodex.CommandSpec
 --- Adds an optional argument marker for commands that accept arguments.
 --- This signals command handlers that additional input is expected.
 ---@return string
 local function command_hint(command)
   if command.nargs and command.nargs ~= "0" then
-    return "?"
+    return " [arg]"
   end
   return ""
+end
+
+---@param command Clodex.CommandSpec
+---@return string
+local function command_text(command)
+  return (":%s%s  %s"):format(command.name, command_hint(command), command.desc)
 end
 
 ---@param self Clodex.StatePreview
@@ -214,7 +212,7 @@ end
 local function command_width(self)
   local width = COMMAND_WIDTH_MIN
   for _, command in ipairs(self.commands) do
-    local text = command_label(command) .. command_hint(command)
+    local text = command_text(command)
     width = math.max(width, vim.fn.strdisplaywidth(text) + FLOAT_CONTENT_PADDING_COLS)
   end
   return math.min(width, COMMAND_WIDTH_MAX)
@@ -479,8 +477,8 @@ function Preview:render_commands()
 
   local block = TextBlock.new()
   for _, command in ipairs(self.commands) do
-    local name = command_label(command)
-    local text = ("%s%s"):format(name, command_hint(command))
+    local name = (":%s%s"):format(command.name, command_hint(command))
+    local text = command_text(command)
     local extmarks = {
       Extmark.inline(0, 0, #name, "ClodexStateCommandName"),
     }
@@ -496,6 +494,40 @@ function Preview:render_commands()
 
   block:render(self.command_buf, self.command_ns)
   self:update_cursor()
+end
+
+---@param self Clodex.StatePreview
+---@param block Clodex.TextBlock
+local function append_keymaps(self, block)
+  local keymaps = Commands.list_keymaps(self.config)
+  if #keymaps == 0 then
+    push_line(self, block, "> none", {
+      Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+      Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
+    })
+    return
+  end
+
+  local current_context = nil
+  for _, keymap in ipairs(keymaps) do
+    if keymap.context ~= current_context then
+      current_context = keymap.context
+      push_line(self, block, ("> %s"):format(current_context), {
+        Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+        Extmark.inline(0, 2, 2 + #current_context, "ClodexStateEntryTitle"),
+      })
+    end
+
+    local text = ("  [%s] %s  %s"):format(keymap.mode, keymap.lhs, keymap.desc)
+    local mode_prefix = ("  [%s] "):format(keymap.mode)
+    local lhs_start = #mode_prefix
+    local lhs_end = lhs_start + #keymap.lhs
+    push_line(self, block, text, {
+      Extmark.inline(0, 0, #mode_prefix, "ClodexStateFieldLabel"),
+      Extmark.inline(0, lhs_start, lhs_end, "ClodexStateCommandName"),
+      Extmark.inline(0, lhs_end, #text, "ClodexStateCommandHint"),
+    })
+  end
 end
 
 ---@param snapshot Clodex.App.StateSnapshot
@@ -558,6 +590,12 @@ function Preview:render_state(snapshot)
       append_tab(self, block, tab)
     end
   end
+
+  push_line(self, block, "")
+  push_line(self, block, "Keymaps", {
+    Extmark.inline(0, 0, #"Keymaps", "ClodexStateSection"),
+  })
+  append_keymaps(self, block)
 
   block:render(self.state_buf, self.state_ns)
 end

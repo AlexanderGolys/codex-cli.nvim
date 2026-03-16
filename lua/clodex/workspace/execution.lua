@@ -32,18 +32,18 @@ When the prompt provides a project workspace path and queued item id before the 
 --- It includes the file path and queued item id so downstream agents can complete work in-place.
 --- This block is injected for both direct prompts and skill-directed prompts.
 local function completion_instruction_lines(workspace_path, item_id)
-  return {
-    ("Project workspace path: `%s`"):format(workspace_path),
-    ("Current queued item id: `%s`"):format(item_id),
-    "After the work is complete, update that workspace file directly.",
-    "Move the item with this id from `queues.queued` to the front of `queues.history` without changing its `id`.",
-    "Set `history_summary` to a short summary of the implemented change or blocker.",
-    "Set `history_commit` when a commit exists, otherwise leave it unset.",
-    "Set `history_completed_at` and `updated_at` to a UTC timestamp like `2026-03-13T16:40:17Z`.",
-    "If the item is already in `queues.history`, update it in place instead of duplicating it.",
-    "If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.",
-    "Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.",
-  }
+    return {
+        ("Project workspace path: `%s`"):format(workspace_path),
+        ("Current queued item id: `%s`"):format(item_id),
+        "After the work is complete, update that workspace file directly.",
+        "Move the item with this id from `queues.queued` to the front of `queues.history` without changing its `id`.",
+        "Set `history_summary` to a short summary of the implemented change or blocker.",
+        "Set `history_commit` when a commit exists, otherwise leave it unset.",
+        "Set `history_completed_at` and `updated_at` to a UTC timestamp like `2026-03-13T16:40:17Z`.",
+        "If the item is already in `queues.history`, update it in place instead of duplicating it.",
+        "If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.",
+        "Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.",
+    }
 end
 
 --- Adds optional image-context lines at the top of a generated prompt body.
@@ -52,32 +52,34 @@ end
 ---@param item Clodex.QueueItem
 ---@return string[]
 local function prompt_prefix_lines(item)
-  local lines = {} ---@type string[]
-  if item.image_path and fs.is_file(item.image_path) then
-    lines[#lines + 1] = ("Primary visual reference: `%s`"):format(item.image_path)
-    lines[#lines + 1] = "Use that local image file as part of the implementation context."
+    local lines = {} ---@type string[]
+    if item.image_path and fs.is_file(item.image_path) then
+        lines[#lines + 1] = ("Primary visual reference: `%s`"):format(item.image_path)
+        lines[#lines + 1] = "Use that local image file as part of the implementation context."
+        lines[#lines + 1] = ""
+    end
+    lines[#lines + 1] =
+    "Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task."
+    lines[#lines + 1] =
+    "Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request."
     lines[#lines + 1] = ""
-  end
-  lines[#lines + 1] = "Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task."
-  lines[#lines + 1] = "Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request."
-  lines[#lines + 1] = ""
-  return lines
+    return lines
 end
 
 local function trim(value)
-  return vim.trim(value or "")
+    return vim.trim(value or "")
 end
 
 local function is_absolute_path(path)
-  path = fs.normalize(path)
-  return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
+    path = fs.normalize(path)
+    return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
 end
 
 --- Computes a stable directory name for one project's local execution data.
 ---@param project_root string
 ---@return string
 local function project_id(project_root)
-  return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
+    return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
 end
 
 --- Resolves the canonical project-local execution root.
@@ -86,34 +88,34 @@ end
 ---@param project_root string
 ---@return string
 local function execution_dir(config, project_root)
-  local dir = trim(config.prompt_execution.receipts_dir)
-  if dir ~= "" then
-    local expanded = fs.normalize(vim.fn.expand(dir))
-    if is_absolute_path(expanded) then
-      return expanded
+    local dir = trim(config.prompt_execution.receipts_dir)
+    if dir ~= "" then
+        local expanded = fs.normalize(vim.fn.expand(dir))
+        if is_absolute_path(expanded) then
+            return expanded
+        end
+        return fs.join(project_root, expanded)
     end
-    return fs.join(project_root, expanded)
-  end
-  return fs.join(project_root, ".clodex", "prompt-executions")
+    return fs.join(project_root, ".clodex", "prompt-executions")
 end
 
 ---@param root_dir string
 ---@param project_root string
 ---@return string
 local function workspace_storage_dir(root_dir, project_root)
-  local normalized = fs.normalize(root_dir)
-  if is_absolute_path(normalized) then
-    return normalized
-  end
-  return fs.join(project_root, normalized)
+    local normalized = fs.normalize(root_dir)
+    if is_absolute_path(normalized) then
+        return normalized
+    end
+    return fs.join(project_root, normalized)
 end
 
 ---@param config Clodex.Config.Values
 ---@param project_root string
 ---@return string
 local function workspace_path(config, project_root)
-  local storage_dir = workspace_storage_dir(config.storage.workspaces_dir, project_root)
-  return fs.join(storage_dir, project_id(project_root) .. ".json")
+    local storage_dir = workspace_storage_dir(config.storage.workspaces_dir, project_root)
+    return fs.join(storage_dir, project_id(project_root) .. ".json")
 end
 
 --- Resolves the configured project-local directory where generated skill files are stored.
@@ -123,16 +125,16 @@ end
 ---@param project_root string
 ---@return string?
 local function skills_dir(config, project_root)
-  local dir = trim(config.prompt_execution.skills_dir)
-  if dir == "" then
-    return nil
-  end
-  return fs.join(project_root, dir)
+    local dir = trim(config.prompt_execution.skills_dir)
+    if dir == "" then
+        return nil
+    end
+    return fs.join(project_root, dir)
 end
 
 local function skill_name(config)
-  local name = trim(config.prompt_execution.skill_name)
-  return name ~= "" and name or "prompt-nvim-clodex"
+    local name = trim(config.prompt_execution.skill_name)
+    return name ~= "" and name or "prompt-nvim-clodex"
 end
 
 --- Renders the full SKILL.md template for the currently configured skill name.
@@ -140,8 +142,8 @@ end
 ---@param config Clodex.Config.Values
 ---@return string
 local function generated_skill_content(config)
-  local name = skill_name(config)
-  return SKILL_TEMPLATE:format(name, name)
+    local name = skill_name(config)
+    return SKILL_TEMPLATE:format(name, name)
 end
 
 --- Resolves the final on-disk project-local skill directory.
@@ -149,94 +151,93 @@ end
 ---@param project_root string
 ---@return string?
 local function installed_skill_dir(config, project_root)
-  local dir = skills_dir(config, project_root)
-  if not dir then
-    return nil
-  end
+    local dir = skills_dir(config, project_root)
+    if not dir then
+        return nil
+    end
 
-  local name = skill_name(config)
-  return fs.join(dir, name)
+    local name = skill_name(config)
+    return fs.join(dir, name)
 end
 
 --- The created object is used by app runtime to dispatch prompt text and write project-local helpers.
 ---@param config Clodex.Config.Values
 ---@return Clodex.Workspace.Execution
 function Execution.new(config)
-  local self = setmetatable({}, Execution)
-  self.config = config
-  return self
+    local self = setmetatable({}, Execution)
+    self.config = config
+    return self
 end
 
 --- Replaces the cached config so in-flight execution behavior stays aligned with updated user options.
 ---@param config Clodex.Config.Values
 function Execution:update_config(config)
-  self.config = config
+    self.config = config
 end
 
 --- Reports whether execution should use a generated skill (`$<name>`) instead of raw `$prompt`.
 --- This branch influences how queue items are formatted before being sent to the terminal.
 ---@return boolean
 function Execution:uses_prompt_skill()
-  return trim(self.config.prompt_execution.skill_name) ~= "" and trim(self.config.prompt_execution.skills_dir) ~= ""
+    return trim(self.config.prompt_execution.skill_name) ~= "" and trim(self.config.prompt_execution.skills_dir) ~= ""
 end
 
 --- Returns the effective project-local skill directory and asserts it exists when skill mode is enabled.
 ---@param project Clodex.Project
 ---@return string
 function Execution:skill_dir(project)
-  return assert(installed_skill_dir(self.config, project.root))
+    return assert(installed_skill_dir(self.config, project.root))
 end
 
 --- Returns the path to the generated project-local SKILL.md file.
 ---@param project Clodex.Project
 ---@return string
 function Execution:skill_file(project)
-  return fs.join(self:skill_dir(project), "SKILL.md")
+    return fs.join(self:skill_dir(project), "SKILL.md")
 end
 
 --- Returns the project-scoped directory used for local execution artifacts.
 ---@param project Clodex.Project
 ---@return string
 function Execution:project_execution_dir(project)
-  return fs.join(execution_dir(self.config, project.root), project_id(project.root))
+    return fs.join(execution_dir(self.config, project.root), project_id(project.root))
 end
 
 --- Updates the generated project-local skill file for one project.
 --- This keeps queued execution self-contained inside the project workspace.
 ---@param project Clodex.Project
 function Execution:ensure_prompt_skill(project)
-  if not self:uses_prompt_skill() then
-    return
-  end
+    if not self:uses_prompt_skill() then
+        return
+    end
 
-  local content = generated_skill_content(self.config)
-  fs.write_file(self:skill_file(project), content)
+    local content = generated_skill_content(self.config)
+    fs.write_file(self:skill_file(project), content)
 end
 
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@return string
 function Execution:dispatch_prompt(project, item)
-  self:ensure_prompt_skill(project)
-  local instruction_lines = completion_instruction_lines(workspace_path(self.config, project.root), item.id)
+    self:ensure_prompt_skill(project)
+    local instruction_lines = completion_instruction_lines(workspace_path(self.config, project.root), item.id)
 
-  local prompt_lines = prompt_prefix_lines(item)
-  prompt_lines[#prompt_lines + 1] = item.prompt
+    local prompt_lines = prompt_prefix_lines(item)
+    prompt_lines[#prompt_lines + 1] = item.prompt
 
-  if self:uses_prompt_skill() then
-    local skill = skill_name(self.config)
+    if self:uses_prompt_skill() then
+        local lines = vim.deepcopy(prompt_lines)
+        lines[#lines + 1] = ""
+    vim.list_extend(lines, instruction_lines)
+        lines[#lines + 1] = ("$%s"):format(skill_name(self.config))
+        return table.concat(lines, "\n")
+    end
+
     local lines = vim.deepcopy(prompt_lines)
     lines[#lines + 1] = ""
+    lines[#lines + 1] = "$prompt"
     vim.list_extend(lines, instruction_lines)
-    lines[#lines + 1] = ("$%s"):format(skill)
     return table.concat(lines, "\n")
-  end
-
-  local lines = vim.deepcopy(prompt_lines)
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = "$prompt"
-  vim.list_extend(lines, instruction_lines)
-  return table.concat(lines, "\n")
 end
 
 return Execution

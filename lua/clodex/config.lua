@@ -57,6 +57,12 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.Session
 ---@field persist_current_project boolean
 
+--- Global keymaps created by clodex during setup. Set a value to `false` to disable it.
+---@class Clodex.Config.Keymaps
+---@field toggle string|false
+---@field queue_workspace string|false
+---@field state_preview string|false
+
 --- Manual project-history tracking for direct CLI conversations outside queued prompts.
 ---@class Clodex.Config.ManualHistory
 ---@field model_instructions_file string # Project-local file passed to Codex via `model_instructions_file`; empty disables generation.
@@ -73,6 +79,7 @@ local fs = require("clodex.util.fs")
 ---@field highlights Clodex.Config.Highlights
 ---@field prompt_execution Clodex.Config.PromptExecution
 ---@field session Clodex.Config.Session
+---@field keymaps Clodex.Config.Keymaps
 ---@field manual_history Clodex.Config.ManualHistory
 
 --- Root config object exported by `require("clodex.config")`.
@@ -140,18 +147,15 @@ local function defaults()
         session = {
             persist_current_project = true,
         },
+        keymaps = {
+            toggle = "<leader>ct",
+            queue_workspace = "<leader>cq",
+            state_preview = "<leader>cs",
+        },
         manual_history = {
             model_instructions_file = "",
         },
     }
-end
-
---- Checks whether a value is a dictionary-like table for merge operations.
---- This helper distinguishes keyed tables from list-like tables before deep merge.
----@param value any
----@return boolean
-local function is_dict_like(value)
-    return type(value) == "table" and (vim.tbl_isempty(value) or not vim.islist(value))
 end
 
 --- Checks whether a value is a keyed table compatible with config overwrite paths.
@@ -159,7 +163,7 @@ end
 ---@param value any
 ---@return boolean
 local function is_dict(value)
-    return type(value) == "table" and (vim.tbl_isempty(value) or not value[1])
+    return type(value) == "table" and (vim.tbl_isempty(value) or not vim.islist(value))
 end
 
 --- Loads a named highlight safely from Neovim and returns an empty spec on failure.
@@ -245,7 +249,7 @@ function Config.merge(...)
     local ret = select(1, ...)
     for index = 2, select("#", ...) do
         local value = select(index, ...)
-        if is_dict_like(ret) and is_dict(value) then
+        if is_dict(ret) and is_dict(value) then
             for key, nested in pairs(value) do
                 ret[key] = Config.merge(ret[key], nested)
             end

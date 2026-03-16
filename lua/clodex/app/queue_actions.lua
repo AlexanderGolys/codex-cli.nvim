@@ -177,17 +177,21 @@ end
 
 ---@param project Clodex.Project
 ---@param item_id string
+---@return boolean
 function QueueActions:implement_queue_item(project, item_id)
   local queue_name, _, item = self.app.queue:find_item(project, item_id)
   if queue_name ~= "queued" or not item then
     notify.warn("Only queued items can be implemented")
-    return
+    return false
   end
 
   if self:dispatch_item(project, item) then
     notify.notify(("Implemented queued prompt for %s: %s"):format(project.name, item.title))
     self.app:refresh_views()
+    return true
   end
+
+  return false
 end
 
 ---@param project Clodex.Project

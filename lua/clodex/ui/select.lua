@@ -12,7 +12,8 @@ local PROMPT_EDITOR_MAX_MARGIN = 12
 local PROMPT_EDITOR_WIDTH_PADDING = 10
 local PROMPT_EDITOR_HEIGHT_MARGIN = 10
 local PROMPT_EDITOR_TITLE_HEIGHT = 1
-local PROMPT_EDITOR_WINDOW_GAP = 2
+local PROMPT_EDITOR_FIELD_GAP = 0
+local PROMPT_EDITOR_HINT_GAP = 1
 local PROMPT_EDITOR_BORDER_ROWS = 2
 local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
@@ -329,7 +330,9 @@ local function prompt_editor_hint_lines(actions)
   end
 
   return {
-    ("  <CR>/<Down>/<Tab> move   <S-Tab> back   %s"):format(table.concat(action_chunks, "   ")),
+    ("  <CR>/<Down> details   <Tab> switch fields   <Up>/<S-Tab> title   %s"):format(
+      table.concat(action_chunks, "   ")
+    ),
     "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",
   }
 end
@@ -393,17 +396,18 @@ function M.multiline_input(opts, on_confirm)
       + calc_height()
       + PROMPT_EDITOR_HINT_HEIGHT
       + (PROMPT_EDITOR_BORDER_ROWS * 2)
-      + (PROMPT_EDITOR_WINDOW_GAP * 2)
+      + PROMPT_EDITOR_FIELD_GAP
+      + PROMPT_EDITOR_HINT_GAP
   end
 
   local function hint_row()
     return math.max(math.floor((editor_height - total_height()) / 2), 1)
       + PROMPT_EDITOR_TITLE_HEIGHT
       + PROMPT_EDITOR_BORDER_ROWS
-      + PROMPT_EDITOR_WINDOW_GAP
+      + PROMPT_EDITOR_FIELD_GAP
       + PROMPT_EDITOR_BORDER_ROWS
       + calc_height()
-      + PROMPT_EDITOR_WINDOW_GAP
+      + PROMPT_EDITOR_HINT_GAP
   end
 
   local function prompt_context()
@@ -458,7 +462,7 @@ function M.multiline_input(opts, on_confirm)
       return math.max(math.floor((editor_height - total_height()) / 2), 1)
         + PROMPT_EDITOR_TITLE_HEIGHT
         + PROMPT_EDITOR_BORDER_ROWS
-        + PROMPT_EDITOR_WINDOW_GAP
+        + PROMPT_EDITOR_FIELD_GAP
     end,
     col = function()
       return math.max(math.floor((editor_width - width) / 2), 1)
@@ -548,6 +552,15 @@ function M.multiline_input(opts, on_confirm)
     end
     vim.api.nvim_set_current_win(body_win.win)
     vim.cmd.startinsert()
+  end
+
+  --- Keeps body navigation intuitive by only jumping back to title from the first line.
+  --- Later lines should preserve their normal cursor movement within the details buffer.
+  local function should_focus_title_from_body()
+    if not body_win:valid() then
+      return false
+    end
+    return vim.api.nvim_win_get_cursor(body_win.win)[1] <= 1
   end
 
   local done = false
@@ -795,7 +808,19 @@ function M.multiline_input(opts, on_confirm)
   vim.keymap.set("n", "x", insert_quick_prompt, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "<C-x>", insert_quick_prompt, { buffer = body_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, { buffer = body_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<Tab>", focus_title, { buffer = body_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<S-Tab>", focus_title, { buffer = body_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<Up>", function()
+    if should_focus_title_from_body() then
+      focus_title()
+      return ""
+    end
+    return vim.keycode("<Up>")
+  end, {
+    buffer = body_buf,
+    silent = true,
+    expr = true,
+  })
   vim.keymap.set("n", "q", function()
     close(nil)
   end, { buffer = body_buf, silent = true })

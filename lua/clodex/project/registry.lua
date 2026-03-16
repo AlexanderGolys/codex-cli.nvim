@@ -10,6 +10,13 @@ local Project = require("clodex.project.project")
 local Registry = {}
 Registry.__index = Registry
 
+---@param projects Clodex.Project[]
+local function sort_projects(projects)
+    table.sort(projects, function(left, right)
+        return left.name:lower() < right.name:lower()
+    end)
+end
+
 ---@param data any
 ---@return Clodex.Project[]
 local function parse_projects(data)
@@ -25,9 +32,7 @@ local function parse_projects(data)
     end
   end
 
-  table.sort(projects, function(left, right)
-    return left.name:lower() < right.name:lower()
-  end)
+  sort_projects(projects)
   return projects
 end
 
@@ -104,17 +109,13 @@ function Registry:add(spec)
   if existing then
     existing.name = project.name
     self:save()
-    table.sort(self.projects, function(left, right)
-      return left.name:lower() < right.name:lower()
-    end)
+    sort_projects(self.projects)
     return existing
   end
 
   self.by_root[project.root] = project
   self.projects[#self.projects + 1] = project
-  table.sort(self.projects, function(left, right)
-    return left.name:lower() < right.name:lower()
-  end)
+  sort_projects(self.projects)
   self:save()
   return project
 end
