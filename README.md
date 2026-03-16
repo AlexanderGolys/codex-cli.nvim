@@ -10,7 +10,7 @@ The plugin is built around a few core ideas:
 - one persistent Codex session per registered project
 - one ephemeral free session outside projects
 - tab-local active project state
-- queued prompts that move through `planned`, `queued`, and `history`
+- queued prompts that move through `planned`, `queued`, `implemented`, and `history`
 - prompt execution receipts so queued work can be completed asynchronously and tracked back in the editor
 
 ## Philosophy
@@ -29,7 +29,6 @@ Examples of that model:
 - a file reference becomes something like `@{lua/clodex/ui/select.lua}`
 - a line reference becomes something like `@{lua/clodex/ui/select.lua}: line 42`
 - diagnostics become plain text produced by the editor, with enough explanation for the agent to act on them without knowing anything about Neovim
-
 This keeps the system composable. The plugin stays focused on being a strong CLI wrapper with editor-native ergonomics, and if richer agent workflow features become useful later they can be added from that Neovim-first foundation.
 
 ## Status
@@ -67,11 +66,12 @@ If the current buffer lives inside a known project, that project is preferred au
 
 ### Queue-driven prompt workflow
 
-Each project has a workspace file on disk containing three queues:
+Each project has a workspace file on disk containing four queues:
 
 - `planned`: captured ideas, bugs, or tasks that are not ready to run yet
 - `queued`: ready to dispatch to Codex
-- `history`: completed work with execution metadata
+- `implemented`: work that has been dispatched and completed, but is waiting for human verification
+- `history`: verified work with execution metadata
 
 Every queue item stores:
 
@@ -81,7 +81,7 @@ Every queue item stores:
 - rendered prompt text
 - timestamps
 - optional image path for visual prompts
-- optional completion summary, commit, and completion time in history
+- optional completion summary, commit, and completion time in implemented/history
 
 This lets you treat Codex work more like a lightweight implementation backlog than an ad-hoc chat window.
 
@@ -125,14 +125,14 @@ These categories control default titles, visual highlighting, and some specializ
 - `error` can prefill the latest Vim notification or traceback when you choose the message-based flow
 - `library` lets you instantiate a saved prompt template
 
-### Receipt-based prompt execution
+### Workspace-based prompt execution
 
-Queued prompts are dispatched with a receipt contract. The plugin writes instructions into the prompt that tell Codex to create a small JSON receipt after the work is complete, then keep draining the project's workspace file under `queues.queued` until it is empty. Items in `queues.planned` remain staged and are not started automatically. The plugin polls for those receipts and automatically moves finished items from `queued` to `history`.
+Queued prompts are dispatched with a workspace-update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, create a focused git commit for that prompt, then update the project's workspace file in place using the provided implemented-item id. Items in `queues.planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
 
 That gives you:
 
 - asynchronous completion tracking
-- per-item summaries in history
+- per-item summaries during implementation and after verification
 - commit attribution
 - completion timestamps
 - a clean handoff between Neovim state and Codex execution
@@ -148,7 +148,7 @@ That gives you:
 - Add prompts from categories or saved prompt templates.
 - Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
 - Dispatch the next queued prompt or all queued prompts for a project.
-- Poll execution receipts and promote completed prompts into history.
+- Poll workspace changes and update implemented prompts with completion metadata.
 - Move, copy, rewind, edit, and delete queue items.
 - Preserve session state across Vim sessions.
 - Open a project's `TODO.md` or shared dictionary without leaving the current window.
@@ -231,7 +231,6 @@ require("clodex").setup({
   },
   prompt_execution = {
     receipts_dir = ".clodex/prompt-executions",
-    relative_dir = "",
     poll_ms = 5000,
     skills_dir = ".codex/skills",
     skill_name = "prompt-nvim-clodex",
@@ -239,10 +238,31 @@ require("clodex").setup({
   manual_history = {
     model_instructions_file = "",
   },
+  keymaps = {
+    toggle = { lhs = "<leader>pt" },
+    queue_workspace = { lhs = "<leader>pq" },
+    state_preview = { lhs = "<leader>ps" },
+  },
 })
 ```
 
 ### Important configuration notes
+
+`keymaps`
+
+- Defaults now accept legacy string values (`"<leader>pt"`) or table-based setters:
+  - `lhs` (string): key sequence.
+  - `enabled` (boolean): set to `false` to disable.
+  - `mode` (string|string[]): keymap mode(s).
+  - Neovim keymap option keys (for example `silent`, `noremap`, `nowait`, `expr`).
+- Example:
+  ```lua
+  keymaps = {
+      toggle = { lhs = "<leader>pt", mode = "n", silent = true },
+      queue_workspace = { lhs = "<leader>pq", enabled = false },
+      state_preview = "<leader>ps", -- legacy style remains supported
+  },
+  ```
 
 `codex_cmd`
 
@@ -273,13 +293,9 @@ require("clodex").setup({
 
 `prompt_execution.receipts_dir`
 
-- Receipt files are written under each project's local `.clodex/prompt-executions` directory by default.
+- Project-local execution artifacts are written under each project's local `.clodex/prompt-executions` directory by default.
 - Relative paths are resolved per project, so the default becomes `<project>/.clodex/prompt-executions`.
-- Older receipt files from the former global storage root are migrated into the project-local location when read.
-
-`prompt_execution.relative_dir`
-
-- Legacy fallback receipt path retained only for migration/cleanup of older in-flight jobs.
+- Older receipt files from the former global storage root are still recognized for compatibility with legacy in-flight jobs.
 
 `prompt_execution.skills_dir`
 
@@ -287,7 +303,7 @@ require("clodex").setup({
 - Default is `.codex/skills`, so the generated skill is written at `<project>/.codex/skills/<skill_name>/SKILL.md`.
 - Clodex does not need to modify global Codex config files for queued prompt execution.
 - Set this to an empty string to disable generated skill mode and fall back to inline `$prompt` instructions.
-- Queued prompt dispatch then ends with `$prompt-nvim-clodex` instead of inlining the full receipt instructions every time.
+- Queued prompt dispatch then ends with `$prompt-nvim-clodex` instead of inlining the full workspace-update instructions every time.
 
 `manual_history.model_instructions_file`
 
@@ -308,22 +324,18 @@ Core commands:
 - `:ClodexToggle`
 - `:ClodexStateToggle`
 - `:ClodexProjectAdd`
-- `:ClodexProjectRename`
-- `:ClodexProjectRemove`
-- `:ClodexProjectClear`
 - `:ClodexProjectReadme`
+- `:ClodexProjectDictionary`
 - `:ClodexTerminalHeaderToggle`
 - `:ClodexQueueWorkspace`
-- `:ClodexProjectTodo`
-- `:ClodexProjectDictionary`
 - `:ClodexDebugReload`
 
 Queue and prompt commands:
 
 - `:ClodexTodoAdd`
-- `:ClodexTodoError`
-- `:ClodexTodoErrorFor`
-- `:ClodexTodoImplement`
+- `:ClodexErrorAdd`
+- `:ClodexErrorAddFor`
+- `:ClodexImplement`
 - `:ClodexTodoImplementAll`
 - `:ClodexPromptAdd`
 - `:ClodexPromptAddFor`
@@ -351,7 +363,7 @@ The left pane shows:
 
 - known projects
 - whether a Codex session is running
-- queue counts for `planned`, `queued`, and `history`
+- queue counts for `planned`, `queued`, `implemented`, and `history`
 - project detail snapshots such as file counts, languages, git remote, and recent activity
 
 The right pane shows:
@@ -359,7 +371,7 @@ The right pane shows:
 - prompts grouped by queue
 - category-colored titles
 - prompt previews
-- history metadata for completed items
+- implementation/history metadata for completed items
 
 Supported workspace actions include:
 
@@ -377,24 +389,23 @@ Supported workspace actions include:
 When a queued item is dispatched:
 
 1. The plugin ensures the target project session is running.
-2. It clears any stale receipt file for that queue item.
+2. It moves that item from `queued` to `implemented`.
 3. It renders the queue item into a Codex prompt.
-4. It appends execution instructions describing where the JSON receipt must be written.
+4. It appends execution instructions describing which workspace file and implemented item id must be updated.
 5. If a prompt skill is configured, it appends `$prompt-nvim-clodex`.
-6. Codex performs the work and writes the receipt when done.
+6. Codex performs the work, creates a focused commit, and updates the implemented queue item when done.
 7. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
-8. The plugin polls receipt files on a timer and moves completed items into history.
+8. The plugin polls workspace revisions on a timer and refreshes the matching implemented item in Neovim.
 
-### Receipt schema
+### Implemented Item Metadata
 
-Receipts currently contain:
+Implemented items are updated in place with:
 
-- `summary`
-- `commit`
-- `completed_at`
-- `version`
+- `history_summary`
+- `history_commit`
+- `history_completed_at`
 
-Those values are used to populate the history queue and to make completion status visible inside Neovim.
+Those values are used to populate the implemented/history views and to make completion status visible inside Neovim.
 
 ## Prompt Library
 
@@ -624,9 +635,9 @@ Manual validation:
 
 1. Register a project and open `:ClodexQueueWorkspace`.
 2. Add prompts and move one into `queued`.
-3. Dispatch it with `:ClodexTodoImplement`.
+3. Dispatch it with `:ClodexImplement`.
 4. Confirm the prompt is sent to the project session.
-5. Write a matching receipt file and verify the item moves into `history`.
+5. Confirm Codex creates a focused commit, updates the implemented item metadata in the workspace file, and shows the commit in the main panel preview.
 
 ## License
 
