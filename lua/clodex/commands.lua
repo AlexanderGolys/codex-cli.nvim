@@ -7,6 +7,12 @@ local REQUIRE_CLODEX = function()
     return require('clodex')
 end
 
+local function emit_commands_updated()
+    pcall(vim.api.nvim_exec_autocmds, "User", {
+        pattern = "ClodexCommandsUpdated",
+    })
+end
+
 local command_suffix = {
     todo = 'Todo',
     error = 'Error',
@@ -42,6 +48,12 @@ end
 ---@field mode string
 ---@field action string
 ---@field desc string
+
+---@class Clodex.ResolvedKeymap
+---@field mode string|string[]
+---@field lhs string
+---@field desc string
+---@field opts vim.api.keyset.keymap
 
 ---@class Clodex.CommandDefinition
 ---@field suffix string
@@ -230,13 +242,6 @@ local BASE_COMMANDS = {
     },
 } ---@type Clodex.CommandDefinition[]
 
-local COMMAND_ALIASES = {
-    { alias_suffix = 'ProjectTodo', target_suffix = 'TodoAdd' },
-    { alias_suffix = 'TodoError', target_suffix = 'ErrorAdd' },
-    { alias_suffix = 'TodoErrorFor', target_suffix = 'ErrorAddFor' },
-    { alias_suffix = 'TodoImplement', target_suffix = 'Implement' },
-} ---@type { alias_suffix: string, target_suffix: string }[]
-
 local REGISTERED_KEYMAPS = {} ---@type { mode: string, lhs: string }[]
 local GLOBAL_KEYMAPS = {
     {
@@ -259,6 +264,74 @@ local GLOBAL_KEYMAPS = {
     },
 } ---@type Clodex.GlobalKeymapDefinition[]
 
+---@param values Clodex.Config.Values
+---@param field keyof Clodex.Config.Keymaps
+---@param definition Clodex.GlobalKeymapDefinition
+---@return Clodex.ResolvedKeymap?
+local function resolve_keymap(values, field, definition)
+    local configured = values.keymaps or {}
+    local value = configured[field]
+    if value == false then
+        return nil
+    end
+
+    local lhs = nil ---@type string|nil
+    local mode = definition.mode
+    local opts = {
+        desc = ('Clodex: %s'):format(definition.desc),
+        silent = true,
+        noremap = true,
+    } ---@type vim.api.keyset.keymap
+
+    local value_type = type(value)
+    if value_type == 'string' then
+        if value == '' then
+            return nil
+        end
+        lhs = value
+    elseif value_type == 'table' then
+        if value.enabled == false or value.enable == false then
+            return nil
+        end
+        lhs = value.lhs or value.key
+        if lhs == nil then
+            lhs = value[1]
+        end
+        if value.mode ~= nil then
+            mode = value.mode
+        end
+        if type(value.desc) == 'string' then
+            opts.desc = value.desc
+        end
+        if type(value.opts) == 'table' then
+            for option_key, option_value in pairs(value.opts) do
+                opts[option_key] = option_value
+            end
+        end
+        for option_key, option_value in pairs(value) do
+            if option_key == 'lhs' or option_key == 'key' or option_key == 'mode' or option_key == 'desc' or option_key == 'enabled' or option_key == 'enable' or option_key == 'opts' or type(option_key) == 'number' then
+                goto continue
+            end
+
+            opts[option_key] = option_value
+            ::continue::
+        end
+    else
+        return nil
+    end
+
+    if type(lhs) ~= 'string' or lhs == '' then
+        return nil
+    end
+
+    return {
+        lhs = lhs,
+        mode = mode,
+        desc = opts.desc,
+        opts = opts,
+    }
+end
+
 ---@param definition Clodex.CommandDefinition
 ---@return Clodex.CommandSpec
 local function command_spec(definition, name)
@@ -270,17 +343,6 @@ local function command_spec(definition, name)
             definition.run(command, REQUIRE_CLODEX())
         end,
     }
-end
-
----@param target_suffix string
----@param alias_suffix string
----@return Clodex.CommandSpec?
-local function command_alias_spec(target_suffix, alias_suffix)
-    for _, definition in ipairs(BASE_COMMANDS) do
-        if definition.suffix == target_suffix then
-            return command_spec(definition, command_name(alias_suffix))
-        end
-    end
 end
 
 ---@param category Clodex.PromptCategoryDef
@@ -324,13 +386,6 @@ local function command_specs()
         specs[#specs + 1] = command_spec(definition)
     end
 
-    for _, alias in ipairs(COMMAND_ALIASES) do
-        local alias_spec = command_alias_spec(alias.target_suffix, alias.alias_suffix)
-        if alias_spec then
-            specs[#specs + 1] = alias_spec
-        end
-    end
-
     for _, category in ipairs(Prompt.categories.list()) do
         for _, spec in ipairs(category_command_specs(category)) do
             specs[#specs + 1] = spec
@@ -349,17 +404,24 @@ end
 ---@return Clodex.KeymapSpec[]
 function M.list_keymaps(values)
     local keymaps = {} ---@type Clodex.KeymapSpec[]
-    local configured = values.keymaps or {}
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
-        local lhs = configured[definition.field]
-        if type(lhs) == 'string' and lhs ~= '' then
-            keymaps[#keymaps + 1] = {
-                context = 'Global',
-                mode = definition.mode,
-                lhs = lhs,
-                desc = definition.desc,
-            }
+        local keymap = resolve_keymap(values, definition.field, definition)
+        if keymap == nil then
+            goto continue
         end
+
+        local mode = keymap.mode
+        if type(mode) == 'table' then
+            mode = table.concat(mode, ',')
+        end
+
+        keymaps[#keymaps + 1] = {
+            context = 'Global',
+            mode = mode,
+            lhs = keymap.lhs,
+            desc = keymap.desc,
+        }
+        ::continue::
     end
     return keymaps
 end
@@ -371,21 +433,20 @@ function M.register_keymaps(values)
     end
     REGISTERED_KEYMAPS = {}
 
-    local configured = values.keymaps or {}
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
-        local lhs = configured[definition.field]
-        if type(lhs) == 'string' and lhs ~= '' then
-            vim.keymap.set(definition.mode, lhs, function()
-                REQUIRE_CLODEX()[definition.action]()
-            end, {
-                desc = ('Clodex: %s'):format(definition.desc),
-                silent = true,
-            })
-            REGISTERED_KEYMAPS[#REGISTERED_KEYMAPS + 1] = {
-                mode = definition.mode,
-                lhs = lhs,
-            }
+        local keymap = resolve_keymap(values, definition.field, definition)
+        if keymap == nil then
+            goto continue
         end
+
+        vim.keymap.set(keymap.mode, keymap.lhs, function()
+            return REQUIRE_CLODEX()[definition.action]()
+        end, keymap.opts)
+        REGISTERED_KEYMAPS[#REGISTERED_KEYMAPS + 1] = {
+            mode = keymap.mode,
+            lhs = keymap.lhs,
+        }
+        ::continue::
     end
 end
 
@@ -404,6 +465,8 @@ function M.register()
         end
         vim.api.nvim_create_user_command(spec.name, spec.handler, opts)
     end
+
+    emit_commands_updated()
 end
 
 return M

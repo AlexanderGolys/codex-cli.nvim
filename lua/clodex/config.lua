@@ -48,7 +48,6 @@ local fs = require("clodex.util.fs")
 --- Settings driving prompt dispatch and external workspace-sync polling.
 ---@class Clodex.Config.PromptExecution
 ---@field receipts_dir string # Backward-compatible base directory for project-local execution artifacts.
----@field relative_dir? string # Legacy field retained only for config compatibility.
 ---@field poll_ms integer
 ---@field skills_dir? string # Project-local path under each project root; empty string disables generated skill mode.
 ---@field skill_name string
@@ -57,11 +56,26 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.Session
 ---@field persist_current_project boolean
 
---- Global keymaps created by clodex during setup. Set a value to `false` to disable it.
+---@class Clodex.Config.KeymapConfig
+---@field lhs? string|false
+---@field enabled? boolean
+---@field enable? boolean
+---@field mode? string|string[]
+---@field desc? string
+---@field silent? boolean
+---@field noremap? boolean
+---@field expr? boolean
+---@field nowait? boolean
+---@field script? boolean
+---@field unique? boolean
+---@field replace_keycodes? boolean
+
+--- Global keymaps created by clodex during setup.
+--- Set a value to `false` to disable it.
 ---@class Clodex.Config.Keymaps
----@field toggle string|false
----@field queue_workspace string|false
----@field state_preview string|false
+---@field toggle string|Clodex.Config.KeymapConfig|false
+---@field queue_workspace string|Clodex.Config.KeymapConfig|false
+---@field state_preview string|Clodex.Config.KeymapConfig|false
 
 --- Manual project-history tracking for direct CLI conversations outside queued prompts.
 ---@class Clodex.Config.ManualHistory
@@ -139,7 +153,6 @@ local function defaults()
         highlights = vim.deepcopy(HighlightConfig),
         prompt_execution = {
             receipts_dir = fs.join(".clodex", "prompt-executions"),
-            relative_dir = "",
             poll_ms = 5000,
             skills_dir = fs.join(".codex", "skills"),
             skill_name = "prompt-nvim-clodex",
@@ -148,9 +161,15 @@ local function defaults()
             persist_current_project = true,
         },
         keymaps = {
-            toggle = "<leader>ct",
-            queue_workspace = "<leader>cq",
-            state_preview = "<leader>cs",
+            toggle = {
+                lhs = "<leader>pt",
+            },
+            queue_workspace = {
+                lhs = "<leader>pq",
+            },
+            state_preview = {
+                lhs = "<leader>ps",
+            },
         },
         manual_history = {
             model_instructions_file = "",
@@ -178,6 +197,53 @@ local function get_hl(name)
     return ok and hl or {}
 end
 
+local COLOR_CHANNEL_MAX = 255
+local RGB_SHIFT_RED = 16
+local RGB_SHIFT_GREEN = 8
+
+---@param value string|integer?
+---@return integer?
+local function color_number(value)
+    if type(value) == "number" then
+        return value
+    end
+    if type(value) ~= "string" or not value:match("^#%x%x%x%x%x%x$") then
+        return nil
+    end
+    return tonumber(value:sub(2), 16)
+end
+
+---@param channel integer
+---@param adjust number
+---@return integer
+local function adjust_channel(channel, adjust)
+    if adjust < 0 then
+        return math.max(math.floor(channel * (1 + adjust) + 0.5), 0)
+    end
+    return math.min(math.floor(channel + (COLOR_CHANNEL_MAX - channel) * adjust + 0.5), COLOR_CHANNEL_MAX)
+end
+
+---@param value string|integer?
+---@param adjust? number
+---@return string|integer?
+local function adjusted_color(value, adjust)
+    if type(adjust) ~= "number" or adjust == 0 then
+        return value
+    end
+
+    local color = color_number(value)
+    if not color then
+        return value
+    end
+
+    local red = math.floor(color / 2 ^ RGB_SHIFT_RED) % (COLOR_CHANNEL_MAX + 1)
+    local green = math.floor(color / 2 ^ RGB_SHIFT_GREEN) % (COLOR_CHANNEL_MAX + 1)
+    local blue = color % (COLOR_CHANNEL_MAX + 1)
+    return adjust_channel(red, adjust) * 2 ^ RGB_SHIFT_RED
+        + adjust_channel(green, adjust) * 2 ^ RGB_SHIFT_GREEN
+        + adjust_channel(blue, adjust)
+end
+
 
 --- Resolves a highlight source into a concrete color based on fallback attributes.
 ---@param value Clodex.Config.HighlightColor?
@@ -196,7 +262,7 @@ local function resolve_color(value, attr)
     for _, source in ipairs(sources) do
         local resolved = get_hl(source)[source_attr]
         if resolved ~= nil then
-            return resolved
+            return adjusted_color(resolved, value.adjust)
         end
     end
 end

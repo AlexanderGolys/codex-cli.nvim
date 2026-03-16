@@ -56,7 +56,30 @@ describe("clodex.config", function()
             assert.are.equal("right", values.terminal.win.position)
             assert.are.equal(true, values.project_detection.auto_suggest_git_root)
             assert.are.equal("codex", values.codex_cmd[1])
+            assert.are.equal("<leader>pt", values.keymaps.toggle.lhs)
+            assert.are.equal("<leader>pq", values.keymaps.queue_workspace.lhs)
+            assert.are.equal("<leader>ps", values.keymaps.state_preview.lhs)
+        end)
+
+        it("darkens adjusted highlight colors relative to their source background", function()
+            vim.api.nvim_set_hl(0, "ConfigSpecBase", { bg = "#808080" })
+
+            Config.apply_highlights({
+                highlights = {
+                    groups = {
+                        ConfigSpecAdjusted = {
+                            bg = {
+                                from = "ConfigSpecBase",
+                                attr = "bg",
+                                adjust = -0.25,
+                            },
+                        },
+                    },
+                },
+            })
+
+            local adjusted = vim.api.nvim_get_hl(0, { name = "ConfigSpecAdjusted", link = false })
+            assert.are.equal(0x606060, adjusted.bg)
         end)
     end)
 end)
-
