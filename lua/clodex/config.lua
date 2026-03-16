@@ -35,7 +35,7 @@ local fs = require("clodex.util.fs")
 ---@field footer_height integer
 ---@field preview_max_lines integer
 ---@field fold_preview boolean
----@field date_format string
+---@field date_format string # Either "ago" for relative timestamps or an `os.date`-compatible format string.
 
 --- Error prompt behavior and optional screenshot directory hints.
 ---@class Clodex.Config.ErrorPrompt
@@ -122,7 +122,7 @@ local function defaults()
             footer_height = 3,
             preview_max_lines = 5,
             fold_preview = true,
-            date_format = "%H:%M %d.%m.%Y",
+            date_format = "ago",
         },
 
         error_prompt = {

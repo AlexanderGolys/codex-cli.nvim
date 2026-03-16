@@ -382,14 +382,42 @@ local function queue_kind_counts(items)
     return counts
 end
 
----@param config Clodex.Config.Values
 ---@param timestamp? integer
+---@param config Clodex.Config.Values
 ---@return string
-local function format_timestamp(config, timestamp)
+local function format_timestamp(timestamp, config)
     if not timestamp or timestamp <= 0 then
         return "-"
     end
-    return os.date(config.queue_workspace.date_format or "%H:%M %d.%m.%Y", timestamp)
+
+    local date_format = config and config.queue_workspace and config.queue_workspace.date_format or nil
+    if date_format ~= "ago" then
+        return os.date(date_format or "%H:%M %d.%m.%Y", timestamp)
+    end
+
+    local now = os.time()
+    local delta = now - timestamp
+    if delta <= 0 then
+        return "just now"
+    end
+
+    local units = {
+        { name = "y", seconds = 31536000 },
+        { name = "mo", seconds = 2592000 },
+        { name = "d", seconds = 86400 },
+        { name = "h", seconds = 3600 },
+        { name = "m", seconds = 60 },
+        { name = "s", seconds = 1 },
+    }
+
+    for _, unit in ipairs(units) do
+        local count = math.floor(delta / unit.seconds)
+        if count >= 1 then
+            return ("%d%s ago"):format(count, unit.name)
+        end
+    end
+
+    return "just now"
 end
 
 local LanguageProfile = require("clodex.project.language")
@@ -462,8 +490,8 @@ local function summary_search_text(config, details)
     return table.concat({
         details.remote_name or "",
         format_languages(details.languages),
-        format_timestamp(config, details.last_codex_activity_at),
-        format_timestamp(config, details.last_file_modified_at),
+        format_timestamp(details.last_codex_activity_at, config),
+        format_timestamp(details.last_file_modified_at, config),
         tostring(details.file_count or ""),
         format_avg_lines(details.avg_lines_per_file),
     }, " ")
@@ -506,11 +534,11 @@ local function project_detail_lines(app, summary, details)
             details.file_count,
             format_avg_lines(details.avg_lines_per_file),
             details.remote_name or "-",
-            format_timestamp(config, details.last_codex_activity_at)
+            format_timestamp(details.last_codex_activity_at, config)
         ),
         ("    Lang:%s  Mod:%s"):format(
             format_languages(details.languages),
-            format_timestamp(config, details.last_file_modified_at)
+            format_timestamp(details.last_file_modified_at, config)
         ),
     }
 end
