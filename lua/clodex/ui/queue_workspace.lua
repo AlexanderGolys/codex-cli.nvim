@@ -476,10 +476,24 @@ local function project_detail_extmarks(detail, has_remote)
 
     local remote_pos = detail:find("Remote:", 1, true)
     if remote_pos then
-        local icon_start = remote_pos + #("Remote: ")
+        local icon_start = remote_pos - 1 + #("Remote: ")
         local icon_end = icon_start + #GITHUB_ICON
         local remote_icon_hl = has_remote and "ClodexProjectRemoteAttached" or "ClodexProjectRemoteDetached"
         marks[#marks + 1] = Extmark.inline(0, icon_start, icon_end, remote_icon_hl)
+    end
+
+    local lang_pos = detail:find("Lang:", 1, true)
+    if lang_pos then
+        local second_sep = detail:find("  ", lang_pos + #("Lang:"))
+        if second_sep then
+            local mod_value_start = second_sep + 2
+            while detail:sub(mod_value_start, mod_value_start) == " " do
+                mod_value_start = mod_value_start + 1
+            end
+            if mod_value_start <= #detail then
+                marks[#marks + 1] = Extmark.inline(0, mod_value_start - 1, #detail, "ClodexStateFieldLabel")
+            end
+        end
     end
 
     return marks
@@ -537,7 +551,7 @@ local function project_detail_lines(app, summary, details)
     if not details then
         return {
             "    Files:-  Avg LOC:-  Remote: " .. GITHUB_ICON .. "  Codex:-",
-            "    Lang:-  Mod:-",
+            "    Lang:-  -",
         }
     end
     return {
@@ -547,7 +561,7 @@ local function project_detail_lines(app, summary, details)
             " " .. GITHUB_ICON,
             format_timestamp(details.last_codex_activity_at, config)
         ),
-        ("    Lang:%s  Mod:%s"):format(
+        ("    Lang:%s  %s"):format(
             format_languages(details.languages),
             format_timestamp(details.last_file_modified_at, config)
         ),

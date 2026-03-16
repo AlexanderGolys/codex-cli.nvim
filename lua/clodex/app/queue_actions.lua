@@ -268,8 +268,13 @@ end
 ---@param opts? Clodex.AppQueueActions.RewindOpts
 function QueueActions:rewind_queue_item(project, item_id, opts)
   opts = opts or {}
-  local queue_name, _, item = opts.queue and self.app.queue:find_item(project, item_id, opts.queue) or
-      self.app.queue:find_item(project, item_id)
+  local queue_name
+  local item
+  if opts.queue then
+    queue_name, _, item = self.app.queue:find_item(project, item_id, opts.queue)
+  else
+    queue_name, _, item = self.app.queue:find_item(project, item_id)
+  end
   local previous_queue = queue_name and PREVIOUS_QUEUE[queue_name] or nil
   if not previous_queue or not item then
     notify.warn("Item cannot be moved back")
@@ -301,8 +306,13 @@ end
 ---@param opts? Clodex.AppQueueActions.MoveOpts
 function QueueActions:move_queue_item_to_project(project, item_id, target_project, opts)
   opts = opts or {}
-  local queue_name, _, item = opts.source_queue and self.app.queue:find_item(project, item_id, opts.source_queue) or
-      self.app.queue:find_item(project, item_id)
+  local queue_name
+  local item
+  if opts.source_queue then
+    queue_name, _, item = self.app.queue:find_item(project, item_id, opts.source_queue)
+  else
+    queue_name, _, item = self.app.queue:find_item(project, item_id)
+  end
   local target_queue = opts.target_queue or queue_name
   if not queue_name or not target_queue or not item then
     notify.warn("Queue item not found")
