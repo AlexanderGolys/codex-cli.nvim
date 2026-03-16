@@ -1,4 +1,5 @@
 local fs = require("clodex.util.fs")
+local git = require("clodex.util.git")
 
 --- Generates and persists prompt-instruction payloads used by the Codex execution pipeline.
 --- This object bridges queue items to terminal jobs and project-local workspace mutations.
@@ -8,7 +9,7 @@ local Execution = {}
 Execution.__index = Execution
 
 local SKILL_TEMPLATE = [[---
-name: %s
+name: prompt-nvim-clodex
 description: Handle clodex.nvim queued prompt executions by updating the local workspace queue file when the work is complete.
 ---
 
@@ -17,27 +18,32 @@ Keep the original intent, but do not preserve clearly accidental misspellings, d
 
 # Queue Completion
 
-Use this skill when a prompt includes `$%s`.
+Use this skill when a prompt includes `$__CLODEX_SKILL_NAME__`.
 
-When the prompt provides a project workspace path and queued item id before the skill call:
+When the prompt provides a project workspace path and queue item id before the skill call:
 
 1. Finish the requested work first.
-2. Update the exact workspace JSON file provided by the prompt only after the work is complete.
-3. Find the queue item with the provided id in `queues.queued`.
-4. Move that same item into `queues.history` without changing its `id`.
-5. Set `history_summary`, `history_commit` when available, `history_completed_at`, and refresh `updated_at`.
-6. If the item is already in `queues.history`, update it in place instead of duplicating it.
-7. If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.
-8. Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.
+__CLODEX_COMMIT_STEP__
+3. Update the exact workspace JSON file provided by the prompt only after the work is complete.
+4. Find the queue item with the provided id in `queues.queued`, `queues.implemented`, or `queues.history`.
+5. If it is still in `queues.queued`, move that same item into `queues.implemented` without changing its `id`.
+6. If it is already in `queues.implemented`, update it in place.
+7. If it is already in `queues.history`, update it in place instead of duplicating it.
+8. Set `history_summary`, __CLODEX_COMMIT_FIELD__ `history_completed_at`, and refresh `updated_at`.
+9. If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.
+10. Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned` or `queues.implemented`.
 ]]
 
+local SOURCE_PATH = fs.normalize(debug.getinfo(1, "S").source:sub(2))
+local REPO_ROOT = fs.dirname(fs.dirname(fs.dirname(fs.dirname(SOURCE_PATH))))
+local REPO_SKILL_TEMPLATE_PATH = fs.join(REPO_ROOT, ".codex", "skills", "prompt-nvim-clodex", "SKILL.md")
+
 --- Builds the markdown guidance block that is appended to prompts requiring workspace updates.
---- It includes the file path and queued item id so downstream agents can complete work in-place.
+--- It includes the queued item id so downstream agents can complete work in-place.
 --- This block is injected for both direct prompts and skill-directed prompts.
-local function completion_instruction_lines(workspace_path, item_id)
+local function completion_instruction_lines(item_id)
     return {
-        ("Project workspace path: `%s`"):format(workspace_path),
-        ("Current queued item id: `%s`"):format(item_id),
+        ("Current queue item id: `%s`"):format(item_id),
     }
 end
 
@@ -133,8 +139,53 @@ end
 ---@param config Clodex.Config.Values
 ---@return string
 local function generated_skill_content(config)
-    local name = skill_name(config)
-    return SKILL_TEMPLATE:format(name, name)
+    local template = SKILL_TEMPLATE
+    if fs.is_file(REPO_SKILL_TEMPLATE_PATH) then
+        local file = io.open(REPO_SKILL_TEMPLATE_PATH, "rb")
+        if file then
+            local content = file:read("*a")
+            file:close()
+            if content and content ~= "" then
+                template = content
+            end
+        end
+    end
+    return template:gsub("__CLODEX_SKILL_NAME__", skill_name(config))
+end
+
+---@param project Clodex.Project
+---@return boolean
+local function project_has_git_root(project)
+    local root = fs.normalize(project.root)
+    return git.get_root(root) == root
+end
+
+---@param project Clodex.Project
+---@param config Clodex.Config.Values
+---@return string
+local function rendered_skill_content(project, config)
+    local content = generated_skill_content(config)
+    if project_has_git_root(project) then
+        content = content:gsub(
+            "__CLODEX_COMMIT_STEP__",
+            "2. Create a focused git commit for that prompt's implementation work before you update the queue item."
+        )
+        content = content:gsub(
+            "__CLODEX_COMMIT_FIELD__",
+            "`history_commit` to the new commit id,"
+        )
+        return content
+    end
+
+    content = content:gsub(
+        "__CLODEX_COMMIT_STEP__",
+        "2. If the project root is not a git repository, skip the commit step and continue with the workspace update."
+    )
+    content = content:gsub(
+        "__CLODEX_COMMIT_FIELD__",
+        "`history_commit` when a commit exists,"
+    )
+    return content
 end
 
 --- Resolves the final on-disk project-local skill directory.
@@ -202,7 +253,7 @@ function Execution:ensure_prompt_skill(project)
         return
     end
 
-    local content = generated_skill_content(self.config)
+    local content = rendered_skill_content(project, self.config)
     fs.write_file(self:skill_file(project), content)
 end
 
@@ -211,7 +262,7 @@ end
 ---@return string
 function Execution:dispatch_prompt(project, item)
     self:ensure_prompt_skill(project)
-    local instruction_lines = completion_instruction_lines(workspace_path(self.config, project.root), item.id)
+    local instruction_lines = completion_instruction_lines(item.id)
 
     local prompt_lines = prompt_prefix_lines(item)
     prompt_lines[#prompt_lines + 1] = item.prompt

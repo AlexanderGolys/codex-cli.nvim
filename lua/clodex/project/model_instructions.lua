@@ -18,29 +18,6 @@ end
 
 ---@param project_root string
 ---@return string
-local function project_id(project_root)
-    return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
-end
-
----@param root_dir string
----@param project_root string
----@return string
-local function project_storage_dir(root_dir, project_root)
-    local normalized = fs.normalize(root_dir)
-    if is_absolute_path(normalized) then
-        return normalized
-    end
-    return fs.join(project_root, normalized)
-end
-
----@param config Clodex.Config.Values
----@param project_root string
----@return string
-local function workspace_path(config, project_root)
-    local storage_dir = project_storage_dir(config.storage.workspaces_dir, project_root)
-    return fs.join(storage_dir, project_id(project_root) .. ".json")
-end
-
 ---@param config Clodex.Config.Values
 ---@param project_root string
 ---@return string?
@@ -65,18 +42,16 @@ end
 ---@param config Clodex.Config.Values
 ---@return string
 local function instructions_content(project, config)
-    local path = workspace_path(config, project.root)
     return table.concat({
         "# Project History Records",
         "",
         "Use these instructions only for direct project work done from normal Codex CLI conversation in this repository.",
         "Do not use this file for queued prompt execution; queued prompts already manage their own workspace updates.",
         "",
-        ("Project workspace path: `%s`"):format(path),
         "",
         "When you complete a user-requested implementation, bug fix, or other code change in this project outside the queue workflow:",
         "",
-        "1. Update the workspace JSON file above after the work is complete.",
+        "1. Update the project workspace JSON file after the work is complete.",
         "2. Add a new item to the front of `queues.history` unless the newest matching history item already represents the same completed task, in which case update it in place.",
         "3. Do not modify unrelated `queues.planned` or `queues.queued` items.",
         "4. Normalize obvious typos in the user request before you turn it into a title, prompt, or summary.",

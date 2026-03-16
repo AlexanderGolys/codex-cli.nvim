@@ -2,9 +2,9 @@ local Prompt = require("clodex.prompt")
 local fs = require("clodex.util.fs")
 local util = require("clodex.util")
 
---- Queue names represent the supported lanes for prompt entries: planned, queued, and history.
+--- Queue names represent the supported lanes for prompt entries: planned, queued, implemented, and history.
 --- They are used by persistence and queue transitions to coordinate scheduling and history visibility.
----@alias Clodex.QueueName "planned"|"queued"|"history"
+---@alias Clodex.QueueName "planned"|"queued"|"implemented"|"history"
 
 --- Canonical representation of one queued prompt item.
 --- Entries are written to and loaded from per-project workspace storage.
@@ -25,6 +25,7 @@ local util = require("clodex.util")
 --- Full persisted queue payload for a single project root.
 ---@class Clodex.ProjectQueueData
 ---@field version integer
+---@field updated_at string
 ---@field queues table<Clodex.QueueName, Clodex.QueueItem[]>
 
 --- Human-friendly queue summary assembled for UI and project-level diagnostics.
@@ -32,6 +33,7 @@ local util = require("clodex.util")
 ---@class Clodex.ProjectQueueSummary
 ---@field project Clodex.Project
 ---@field session_running boolean
+---@field last_updated_at string
 ---@field counts table<Clodex.QueueName, integer>
 ---@field queues table<Clodex.QueueName, Clodex.QueueItem[]>
 
@@ -40,21 +42,25 @@ local util = require("clodex.util")
 local Queue = {}
 Queue.__index = Queue
 
-local ORDER = { "planned", "queued", "history" }
+local ORDER = { "planned", "queued", "implemented", "history" }
 local NEXT_QUEUE = {
   planned = "queued",
-  queued = "history",
+  queued = "implemented",
+  implemented = "history",
 }
 local KNOWN_QUEUES = {
   planned = true,
   queued = true,
+  implemented = true,
   history = true,
 }
 local DEFAULT_DATA = {
   version = 1,
+  updated_at = "",
   queues = {
     planned = {},
     queued = {},
+    implemented = {},
     history = {},
   },
 }
@@ -155,15 +161,13 @@ local function load_data(root_dir, project_root)
     data = vim.deepcopy(DEFAULT_DATA)
   end
   data.version = data.version or DEFAULT_DATA.version
+  data.updated_at = type(data.updated_at) == "string" and data.updated_at or DEFAULT_DATA.updated_at
   data.queues = data.queues or {}
   data.queues.planned = data.queues.planned or {}
   data.queues.queued = data.queues.queued or {}
+  data.queues.implemented = data.queues.implemented or {}
   data.queues.history = data.queues.history or {}
   return data
-end
-
-local function save_data(root_dir, project_root, data)
-  fs.write_json(workspace_path(root_dir, project_root), data)
 end
 
 local function migrate_project_asset(root_dir, project_root, item)
@@ -206,6 +210,25 @@ end
 
 local function now()
   return os.date("!%Y-%m-%dT%H:%M:%SZ")
+end
+
+local function save_data(root_dir, project_root, data)
+  data.updated_at = now()
+  fs.write_json(workspace_path(root_dir, project_root), data)
+end
+
+---@param data Clodex.ProjectQueueData
+---@return string
+local function latest_updated_at(data)
+  local latest = data.updated_at or ""
+  for _, queue_name in ipairs(ORDER) do
+    for _, item in ipairs(data.queues[queue_name]) do
+      if type(item.updated_at) == "string" and item.updated_at > latest then
+        latest = item.updated_at
+      end
+    end
+  end
+  return latest
 end
 
 ---@param value any
@@ -477,19 +500,18 @@ end
 
 ---@param project Clodex.Project
 ---@param item_id_value string
----@param result { summary: string, commit?: string, completed_at?: string }
+---@param result { summary?: string|false, commit?: string|false, completed_at?: string|false }
 ---@return Clodex.QueueItem?
-function Queue:complete_queued_item(project, item_id_value, result)
+function Queue:update_implemented_item(project, item_id_value, result)
   local queue_name, _, item = self:find_item(project, item_id_value)
-  if queue_name ~= "queued" or not item then
+  if queue_name ~= "implemented" or not item then
     return
   end
 
-  self:take_item(project, item_id_value, queue_name)
-  return self:put_item(project, "history", item, {
+  return self:update_item(project, item_id_value, {
     history_summary = result.summary,
-    history_commit = result.commit or false,
-    history_completed_at = result.completed_at or false,
+    history_commit = result.commit,
+    history_completed_at = result.completed_at,
   })
 end
 
@@ -507,9 +529,11 @@ function Queue:summary(project, session_running)
   return {
     project = project,
     session_running = session_running,
+    last_updated_at = latest_updated_at(data),
     counts = {
       planned = #data.queues.planned,
       queued = #data.queues.queued,
+      implemented = #data.queues.implemented,
       history = #data.queues.history,
     },
     queues = vim.deepcopy(data.queues),

@@ -49,7 +49,7 @@ describe("clodex.workspace.queue", function()
         assert.matches("^[0-9a-f%-]+$", item.id)
     end)
 
-    it("moves a queued item to history", function()
+    it("moves a queued item to implemented", function()
         local item = queue:add_todo(project, {
             title = "queued item",
             details = "run after config fix",
@@ -59,9 +59,9 @@ describe("clodex.workspace.queue", function()
 
         assert.are.equal("queued", queue:find_item(project, item.id))
         local advanced = queue:advance(project, item.id)
-        assert.are.equal("history", advanced)
+        assert.are.equal("implemented", advanced)
         local summary = queue:summary(project, false)
-        assert.are.equal(1, summary.counts.history)
+        assert.are.equal(1, summary.counts.implemented)
         assert.are.equal(0, summary.counts.queued)
     end)
 
@@ -84,15 +84,16 @@ describe("clodex.workspace.queue", function()
         assert.are.equal("new title\n\nnew details", updated.prompt)
     end)
 
-    it("completes a queued item into history with execution metadata", function()
+    it("updates an implemented item with execution metadata", function()
         local item = queue:add_todo(project, {
             title = "fix line",
             details = "use focused edit",
             queue = "queued",
             kind = "todo",
         })
+        queue:advance(project, item.id)
 
-        local completed = queue:complete_queued_item(project, item.id, {
+        local completed = queue:update_implemented_item(project, item.id, {
             summary = "implemented",
             commit = "abc123",
             completed_at = "2026-01-01T00:00:00Z",
@@ -104,7 +105,26 @@ describe("clodex.workspace.queue", function()
         assert.are.equal("2026-01-01T00:00:00Z", completed.history_completed_at)
 
         local summary = queue:summary(project, false)
-        assert.are.equal(1, summary.counts.history)
-        assert.are.equal(0, summary.counts.queued)
+        assert.are.equal(1, summary.counts.implemented)
+        assert.are.equal(0, summary.counts.history)
+    end)
+
+    it("reports the most recent workspace update in queue summaries", function()
+        local first = queue:add_todo(project, {
+            title = "older item",
+            queue = "planned",
+            kind = "todo",
+        })
+        local second = queue:add_todo(project, {
+            title = "newer item",
+            queue = "queued",
+            kind = "todo",
+        })
+
+        local summary = queue:summary(project, false)
+
+        assert.are.equal(second.updated_at, summary.last_updated_at)
+        assert.are_not.equal("", summary.last_updated_at)
+        assert.are_not.equal(first.updated_at, "")
     end)
 end)

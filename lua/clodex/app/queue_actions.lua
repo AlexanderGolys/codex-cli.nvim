@@ -3,7 +3,7 @@ local notify = require("clodex.util.notify")
 
 --- Moves/restricts options for queue rewind operations in queue actions.
 --- The options are interpreted by App-level handlers when items are moved backward.
----@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean, queue?: Clodex.QueueName, mark_not_working?: boolean }
+---@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean, queue?: Clodex.QueueName, mark_not_working?: boolean, note?: string }
 --- Defines options for moving an item between queues and projects.
 --- It supports optional duplication and destination queue override for bulk workflows.
 --- Moves/restricts options for queue item transfer operations.
@@ -28,7 +28,8 @@ QueueActions.__index = QueueActions
 
 local PREVIOUS_QUEUE = {
   queued = "planned",
-  history = "queued",
+  implemented = "queued",
+  history = "implemented",
 }
 local REOPEN_REGRESSION_NOTE = "The previously implemented behavior is not working as expected. Investigate the regression and fix it."
 
@@ -42,11 +43,16 @@ local function rewind_item_spec(item, opts)
   end
 
   local details = vim.trim(moved.details or "")
-  if details == "" then
-    moved.details = REOPEN_REGRESSION_NOTE
-  elseif not vim.startswith(details, REOPEN_REGRESSION_NOTE) then
-    moved.details = ("%s\n\n%s"):format(REOPEN_REGRESSION_NOTE, details)
+  local note = vim.trim(opts.note or "")
+  local parts = {} ---@type string[]
+  parts[#parts + 1] = REOPEN_REGRESSION_NOTE
+  if note ~= "" then
+    parts[#parts + 1] = note
   end
+  if details ~= "" and not vim.startswith(details, REOPEN_REGRESSION_NOTE) then
+    parts[#parts + 1] = details
+  end
+  moved.details = table.concat(parts, "\n\n")
   moved.prompt = moved.title
   if moved.details and moved.details ~= "" then
     moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
@@ -100,6 +106,69 @@ function QueueActions:dispatch_item_direct(project, item)
   return true
 end
 
+---@param project Clodex.Project
+---@param item_id string
+---@return Clodex.QueueItem?
+local function move_item_to_implemented(app, project, item_id)
+  if app.queue:advance(project, item_id) ~= "implemented" then
+    return
+  end
+
+  local queue_name, _, implemented_item = app.queue:find_item(project, item_id)
+  if queue_name ~= "implemented" or not implemented_item then
+    return
+  end
+
+  return implemented_item
+end
+
+---@param app Clodex.App
+---@param project Clodex.Project
+---@param item_id string
+local function move_item_back_to_queued(app, project, item_id)
+  local queue_name, _, implemented_item = app.queue:find_item(project, item_id)
+  if queue_name ~= "implemented" or not implemented_item then
+    return
+  end
+
+  app.queue:take_item(project, item_id, "implemented")
+  app.queue:put_item(project, "queued", implemented_item, {
+    clear_history = true,
+  })
+end
+
+---@param project Clodex.Project
+---@param item_id string
+---@param mode "interactive"|"exec"
+---@return boolean
+function QueueActions:start_queued_item(project, item_id, mode)
+  local queue_name, _, queued_item = self.app.queue:find_item(project, item_id)
+  if queue_name ~= "queued" or not queued_item then
+    notify.warn("Only queued items can be implemented")
+    return false
+  end
+
+  local implemented_item = move_item_to_implemented(self.app, project, item_id)
+  if not implemented_item then
+    notify.warn("Could not move the queued item to implemented")
+    return false
+  end
+
+  local started
+  if mode == "exec" then
+    started = self:dispatch_item_direct(project, implemented_item)
+  else
+    started = self:dispatch_item(project, implemented_item)
+  end
+
+  if started then
+    return true
+  end
+
+  move_item_back_to_queued(self.app, project, item_id)
+  return false
+end
+
 --- Checks project-local workspace files for external queue updates.
 --- This keeps the editor in sync when queued prompts complete by mutating workspace JSON directly.
 function QueueActions:poll_workspace_updates()
@@ -148,11 +217,7 @@ function QueueActions:add_project_todo(project, spec, opts)
   History.append_prompt_added(project.name, normalized.title, normalized.details, spec.kind)
   local started = false
   if queue_name == "queued" and opts.implement then
-    if opts.run_mode == "exec" then
-      started = self:dispatch_item_direct(project, item)
-    else
-      started = self:dispatch_item(project, item)
-    end
+    started = self:start_queued_item(project, item.id, opts.run_mode == "exec" and "exec" or "interactive")
   end
 
   if queue_name == "queued" and started then
@@ -203,14 +268,10 @@ end
 ---@param item_id string
 ---@return boolean
 function QueueActions:implement_queue_item(project, item_id)
-  local queue_name, _, item = self.app.queue:find_item(project, item_id)
-  if queue_name ~= "queued" or not item then
-    notify.warn("Only queued items can be implemented")
-    return false
-  end
-
-  if self:dispatch_item(project, item) then
-    notify.notify(("Implemented queued prompt for %s: %s"):format(project.name, item.title))
+  local _, _, item = self.app.queue:find_item(project, item_id)
+  if self:start_queued_item(project, item_id, "interactive") then
+    notify.notify(("Started queued prompt for %s: %s"):format(project.name, item.title))
+    self:remember_workspace_revision(project)
     self.app:refresh_views()
     return true
   end
@@ -220,7 +281,7 @@ end
 
 ---@param project Clodex.Project
 function QueueActions:implement_queued_items(project)
-  local queued_items = self.app.queue:queues(project).queued
+  local queued_items = vim.deepcopy(self.app.queue:queues(project).queued)
   if #queued_items == 0 then
     notify.warn(("No queued items for %s"):format(project.name))
     return
@@ -228,13 +289,14 @@ function QueueActions:implement_queued_items(project)
 
   local sent = 0
   for _, item in ipairs(queued_items) do
-    if self:dispatch_item(project, item) then
+    if self:start_queued_item(project, item.id, "interactive") then
       sent = sent + 1
     end
   end
 
   if sent > 0 then
-    notify.notify(("Implemented %d queued prompt(s) for %s"):format(sent, project.name))
+    notify.notify(("Started %d queued prompt(s) for %s"):format(sent, project.name))
+    self:remember_workspace_revision(project)
     self.app:refresh_views()
   end
 end
@@ -309,11 +371,12 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
     return
   end
   local rewind_item = rewind_item_spec(item, opts)
+  local clear_history = queue_name == "implemented" or queue_name == "history"
 
   if opts.copy then
     self.app.queue:put_item(project, previous_queue, rewind_item, {
       copy = true,
-      clear_history = queue_name == "history",
+      clear_history = clear_history,
     })
   else
     if not self.app.queue:take_item(project, item_id, queue_name) then
@@ -321,7 +384,7 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
       return
     end
     self.app.queue:put_item(project, previous_queue, rewind_item, {
-      clear_history = queue_name == "history",
+      clear_history = clear_history,
     })
   end
 

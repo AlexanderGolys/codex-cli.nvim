@@ -119,7 +119,7 @@ end
 ---@param summary string?
 function Runner:complete_item(project, item, summary)
     local queue_name = self.app.queue:find_item(project, item.id)
-    if queue_name ~= "queued" then
+    if queue_name ~= "implemented" then
         return
     end
 
@@ -128,7 +128,7 @@ function Runner:complete_item(project, item, summary)
         return
     end
 
-    self.app.queue:complete_queued_item(project, item.id, {
+    self.app.queue:update_implemented_item(project, item.id, {
         summary = fallback_summary,
         commit = git.head_commit(project.root, true),
         completed_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
@@ -149,9 +149,9 @@ function Runner:handle_completion(project, item, result, run_dir, output_path)
     if result.code == 0 then
         local summary = response_summary(message)
         self:complete_item(project, item, summary)
-        if self.app.queue:find_item(project, item.id) == "queued" then
+        if self.app.queue:find_item(project, item.id) == "implemented" then
             notify.warn(
-                ("Direct Codex run finished for %s but did not complete the queued item automatically: %s"):format(
+                ("Direct Codex run finished for %s but did not update the implemented item automatically: %s"):format(
                     project.name,
                     item.title
                 )
