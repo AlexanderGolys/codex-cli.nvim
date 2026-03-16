@@ -66,7 +66,21 @@ function M.select(items, opts, on_choice)
       enter = true,
     },
   }, vim.deepcopy(opts.snacks or {}))
-  return SnacksSelect.select(items, opts, on_choice)
+  local picker = SnacksSelect.select(items, opts, on_choice)
+
+  vim.schedule(function()
+    if not picker or picker.closed or not picker.focus then
+      return
+    end
+    if picker.opts and (picker.opts.focus == false or picker.opts.enter == false) then
+      return
+    end
+    picker:focus((picker.opts and picker.opts.focus) or "list", {
+      show = true,
+    })
+  end)
+
+  return picker
 end
 
 ---@param opts vim.ui.input.Opts

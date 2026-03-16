@@ -74,6 +74,39 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(1, refresh_count)
     end)
 
+    it("moves a history item back to queued marked as not working", function()
+        local item = queue:add_todo(project, {
+            title = "fix prompt flow",
+            details = "return to queued",
+            queue = "queued",
+            kind = "todo",
+        })
+        queue:complete_queued_item(project, item.id, {
+            summary = "implemented",
+            completed_at = "2026-01-01T00:00:00Z",
+        })
+
+        actions:rewind_queue_item(project, item.id, {
+            queue = "history",
+            mark_not_working = true,
+        })
+
+        local queue_name, _, moved = queue:find_item(project, item.id)
+        assert.are.equal("queued", queue_name)
+        assert.are.equal("error", moved.kind)
+        assert.are.equal(
+            "The previously implemented behavior is not working as expected. Investigate the regression and fix it.\n\nreturn to queued",
+            moved.details
+        )
+        assert.are.equal(
+            "fix prompt flow\n\nThe previously implemented behavior is not working as expected. Investigate the regression and fix it.\n\nreturn to queued",
+            moved.prompt
+        )
+        assert.are.equal(nil, moved.history_summary)
+        assert.are.equal(nil, moved.history_completed_at)
+        assert.are.equal(1, refresh_count)
+    end)
+
     it("moves a history item to another project when the source queue is specified", function()
         local item = queue:add_todo(project, {
             title = "share prompt",
@@ -97,6 +130,6 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal("share prompt", target_queues.queued[1].title)
         assert.are.equal(nil, target_queues.queued[1].history_summary)
         assert.are.equal(0, #target_queues.history)
-        assert.are.equal(2, refresh_count)
+        assert.are.equal(1, refresh_count)
     end)
 end)

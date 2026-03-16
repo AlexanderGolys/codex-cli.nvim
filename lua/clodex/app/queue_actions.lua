@@ -3,7 +3,7 @@ local notify = require("clodex.util.notify")
 
 --- Moves/restricts options for queue rewind operations in queue actions.
 --- The options are interpreted by App-level handlers when items are moved backward.
----@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean, queue?: Clodex.QueueName }
+---@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean, queue?: Clodex.QueueName, mark_not_working?: boolean }
 --- Defines options for moving an item between queues and projects.
 --- It supports optional duplication and destination queue override for bulk workflows.
 --- Moves/restricts options for queue item transfer operations.
@@ -30,6 +30,30 @@ local PREVIOUS_QUEUE = {
   queued = "planned",
   history = "queued",
 }
+local REOPEN_REGRESSION_NOTE = "The previously implemented behavior is not working as expected. Investigate the regression and fix it."
+
+---@param item Clodex.QueueItem
+---@param opts Clodex.AppQueueActions.RewindOpts
+---@return Clodex.QueueItem
+local function rewind_item_spec(item, opts)
+  local moved = vim.deepcopy(item)
+  if not opts.mark_not_working then
+    return moved
+  end
+
+  local details = vim.trim(moved.details or "")
+  if details == "" then
+    moved.details = REOPEN_REGRESSION_NOTE
+  elseif not vim.startswith(details, REOPEN_REGRESSION_NOTE) then
+    moved.details = ("%s\n\n%s"):format(REOPEN_REGRESSION_NOTE, details)
+  end
+  moved.prompt = moved.title
+  if moved.details and moved.details ~= "" then
+    moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
+  end
+  moved.kind = "error"
+  return moved
+end
 
 ---@param app Clodex.App
 ---@return Clodex.AppQueueActions
@@ -284,9 +308,10 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
     notify.warn("Item cannot be moved back")
     return
   end
+  local rewind_item = rewind_item_spec(item, opts)
 
   if opts.copy then
-    self.app.queue:put_item(project, previous_queue, item, {
+    self.app.queue:put_item(project, previous_queue, rewind_item, {
       copy = true,
       clear_history = queue_name == "history",
     })
@@ -295,7 +320,7 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
       notify.warn("Queue item not found")
       return
     end
-    self.app.queue:put_item(project, previous_queue, item, {
+    self.app.queue:put_item(project, previous_queue, rewind_item, {
       clear_history = queue_name == "history",
     })
   end

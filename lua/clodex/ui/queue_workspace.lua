@@ -1435,10 +1435,20 @@ function Workspace:move_queue_item_back()
         self:refresh()
     end
 
+    local function move_back_marked_not_working()
+        self.app.queue_actions:rewind_queue_item(project, item.id, {
+            queue = queue_name,
+            mark_not_working = true,
+        })
+        self.queue_index = 1
+        self:refresh()
+    end
+
     if queue_name == "history" then
         ui.select({
-            { label = "Move back to queued",      copy = false },
-            { label = "Duplicate back to queued", copy = true },
+            { label = "Move back to queued",             copy = false, mark_not_working = false },
+            { label = "Duplicate back to queued",        copy = true,  mark_not_working = false },
+            { label = "Move back as not working",        copy = false, mark_not_working = true },
         }, {
             prompt = ("Move '%s' back"):format(item.title),
             format_item = function(choice)
@@ -1446,6 +1456,10 @@ function Workspace:move_queue_item_back()
             end,
         }, function(choice)
             if choice then
+                if choice.mark_not_working then
+                    move_back_marked_not_working()
+                    return
+                end
                 move_back(choice.copy)
             end
         end)

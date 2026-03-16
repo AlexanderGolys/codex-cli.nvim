@@ -8,17 +8,37 @@ describe("clodex.ui.select", function()
     local select
     local opened_windows
     local original_ui_win
+    local picker_select_calls
 
     before_each(function()
         package.loaded["clodex.ui.select"] = nil
         original_ui_win = package.loaded["clodex.ui.win"]
         opened_windows = {}
+        picker_select_calls = {}
         package.loaded["snacks.input"] = {
             input = function() end,
         }
         package.loaded["snacks.picker.select"] = {
             select = function(_items, _opts, on_choice)
+                local picker = {
+                    closed = false,
+                    opts = {
+                        focus = "list",
+                        enter = true,
+                    },
+                    focused = {},
+                }
+
+                function picker:focus(target, opts)
+                    self.focused[#self.focused + 1] = {
+                        target = target,
+                        opts = opts,
+                    }
+                end
+
+                picker_select_calls[#picker_select_calls + 1] = picker
                 on_choice(nil)
+                return picker
             end,
         }
 
@@ -146,5 +166,33 @@ describe("clodex.ui.select", function()
             local cursor = vim.api.nvim_win_get_cursor(body_window.win)
             return vim.api.nvim_get_current_win() == body_window.win and cursor[1] == 1
         end)
+    end)
+
+    it("re-focuses select pickers on the list window after creation", function()
+        local chosen
+
+        local picker = select.select({
+            { label = "Yes", value = true },
+            { label = "No", value = false },
+        }, {
+            prompt = "Confirm deletion",
+            format_item = function(item)
+                return item.label
+            end,
+        }, function(item)
+            chosen = item
+        end)
+
+        wait_for(function()
+            return chosen == nil and #picker.focused > 0
+        end)
+
+        assert.are.same(picker_select_calls[1], picker)
+        assert.are.same({
+            target = "list",
+            opts = {
+                show = true,
+            },
+        }, picker.focused[1])
     end)
 end)

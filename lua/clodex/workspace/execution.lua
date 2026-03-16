@@ -35,14 +35,6 @@ local function completion_instruction_lines(workspace_path, item_id)
     return {
         ("Project workspace path: `%s`"):format(workspace_path),
         ("Current queued item id: `%s`"):format(item_id),
-        "After the work is complete, update that workspace file directly.",
-        "Move the item with this id from `queues.queued` to the front of `queues.history` without changing its `id`.",
-        "Set `history_summary` to a short summary of the implemented change or blocker.",
-        "Set `history_commit` when a commit exists, otherwise leave it unset.",
-        "Set `history_completed_at` and `updated_at` to a UTC timestamp like `2026-03-13T16:40:17Z`.",
-        "If the item is already in `queues.history`, update it in place instead of duplicating it.",
-        "If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.",
-        "Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned`.",
     }
 end
 
