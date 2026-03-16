@@ -239,6 +239,47 @@ describe("clodex.ui.select", function()
         assert.are.equal(0, start_col)
         assert.is_true(#items > 0)
         assert.are.equal("&file", items[1].abbr)
-        assert.are.equal("@{example.lua}", items[1].word)
+        assert.are.equal("&file", items[1].word)
+        assert.matches("^@{.+}$", items[1].info)
+    end)
+
+    it("expands prompt context tokens only when the prompt is submitted", function()
+        local submitted
+
+        select.multiline_input({
+            prompt = "Test prompt",
+            default = "Title",
+            context = {
+                relative_path = "example.lua",
+                file_path = "/tmp/example.lua",
+                project_root = "/tmp",
+                cursor_row = 3,
+                current_word = "value",
+            },
+        }, function(value)
+            submitted = value
+        end)
+
+        wait_for(function()
+            return #opened_windows == 3
+        end)
+
+        local body_window = opened_windows[2]
+        vim.api.nvim_buf_set_lines(body_window.buf, 0, -1, false, { "&file", "", "&word" })
+        vim.api.nvim_set_current_win(body_window.win)
+        vim.cmd.stopinsert()
+        wait_for(function()
+            return vim.fn.mode() == "n"
+        end)
+        vim.fn.feedkeys(vim.keycode("<CR>"), "xt")
+
+        wait_for(function()
+            return submitted ~= nil
+        end)
+
+        assert.are.equal(
+            'Title\n\n@{example.lua}\n\n"value" under the cursor in @{example.lua}: line 3',
+            submitted
+        )
     end)
 end)

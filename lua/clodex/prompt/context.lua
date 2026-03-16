@@ -394,8 +394,8 @@ function M.expand_text(text, context)
   return expanded
 end
 
---- Returns canned prompt bodies that expand against the current editor state.
---- The prompt editor uses these as one-key shortcuts for common explain and fix flows.
+--- Returns canned prompt bodies that keep context tokens until submit time.
+--- The prompt editor expands them only when the final prompt is created.
 ---@param context Clodex.PromptContext.Capture?
 ---@return Clodex.PromptContext.QuickPrompt[]
 function M.quick_prompts(context)
@@ -437,10 +437,6 @@ function M.quick_prompts(context)
       label = "Fix current-line diagnostic",
       text = "Fix the diagnostic on the current line, or explain why it should be ignored.\n\n&line\n\n&diagnostic",
     }
-  end
-
-  for _, prompt in ipairs(prompts) do
-    prompt.text = M.expand_text(prompt.text, context)
   end
 
   return prompts

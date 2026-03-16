@@ -32,5 +32,19 @@ describe("clodex.prompt.context", function()
         assert.matches("Also: @{src/main.lua}", expanded)
         assert.matches("Word: \"token\" under the cursor in @{src/main.lua}: line 3", expanded)
     end)
-end)
 
+    it("keeps quick prompts tokenized until prompt submission", function()
+        local prompts = PromptContext.quick_prompts({
+            relative_path = "src/main.lua",
+            file_path = "/Users/dev/project/src/main.lua",
+            project_root = "/Users/dev/project",
+            cursor_row = 3,
+            current_word = "token",
+        })
+
+        assert.are.equal(
+            "Explain how the current file fits into the project and walk through the important control flow.\n\n&file",
+            prompts[2].text
+        )
+    end)
+end)

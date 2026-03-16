@@ -156,7 +156,7 @@ local function completion_start_col(line, cursor_col)
 end
 
 --- Provides built-in prompt context completion items for the prompt details buffer.
---- The menu shows `&token` labels while inserting their expanded plain-text context.
+--- The menu inserts `&token` placeholders and only expands them when the prompt is submitted.
 ---@param findstart integer
 ---@param base string
 ---@return integer|vim.CompletedItem[]
@@ -179,7 +179,7 @@ function M.prompt_context_complete(findstart, base)
       local expansion = PromptContext.expand_token(item.token, context)
       if expansion and expansion ~= "" then
         matches[#matches + 1] = {
-          word = expansion,
+          word = item.token,
           abbr = item.label,
           menu = item.detail,
           info = expansion,
@@ -699,7 +699,8 @@ function M.multiline_input(opts, on_confirm)
       close(nil, action)
       return
     end
-    close(Prompt.render(current_title, details ~= "" and details or nil), action)
+    local rendered = Prompt.render(current_title, details ~= "" and details or nil)
+    close(PromptContext.expand_text(rendered, prompt_context()), action)
   end
 
   --- Starts Neovim's built-in completion popup for prompt context tokens.
