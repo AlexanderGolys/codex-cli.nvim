@@ -291,11 +291,10 @@ function App:setup_autocmds()
 
     vim.api.nvim_create_autocmd("TabNewEntered", {
         group = self.group,
-        --- Marks freshly opened tabs as already handled for project prompts.
-        --- New tabs are commonly used to switch context, so avoid auto-offering the file's project there.
+        --- Prompts new tabs for an active project choice instead of inheriting the old tab silently.
+        --- This keeps tab-local project focus intentional right when the tab opens.
         callback = function()
-            self:current_tab():mark_prompted_project()
-            self:refresh_views()
+            self:prompt_new_tab_active_project()
         end,
     })
 
@@ -310,6 +309,14 @@ function App:setup_autocmds()
             self:refresh_views()
             self:maybe_prompt_active_project(buf)
             reconnect_terminal_on_enter(self.config:get(), buf)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("User", {
+        group = self.group,
+        pattern = "ClodexCommandsUpdated",
+        callback = function()
+            self:refresh_state_preview()
         end,
     })
 
@@ -563,6 +570,10 @@ function App:maybe_prompt_active_project(buffer)
     self.project_actions:maybe_prompt_active_project(buffer)
 end
 
+function App:prompt_new_tab_active_project()
+    self.project_actions:prompt_new_tab_active_project(self:current_tab())
+end
+
 ---@return Clodex.TabState
 function App:current_tab()
     return self.tabs:get()
@@ -689,16 +700,28 @@ end
 function App:projects_for_queue_workspace()
     local projects = self.registry:list()
     local active_root = self:current_tab().active_project_root
+    local summaries = {} ---@type table<string, Clodex.ProjectQueueSummary>
+    for _, project in ipairs(projects) do
+        summaries[project.root] = self:queue_summary(project)
+    end
+
     table.sort(projects, function(left, right)
         local left_active = active_root ~= nil and left.root == active_root
         local right_active = active_root ~= nil and right.root == active_root
         if left_active ~= right_active then
             return left_active
         end
-        local left_running = self:is_project_session_running(left)
-        local right_running = self:is_project_session_running(right)
+        local left_summary = summaries[left.root]
+        local right_summary = summaries[right.root]
+        local left_running = left_summary and left_summary.session_running or false
+        local right_running = right_summary and right_summary.session_running or false
         if left_running ~= right_running then
             return left_running
+        end
+        local left_last_updated_at = left_summary and left_summary.last_updated_at or ""
+        local right_last_updated_at = right_summary and right_summary.last_updated_at or ""
+        if left_last_updated_at ~= right_last_updated_at then
+            return left_last_updated_at > right_last_updated_at
         end
         return left.name:lower() < right.name:lower()
     end)

@@ -1,7 +1,6 @@
 local fs = require("clodex.util.fs")
 local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
-local ProjectPicker = require("clodex.project.picker")
 local MarkdownPreview = require("clodex.ui.markdown_preview")
 local ui = require("clodex.ui.select")
 
@@ -39,6 +38,200 @@ local function open_project_file(self, project, path, default_lines)
     vim.cmd.edit(vim.fn.fnameescape(path))
     self.app.project_details_store:touch_activity(project)
     self.app:refresh_views()
+end
+
+---@class Clodex.AppProjectActions.ProjectPicker
+---@field registry Clodex.ProjectRegistry
+local ProjectPicker = {}
+ProjectPicker.__index = ProjectPicker
+
+---@param registry Clodex.ProjectRegistry
+---@return Clodex.AppProjectActions.ProjectPicker
+function ProjectPicker.new(registry)
+    local self = setmetatable({}, ProjectPicker)
+    self.registry = registry
+    return self
+end
+
+---@param project Clodex.Project
+---@param active_root? string
+---@return string
+local function picker_preview_text(project, active_root)
+    local exists = vim.uv.fs_stat(project.root) ~= nil and "yes" or "no"
+    local active = active_root and active_root == project.root and "yes" or "no"
+    return table.concat({
+        "# Clodex Project",
+        "",
+        ("- Name: `%s`"):format(project.name),
+        ("- Root: `%s`"):format(project.root),
+        ("- Exists on disk: `%s`"):format(exists),
+        ("- Active in this tab: `%s`"):format(active),
+    }, "\n")
+end
+
+---@param item { project?: Clodex.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }
+---@param supports_chunks? boolean
+---@return string|snacks.picker.Highlight[]
+local function picker_format_item(item, supports_chunks)
+    if not item.project then
+        return item.label
+    end
+    if not supports_chunks then
+        return item.label
+    end
+    return {
+        { item.project.name, "ClodexPickerProject" },
+        { item.spacer or "  " },
+        { item.project.root, "ClodexPickerRoot" },
+    }
+end
+
+---@param self Clodex.AppProjectActions.ProjectPicker
+---@param opts? { include_none?: boolean, prompt?: string, active_root?: string, on_delete?: fun(project: Clodex.Project), on_rename?: fun(project: Clodex.Project), snacks?: table }
+---@param on_choice fun(project?: Clodex.Project)
+function ProjectPicker:pick(opts, on_choice)
+    opts = opts or {}
+    local projects = self.registry:list()
+    local items = {} ---@type { project?: Clodex.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }[]
+    local name_width = 0
+    local snacks_opts = vim.tbl_deep_extend("force", {
+        preview = "preview",
+        layout = {
+            preset = "select",
+            hidden = {},
+        },
+    }, vim.deepcopy(opts.snacks or {}))
+    local action_hints = {} ---@type string[]
+
+    if opts.include_none then
+        items[#items + 1] = {
+            label = "No active project",
+            preview = {
+                text = "# Clodex Project\n\n- Active project override is disabled for this tab.",
+                ft = "markdown",
+                loc = false,
+            },
+            preview_title = "No active project",
+        }
+    end
+
+    for _, project in ipairs(projects) do
+        name_width = math.max(name_width, vim.fn.strdisplaywidth(project.name))
+    end
+
+    for _, project in ipairs(projects) do
+        local spacer = (" "):rep(math.max(name_width - vim.fn.strdisplaywidth(project.name), 0) + 2)
+        items[#items + 1] = {
+            project = project,
+            label = project.name .. spacer .. project.root,
+            spacer = spacer,
+            preview = {
+                text = picker_preview_text(project, opts.active_root),
+                ft = "markdown",
+                loc = false,
+            },
+            preview_title = project.name,
+        }
+    end
+
+    if #items == 0 then
+        notify.warn("No Clodex projects configured")
+        return
+    end
+
+    if opts.on_delete then
+        snacks_opts.actions = snacks_opts.actions or {}
+        snacks_opts.actions.codex_project_delete = {
+            desc = "Delete project",
+            action = function(picker, item)
+                item = item and item.item or item
+                if not item or not item.project then
+                    notify.warn("No project selected")
+                    return
+                end
+                local project = item.project
+                if picker and picker.close then
+                    picker:close()
+                end
+                vim.schedule(function()
+                    opts.on_delete(project)
+                end)
+            end,
+        }
+        action_hints[#action_hints + 1] = "d: Delete project"
+
+        snacks_opts.win = snacks_opts.win or {}
+        snacks_opts.win.input = snacks_opts.win.input or {}
+        snacks_opts.win.input.keys = snacks_opts.win.input.keys or {}
+        snacks_opts.win.input.keys["d"] = { "codex_project_delete", mode = { "n", "i" } }
+
+        snacks_opts.win.list = snacks_opts.win.list or {}
+        snacks_opts.win.list.keys = snacks_opts.win.list.keys or {}
+        snacks_opts.win.list.keys["d"] = { "codex_project_delete", mode = { "n", "i" } }
+    end
+
+    if opts.on_rename then
+        snacks_opts.actions = snacks_opts.actions or {}
+        snacks_opts.actions.codex_project_rename = {
+            desc = "Rename project",
+            action = function(picker, item)
+                item = item and item.item or item
+                if not item or not item.project then
+                    notify.warn("No project selected")
+                    return
+                end
+                local project = item.project
+                if picker and picker.close then
+                    picker:close()
+                end
+                vim.schedule(function()
+                    opts.on_rename(project)
+                end)
+            end,
+        }
+        action_hints[#action_hints + 1] = "r: Rename project"
+
+        snacks_opts.win = snacks_opts.win or {}
+        snacks_opts.win.input = snacks_opts.win.input or {}
+        snacks_opts.win.input.keys = snacks_opts.win.input.keys or {}
+        snacks_opts.win.input.keys["r"] = { "codex_project_rename", mode = { "n", "i" } }
+
+        snacks_opts.win.list = snacks_opts.win.list or {}
+        snacks_opts.win.list.keys = snacks_opts.win.list.keys or {}
+        snacks_opts.win.list.keys["r"] = { "codex_project_rename", mode = { "n", "i" } }
+    end
+
+    if #action_hints > 0 then
+        snacks_opts.help = snacks_opts.help or true
+        notify.notify(("Project actions: %s"):format(table.concat(action_hints, ", ")))
+    end
+
+    ui.select(items, {
+        prompt = opts.prompt or "Select Clodex project",
+        format_item = function(item, supports_chunks)
+            return picker_format_item(item, supports_chunks)
+        end,
+        snacks = snacks_opts,
+    }, function(item)
+        on_choice(item and item.project or nil)
+    end)
+end
+
+---@param self Clodex.AppProjectActions.ProjectPicker
+---@param on_choice fun(project?: Clodex.Project)
+function ProjectPicker:pick_for_removal(on_choice)
+    return self:pick({ prompt = "Remove Clodex project" }, on_choice)
+end
+
+---@param self Clodex.AppProjectActions.ProjectPicker
+---@param active_root? string
+---@param on_choice fun(project?: Clodex.Project)
+function ProjectPicker:pick_for_rename(active_root, on_choice)
+    return self:pick({
+        prompt = "Rename Clodex project",
+        active_root = active_root,
+        on_rename = on_choice,
+    }, on_choice)
 end
 
 ---@param app Clodex.App
@@ -101,6 +294,41 @@ function ProjectActions:prompt_set_active_project(project, state)
                 kind = "project",
                 project = project,
             })
+        end
+        self.app:refresh_views()
+    end)
+end
+
+---@param state Clodex.TabState
+function ProjectActions:prompt_new_tab_active_project(state)
+    if state:has_prompted_project() then
+        return
+    end
+
+    state:mark_prompted_project()
+    local active_root = state.active_project_root
+    state:clear_active_project()
+
+    local projects = self.app.registry:list()
+    if #projects == 0 then
+        self.app:refresh_views()
+        return
+    end
+
+    ui.pick_project(projects, {
+        prompt = "Active project for new tab",
+        include_none = true,
+        active_root = active_root,
+    }, function(project)
+        if project then
+            state:set_active_project(project.root)
+            self.app.project_details_store:touch_activity(project)
+            if state:has_visible_window() then
+                self:show_target(state, {
+                    kind = "project",
+                    project = project,
+                })
+            end
         end
         self.app:refresh_views()
     end)
@@ -522,7 +750,7 @@ function ProjectActions:resolve_project(value)
     end
 end
 
----@return Clodex.ProjectPicker
+---@return Clodex.AppProjectActions.ProjectPicker
 function ProjectActions:project_picker()
     return ProjectPicker.new(self.app.registry)
 end
