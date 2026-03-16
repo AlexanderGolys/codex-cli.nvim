@@ -3,7 +3,7 @@ local notify = require("clodex.util.notify")
 
 --- Moves/restricts options for queue rewind operations in queue actions.
 --- The options are interpreted by App-level handlers when items are moved backward.
----@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean }
+---@alias Clodex.AppQueueActions.RewindOpts { copy?: boolean, queue?: Clodex.QueueName }
 --- Defines options for moving an item between queues and projects.
 --- It supports optional duplication and destination queue override for bulk workflows.
 --- Moves/restricts options for queue item transfer operations.
@@ -11,7 +11,7 @@ local notify = require("clodex.util.notify")
 
 --- Defines the Clodex.AppQueueActions.MoveOpts type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
----@alias Clodex.AppQueueActions.MoveOpts { target_queue?: Clodex.QueueName, copy?: boolean }
+---@alias Clodex.AppQueueActions.MoveOpts { target_queue?: Clodex.QueueName, source_queue?: Clodex.QueueName, copy?: boolean }
 
 --- Defines the Clodex.AppQueueActions type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -268,7 +268,8 @@ end
 ---@param opts? Clodex.AppQueueActions.RewindOpts
 function QueueActions:rewind_queue_item(project, item_id, opts)
   opts = opts or {}
-  local queue_name, _, item = self.app.queue:find_item(project, item_id)
+  local queue_name, _, item = opts.queue and self.app.queue:find_item(project, item_id, opts.queue) or
+      self.app.queue:find_item(project, item_id)
   local previous_queue = queue_name and PREVIOUS_QUEUE[queue_name] or nil
   if not previous_queue or not item then
     notify.warn("Item cannot be moved back")
@@ -281,7 +282,7 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
       clear_history = queue_name == "history",
     })
   else
-    if not self.app.queue:take_item(project, item_id) then
+    if not self.app.queue:take_item(project, item_id, queue_name) then
       notify.warn("Queue item not found")
       return
     end
@@ -300,14 +301,15 @@ end
 ---@param opts? Clodex.AppQueueActions.MoveOpts
 function QueueActions:move_queue_item_to_project(project, item_id, target_project, opts)
   opts = opts or {}
-  local queue_name, _, item = self.app.queue:find_item(project, item_id)
+  local queue_name, _, item = opts.source_queue and self.app.queue:find_item(project, item_id, opts.source_queue) or
+      self.app.queue:find_item(project, item_id)
   local target_queue = opts.target_queue or queue_name
   if not queue_name or not target_queue or not item then
     notify.warn("Queue item not found")
     return
   end
 
-  if not opts.copy and not self.app.queue:take_item(project, item_id) then
+  if not opts.copy and not self.app.queue:take_item(project, item_id, queue_name) then
     notify.warn("Queue item not found")
     return
   end

@@ -267,6 +267,25 @@ function App:setup_autocmds()
             if type(win) == "number" and win > 0 then
                 TerminalUi.refresh_chrome(win)
             end
+            vim.schedule(function()
+                self:refresh_views()
+            end)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd("TermClose", {
+        group = self.group,
+        callback = function(args)
+            local buf = args.buf
+            if not buf or not vim.api.nvim_buf_is_valid(buf) then
+                return
+            end
+            if vim.bo[buf].filetype ~= "clodex_terminal" then
+                return
+            end
+            vim.schedule(function()
+                self:refresh_views()
+            end)
         end,
     })
 

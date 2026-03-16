@@ -77,6 +77,7 @@ local PROJECT_DETAIL_LABELS = {
     "Lang:",
     "Mod:",
 }
+local GITHUB_ICON = ""
 local ELLIPSIS = "..."
 local PANEL_BORDER_COLS = 2
 local PANEL_GAP_COLS = 1
@@ -455,7 +456,9 @@ end
 
 ---@param detail string
 ---@return Clodex.Extmark[]
-local function project_detail_extmarks(detail)
+---@param has_remote boolean
+---@return Clodex.Extmark[]
+local function project_detail_extmarks(detail, has_remote)
     local marks = {
         Extmark.inline(0, 0, #detail, "ClodexQueueItemMuted"),
     }
@@ -469,6 +472,14 @@ local function project_detail_extmarks(detail)
                 Extmark.inline(0, label_start, label_start + #label, "ClodexStateFieldLabel")
             search_from = start_col + #label
         end
+    end
+
+    local remote_pos = detail:find("Remote:", 1, true)
+    if remote_pos then
+        local icon_start = remote_pos + #("Remote: ")
+        local icon_end = icon_start + #GITHUB_ICON
+        local remote_icon_hl = has_remote and "ClodexProjectRemoteAttached" or "ClodexProjectRemoteDetached"
+        marks[#marks + 1] = Extmark.inline(0, icon_start, icon_end, remote_icon_hl)
     end
 
     return marks
@@ -525,7 +536,7 @@ local function project_detail_lines(app, summary, details)
     details = details or app.project_details_store:get_cached(summary.project)
     if not details then
         return {
-            "    Files:-  Avg LOC:-  Remote:-  Codex:-",
+            "    Files:-  Avg LOC:-  Remote: " .. GITHUB_ICON .. "  Codex:-",
             "    Lang:-  Mod:-",
         }
     end
@@ -533,7 +544,7 @@ local function project_detail_lines(app, summary, details)
         ("    Files:%d  Avg LOC:%s  Remote:%s  Codex:%s"):format(
             details.file_count,
             format_avg_lines(details.avg_lines_per_file),
-            details.remote_name or "-",
+            " " .. GITHUB_ICON,
             format_timestamp(details.last_codex_activity_at, config)
         ),
         ("    Lang:%s  Mod:%s"):format(
@@ -1040,6 +1051,7 @@ function Workspace:render_projects()
         end
         block:append_line(title, item_extmarks)
 
+        local has_remote = details ~= nil and details.remote_name ~= nil and details.remote_name ~= ""
         for _, detail in ipairs(project_detail_lines(self.app, summary, details)) do
             detail = truncate_display(detail, max_width)
             self.project_rows[#self.project_rows + 1] = {
@@ -1047,7 +1059,7 @@ function Workspace:render_projects()
                 text = detail,
                 project = project,
             }
-            block:append_line(detail, project_detail_extmarks(detail))
+            block:append_line(detail, project_detail_extmarks(detail, has_remote))
         end
     end
 
@@ -1392,7 +1404,7 @@ function Workspace:move_queue_item_back()
     end
 
     local function move_back(copy)
-        self.app.queue_actions:rewind_queue_item(project, item.id, { copy = copy })
+        self.app.queue_actions:rewind_queue_item(project, item.id, { copy = copy, queue = queue_name })
         self.queue_index = 1
         self:refresh()
     end
@@ -1461,6 +1473,7 @@ end
 function Workspace:prompt_move_to_project(project, item, queue_name, target_project, on_complete)
     local function move_to_project(copy)
         self.app.queue_actions:move_queue_item_to_project(project, item.id, target_project, {
+            source_queue = queue_name,
             copy = copy,
         })
         on_complete()

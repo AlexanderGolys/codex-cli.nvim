@@ -108,6 +108,14 @@ local M = {
     ClodexQueueFooter = {
       fg = { from = { "Comment", "Normal" } },
     },
+    ClodexProjectRemoteAttached = {
+      fg = { from = "GitSignsAdd" },
+      bold = true,
+    },
+    ClodexProjectRemoteDetached = {
+      fg = { from = { "Comment", "NonText" } },
+      bold = true,
+    },
     ClodexQueueSelection = {
       bg = { from = { "CursorLine", "PmenuSel", "Visual" }, attr = "bg" },
     },

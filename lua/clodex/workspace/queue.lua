@@ -286,10 +286,15 @@ end
 
 ---@param project Clodex.Project
 ---@param item_id string
+---@param expected_queue? Clodex.QueueName
 ---@return Clodex.QueueName?, integer?, Clodex.QueueItem?
-function Queue:find_item(project, item_id)
+function Queue:find_item(project, item_id, expected_queue)
   local data = self:load(project)
-  for _, queue_name in ipairs(ORDER) do
+  if expected_queue and not KNOWN_QUEUES[expected_queue] then
+    return
+  end
+  local queues = expected_queue and { expected_queue } or ORDER
+  for _, queue_name in ipairs(queues) do
     for index, item in ipairs(data.queues[queue_name]) do
       if item.id == item_id then
         return queue_name, index, item
@@ -325,9 +330,10 @@ end
 ---@param project Clodex.Project
 ---@param item_id_value string
 ---@return Clodex.QueueItem?, Clodex.QueueName?
-function Queue:take_item(project, item_id_value)
+function Queue:take_item(project, item_id_value, expected_queue)
   local data = self:load(project)
-  for _, queue_name in ipairs(ORDER) do
+  local queues = expected_queue and { expected_queue } or ORDER
+  for _, queue_name in ipairs(queues) do
     for index, item in ipairs(data.queues[queue_name]) do
       if item.id == item_id_value then
         table.remove(data.queues[queue_name], index)
@@ -462,7 +468,7 @@ function Queue:advance(project, item_id)
     return
   end
 
-  self:take_item(project, item_id)
+  self:take_item(project, item_id, queue_name)
   self:put_item(project, next_queue, item, {
     history_summary = next_queue == "history" and (item.history_summary or "Moved to history") or false,
   })
@@ -479,7 +485,7 @@ function Queue:complete_queued_item(project, item_id_value, result)
     return
   end
 
-  self:take_item(project, item_id_value)
+  self:take_item(project, item_id_value, queue_name)
   return self:put_item(project, "history", item, {
     history_summary = result.summary,
     history_commit = result.commit or false,

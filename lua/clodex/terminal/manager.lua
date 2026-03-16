@@ -66,6 +66,28 @@ local function call_in_tabpage(tabpage, fn)
   end
 end
 
+local function session_running_for_project(session, project_root)
+  if not session or not session:is_running() then
+    return false
+  end
+
+  local normalized_root = fs.normalize(project_root)
+
+  if session.kind == "project" then
+    if session.key and fs.normalize(session.key) == normalized_root then
+      return true
+    end
+
+    if session.project_root and fs.normalize(session.project_root) == normalized_root then
+      return true
+    end
+
+    return false
+  end
+
+  return fs.is_relative_to(session.cwd, normalized_root)
+end
+
 ---@param config Clodex.Config.Values
 ---@return Clodex.TerminalManager
 function Manager.new(config)
@@ -177,15 +199,23 @@ end
 ---@param root string
 ---@return boolean
 function Manager:is_project_session_running(root)
-  local session = self:project_session(root)
-  if session ~= nil and session:is_running() then
+  if type(root) ~= "string" or root == "" then
+    return false
+  end
+
+  local normalized_root = fs.normalize(root)
+  local session = self:project_session(normalized_root)
+  if session and session_running_for_project(session, normalized_root) then
     return true
   end
 
-  local project = {
-    root = root,
-  }
-  return self.free_session_matches_project(project) and self.free_session:is_running() or false
+  for _, candidate in pairs(self.project_sessions) do
+    if session_running_for_project(candidate, normalized_root) then
+      return true
+    end
+  end
+
+  return self.free_session and session_running_for_project(self.free_session, normalized_root) or false
 end
 
 ---@param project Clodex.Project
