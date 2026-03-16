@@ -2,6 +2,7 @@
 ---@class Clodex.Config.HighlightColorRef
 ---@field from string|string[]
 ---@field attr? "fg"|"bg"|"sp"
+---@field adjust? number
 
 --- Accepted color type for a highlight field.
 ---@alias Clodex.Config.HighlightColor string|integer|Clodex.Config.HighlightColorRef
@@ -36,6 +37,16 @@ local M = {
     ClodexQueueNormal = {
       fg = { from = { "NormalFloat", "Normal" } },
       bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      blend = 0,
+    },
+    ClodexQueueFocusActive = {
+      fg = { from = { "NormalFloat", "Normal" } },
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg", adjust = -0.28 },
+      blend = 0,
+    },
+    ClodexQueueFocusInactive = {
+      fg = { from = { "NormalFloat", "Normal" } },
+      bg = { from = { "NormalFloat", "Normal" }, attr = "bg" },
       blend = 0,
     },
     ClodexPickerProject = {
@@ -120,8 +131,13 @@ local M = {
       fg = { from = { "Comment", "NonText" } },
       bold = true,
     },
-    ClodexQueueSelection = {
-      bg = { from = { "CursorLine", "PmenuSel", "Visual" }, attr = "bg" },
+    ClodexQueueSelectionActive = {
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg", adjust = 0.10 },
+      blend = 0,
+    },
+    ClodexQueueSelectionInactive = {
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg", adjust = 0.04 },
+      blend = 0,
     },
     ClodexQueueActiveBorder = {
       fg = { from = { "Identifier", "FloatBorder" } },
@@ -185,6 +201,17 @@ local M = {
     },
     ClodexQueueQueuedCount = {
       fg = "#9ad8f2",
+      bold = true,
+    },
+    ClodexQueueImplementedName = {
+      fg = "#6ebf7c",
+      bold = true,
+    },
+    ClodexQueueImplementedBracket = {
+      fg = "#91d89b",
+    },
+    ClodexQueueImplementedCount = {
+      fg = "#b6ecbc",
       bold = true,
     },
     ClodexQueueHistoryName = {

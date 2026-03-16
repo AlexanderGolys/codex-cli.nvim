@@ -43,6 +43,7 @@ local notify = require("clodex.util.notify")
 ---@field project_index integer
 ---@field queue_index integer
 ---@field project_search string
+---@field queue_search string
 ---@field projects Clodex.Project[]
 ---@field project_rows Clodex.QueueWorkspace.ProjectRow[]
 ---@field project_item_rows integer[]
@@ -60,6 +61,7 @@ local FOOTER_NS = vim.api.nvim_create_namespace("clodex-queue-footer")
 local QUEUE_LABELS = {
     planned = "Planned",
     queued = "Queued",
+    implemented = "Implemented",
     history = "History",
 }
 local PROJECT_SEARCH_FIELDS = {
@@ -75,6 +77,19 @@ local GITHUB_ICON = ""
 local ELLIPSIS = "..."
 local PANEL_BORDER_COLS = 2
 local PANEL_GAP_COLS = 1
+local PROJECT_INSERT_MODE_KEYS = {
+    "i",
+    "I",
+    "o",
+    "O",
+    "R",
+}
+local QUEUE_INSERT_MODE_KEYS = {
+    "I",
+    "o",
+    "O",
+    "R",
+}
 
 local function win_valid(win)
     return win ~= nil and vim.api.nvim_win_is_valid(win)
@@ -165,6 +180,7 @@ local function project_count_suffix(summary)
     local entries = {
         { text = tostring(summary.counts.planned), hl_group = "ClodexQueueTodoCount" },
         { text = tostring(summary.counts.queued), hl_group = "ClodexQueueQueuedCount" },
+        { text = tostring(summary.counts.implemented), hl_group = "ClodexQueueImplementedCount" },
         { text = tostring(summary.counts.history), hl_group = "ClodexQueueHistoryCount" },
     }
     local parts = { "  " }
@@ -246,8 +262,35 @@ local function selection_marks(first_row, last_row, hl_group)
     return marks
 end
 
+---@param focused boolean
+---@return string
+local function selection_highlight(focused)
+    if focused then
+        return "ClodexQueueSelectionActive"
+    end
+    return "ClodexQueueSelectionInactive"
+end
+
 local function prompt_queue_label(queue_name)
     return QUEUE_LABELS[queue_name] or queue_name
+end
+
+---@param item Clodex.QueueItem
+---@param queue_name Clodex.QueueName
+---@param query string
+---@return boolean
+local function queue_item_matches_search(item, queue_name, query)
+    if query == "" then
+        return true
+    end
+
+    local text = table.concat({
+        item.title or "",
+        item.details or "",
+        item.prompt or "",
+        prompt_queue_label(queue_name),
+    }, "\n"):lower()
+    return text:find(query, 1, true) ~= nil
 end
 
 ---@param item Clodex.QueueItem
@@ -301,6 +344,16 @@ local function prompt_preview_lines(item, opts)
     return preview
 end
 
+---@param item Clodex.QueueItem
+---@return string[]
+local function item_metadata_preview_lines(item)
+    local preview = {} ---@type string[]
+    if item.history_commit and item.history_commit ~= "" then
+        preview[#preview + 1] = ("    Commit: %s"):format(item.history_commit)
+    end
+    return preview
+end
+
 ---@param queue_name Clodex.QueueName
 ---@return string, string, string
 local function queue_header_groups(queue_name)
@@ -314,6 +367,11 @@ local function queue_header_groups(queue_name)
             "ClodexQueueQueuedName",
             "ClodexQueueQueuedBracket",
             "ClodexQueueQueuedCount",
+        },
+        implemented = {
+            "ClodexQueueImplementedName",
+            "ClodexQueueImplementedBracket",
+            "ClodexQueueImplementedCount",
         },
         history = {
             "ClodexQueueHistoryName",
@@ -348,7 +406,6 @@ local function footer_actions(focus)
         return {
             title = " Project Actions ",
             lines = {
-                "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
                 "s: set current project   A: start session   X: stop session   a: add prompt/project   D: delete project",
                 "/: filter projects by name/root/activity   Backspace: clear filter",
                 "&: insert editor context in prompt editor   x: canned prompt in prompt editor",
@@ -359,8 +416,8 @@ local function footer_actions(focus)
     return {
         title = " Queue Actions ",
         lines = {
-            "Focus: h/l or Left/Right   Move: j/k or Up/Down   Enter: open README + terminal   q: close",
             "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
+            "/: filter prompts by title/details/body   Backspace: clear filter",
             "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   Ctrl-S: save",
         },
     }
@@ -528,12 +585,11 @@ local function project_matches_search(project, details, query, config)
     return summary_search_text(config, details):lower():find(query, 1, true) ~= nil
 end
 
----@param app Clodex.App
+---@param config Clodex.Config.Values
 ---@param summary Clodex.ProjectQueueSummary
 ---@param details? Clodex.ProjectDetails
 ---@return string[]
-local function project_detail_lines(app, summary, details)
-    local config = app.config:get()
+local function project_detail_lines(config, app, summary, details)
     details = details or app.project_details_store:get_cached(summary.project)
     if not details then
         return {
@@ -564,6 +620,7 @@ function Workspace.new(app, config)
     self.project_index = 1
     self.queue_index = 1
     self.project_search = ""
+    self.queue_search = ""
     self.projects = {}
     self.project_rows = {}
     self.project_item_rows = {}
@@ -642,13 +699,15 @@ function Workspace:layout()
     local columns = ui_state and ui_state.width or vim.o.columns
     local lines = ui_state and ui_state.height or vim.o.lines
     local cfg = self.config.queue_workspace
-    local width = resolve_size(columns, cfg.width, 72)
-    local height = resolve_size(lines, cfg.height, 18)
     local footer_height = math.max(cfg.footer_height, 2)
+    local max_width = math.max(columns, 1)
+    local max_height = math.max(lines - footer_height - 3, 1)
+    local width = math.min(resolve_size(max_width, cfg.width, 72), max_width)
+    local height = math.min(resolve_size(max_height, cfg.height, 18), max_height)
     local chrome_width = PANEL_BORDER_COLS * 2 + PANEL_GAP_COLS
     local content_width = math.max(width - chrome_width, 56)
-    local row = math.max(math.floor((lines - height - footer_height - 1) / 2), 1)
-    local col = math.max(math.floor((columns - width) / 2), 1)
+    local row = math.max(math.floor((lines - height - footer_height - 3) / 2), 0)
+    local col = math.max(math.floor((columns - width) / 2), 0)
     local project_width = math.max(math.floor(content_width * cfg.project_width), 24)
     local queue_width = math.max(content_width - project_width, 32)
     return row, col, project_width, queue_width, height, footer_height
@@ -764,6 +823,13 @@ function Workspace:attach_keymaps()
         vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
     end
 
+    local function block_insert_keys(buf, keys)
+        for _, lhs in ipairs(keys) do
+            map(buf, lhs, function()
+            end)
+        end
+    end
+
     local function project_click(confirm)
         local mouse = vim.fn.getmousepos()
         if mouse.winid ~= self.project_win then
@@ -797,6 +863,11 @@ function Workspace:attach_keymaps()
         if confirm then
             self:open_selected_project()
         end
+    end
+
+    block_insert_keys(self.project_buf, PROJECT_INSERT_MODE_KEYS)
+    for _, buf in ipairs({ self.queue_buf, self.footer_buf }) do
+        block_insert_keys(buf, QUEUE_INSERT_MODE_KEYS)
     end
 
     for _, buf in ipairs({ self.project_buf, self.queue_buf, self.footer_buf }) do
@@ -857,6 +928,12 @@ function Workspace:attach_keymaps()
     end
 
     for _, buf in ipairs({ self.queue_buf, self.footer_buf }) do
+        map(buf, "/", function()
+            self:prompt_queue_search()
+        end)
+        map(buf, "<BS>", function()
+            self:clear_queue_search()
+        end)
         map(buf, "e", function()
             self:edit_queue_item()
         end)
@@ -919,7 +996,10 @@ end
 
 function Workspace:apply_focus()
     self:update_window_highlights()
-    local win = self.focus == "projects" and self.project_win or self.queue_win
+    local win = self.footer_win
+    if not win_valid(win) then
+        win = self.focus == "projects" and self.project_win or self.queue_win
+    end
     if win_valid(win) then
         vim.api.nvim_set_current_win(win)
     end
@@ -965,7 +1045,13 @@ function Workspace:move_selection(delta)
         if #self.queue_item_rows == 0 then
             return
         end
-        self.queue_index = clamp(self.queue_index + delta, #self.queue_item_rows)
+        local next_index = clamp(self.queue_index + delta, #self.queue_item_rows)
+        if next_index == self.queue_index then
+            self:update_cursor()
+            return
+        end
+        self.queue_index = next_index
+        self:render_queue()
     end
     self:update_cursor()
 end
@@ -1064,7 +1150,7 @@ function Workspace:render_projects()
         block:append_line(title, item_extmarks)
 
         local has_remote = details ~= nil and details.remote_name ~= nil and details.remote_name ~= ""
-        for _, detail in ipairs(project_detail_lines(self.app, summary, details)) do
+        for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
             detail = truncate_display(detail, max_width)
             self.project_rows[#self.project_rows + 1] = {
                 kind = "detail",
@@ -1110,7 +1196,11 @@ function Workspace:render_projects()
         while self.project_rows[last_row + 1] and self.project_rows[last_row + 1].project == selected.project do
             last_row = last_row + 1
         end
-        block:add_extmarks(selection_marks(selected_row, last_row, "ClodexQueueSelection"))
+        block:add_extmarks(selection_marks(
+            selected_row,
+            last_row,
+            selection_highlight(self.focus == "projects")
+        ))
     end
 
     block:render(self.project_buf, PROJECT_NS)
@@ -1122,12 +1212,35 @@ function Workspace:render_queue()
     self.queue_item_rows = {}
 
     local block = TextBlock.new()
+    local query = normalize_search(self.queue_search)
+    local rendered_items = false
     if not project then
         block:append_line("No project selected")
     else
         local summary = self.app:queue_summary(project)
-        for _, queue_name in ipairs({ "planned", "queued", "history" }) do
-            local items = summary.queues[queue_name]
+        if self.queue_search ~= "" then
+            local search_text = ("Filter: %s"):format(self.queue_search)
+            block:append_line(search_text, {
+                Extmark.inline(0, 0, #"Filter:", "ClodexStateFieldLabel"),
+                Extmark.inline(0, #"Filter: ", #search_text, "ClodexQueueItemMuted"),
+            })
+            block:append_line("")
+            self.queue_rows[#self.queue_rows + 1] = {
+                kind = "header",
+                text = search_text,
+            }
+            self.queue_rows[#self.queue_rows + 1] = {
+                kind = "header",
+                text = "",
+            }
+        end
+        for _, queue_name in ipairs({ "planned", "queued", "implemented", "history" }) do
+            local items = {} ---@type Clodex.QueueItem[]
+            for _, item in ipairs(summary.queues[queue_name]) do
+                if queue_item_matches_search(item, queue_name, query) then
+                    items[#items + 1] = item
+                end
+            end
             if not should_render_queue(queue_name, items) then
                 goto continue
             end
@@ -1141,7 +1254,8 @@ function Workspace:render_queue()
             block:append_line(header_text, header_marks)
 
             for _, item in ipairs(items) do
-                local suffix = queue_name == "history" and history_suffix(item) or ""
+                rendered_items = true
+                local suffix = (queue_name == "implemented" or queue_name == "history") and history_suffix(item) or ""
                 local item_text = "  " .. item.title .. suffix
                 local title_text = "  " .. item.title
                 self.queue_rows[#self.queue_rows + 1] = {
@@ -1174,6 +1288,17 @@ function Workspace:render_queue()
                         Extmark.inline(0, 0, #preview, Prompt.preview_group()),
                     })
                 end
+                for _, preview in ipairs(item_metadata_preview_lines(item)) do
+                    self.queue_rows[#self.queue_rows + 1] = {
+                        kind = "preview",
+                        text = preview,
+                        queue = queue_name,
+                        item = item,
+                    }
+                    block:append_line(preview, {
+                        Extmark.inline(0, 0, #preview, "ClodexQueueItemMuted"),
+                    })
+                end
             end
 
             block:append_line("")
@@ -1184,10 +1309,25 @@ function Workspace:render_queue()
             ::continue::
         end
 
-        if block:is_empty() then
-            block:append_line("No prompts queued for this project", {
-                Extmark.inline(0, 0, #"No prompts queued for this project", "ClodexQueueItemMuted"),
-            })
+        if not rendered_items then
+            if self.queue_search ~= "" then
+                block:append_line("No prompts match the current filter", {
+                    Extmark.inline(0, 0, #"No prompts match the current filter", "ClodexQueueItemMuted"),
+                })
+                block:append_line("")
+                block:append_line("Press / to change the filter or Backspace to clear it", {
+                    Extmark.inline(
+                        0,
+                        0,
+                        #"Press / to change the filter or Backspace to clear it",
+                        "ClodexQueueItemMuted"
+                    ),
+                })
+            else
+                block:append_line("No prompts queued for this project", {
+                    Extmark.inline(0, 0, #"No prompts queued for this project", "ClodexQueueItemMuted"),
+                })
+            end
         end
     end
 
@@ -1205,7 +1345,11 @@ function Workspace:render_queue()
             while self.queue_rows[last_row + 1] and self.queue_rows[last_row + 1].item == item.item do
                 last_row = last_row + 1
             end
-            block:add_extmarks(selection_marks(selected_row, last_row, "ClodexQueueSelection"))
+            block:add_extmarks(selection_marks(
+                selected_row,
+                last_row,
+                selection_highlight(self.focus == "queue")
+            ))
         end
     end
 
@@ -1434,15 +1578,23 @@ function Workspace:move_queue_item_back()
     end
 
     local function move_back_marked_not_working()
-        self.app.queue_actions:rewind_queue_item(project, item.id, {
-            queue = queue_name,
-            mark_not_working = true,
-        })
-        self.queue_index = 1
-        self:refresh()
+        ui.input({
+            prompt = "Optional note",
+        }, function(note)
+            if note == nil then
+                return
+            end
+            self.app.queue_actions:rewind_queue_item(project, item.id, {
+                queue = queue_name,
+                mark_not_working = true,
+                note = note,
+            })
+            self.queue_index = 1
+            self:refresh()
+        end)
     end
 
-    if queue_name == "history" then
+    if queue_name == "implemented" then
         ui.select({
             { label = "Move back to queued",             copy = false, mark_not_working = false },
             { label = "Duplicate back to queued",        copy = true,  mark_not_working = false },
@@ -1458,6 +1610,23 @@ function Workspace:move_queue_item_back()
                     move_back_marked_not_working()
                     return
                 end
+                move_back(choice.copy)
+            end
+        end)
+        return
+    end
+
+    if queue_name == "history" then
+        ui.select({
+            { label = "Move back to implemented",      copy = false },
+            { label = "Duplicate back to implemented", copy = true },
+        }, {
+            prompt = ("Move '%s' back"):format(item.title),
+            format_item = function(choice)
+                return choice.label
+            end,
+        }, function(choice)
+            if choice then
                 move_back(choice.copy)
             end
         end)
@@ -1641,6 +1810,31 @@ function Workspace:clear_project_search()
     self.project_search = ""
     self.project_index = 1
     self.queue_index = 1
+    self:refresh()
+end
+
+function Workspace:prompt_queue_search()
+    ui.input({
+        prompt = "Prompt filter",
+        default = self.queue_search,
+    }, function(value)
+        if value == nil then
+            return
+        end
+        self.queue_search = vim.trim(value)
+        self.queue_index = 1
+        self.focus = "queue"
+        self:refresh()
+    end)
+end
+
+function Workspace:clear_queue_search()
+    if self.queue_search == "" then
+        return
+    end
+    self.queue_search = ""
+    self.queue_index = 1
+    self.focus = "queue"
     self:refresh()
 end
 

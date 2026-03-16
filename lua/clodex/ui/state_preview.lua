@@ -203,7 +203,7 @@ end
 ---@param command Clodex.CommandSpec
 ---@return string
 local function command_text(command)
-  return (":%s%s  %s"):format(command.name, command_hint(command), command.desc)
+  return ("%s%s"):format(command.name, command_hint(command))
 end
 
 ---@param self Clodex.StatePreview
@@ -478,15 +478,10 @@ function Preview:render_commands()
 
   local block = TextBlock.new()
   for _, command in ipairs(self.commands) do
-    local name = (":%s%s"):format(command.name, command_hint(command))
     local text = command_text(command)
-    local extmarks = {
-      Extmark.inline(0, 0, #name, "ClodexStateCommandName"),
-    }
-    if #text > #name then
-      extmarks[#extmarks + 1] = Extmark.inline(0, #name, #text, "ClodexStateCommandHint")
-    end
-    block:append_line(text, extmarks)
+    block:append_line(text, {
+      Extmark.inline(0, 0, #text, "ClodexStateCommandName"),
+    })
   end
 
   if block:is_empty() then

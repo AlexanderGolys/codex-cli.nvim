@@ -61,7 +61,7 @@ function Extmark.line(row, hl_group, priority, opts)
     hl_eol = true,
     line_hl_group = hl_group,
   }, opts or {})
-  return Extmark.new(Extmark.coord(row, 0), Extmark.coord(row + 1, 0), nil, priority, line_opts)
+  return Extmark.new(Extmark.coord(row, 0), Extmark.coord(row, 0), nil, priority, line_opts)
 end
 
 ---@param start_row integer

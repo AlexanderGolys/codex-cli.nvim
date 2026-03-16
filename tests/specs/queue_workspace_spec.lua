@@ -3,6 +3,17 @@ describe("clodex.ui.queue_workspace", function()
     local original_select
     local confirm_callbacks
 
+    local function extmark_rows(buf, hl_group)
+        local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
+        local rows = {}
+        for _, mark in ipairs(marks) do
+            if mark[4].line_hl_group == hl_group then
+                rows[#rows + 1] = mark[2]
+            end
+        end
+        return rows
+    end
+
     before_each(function()
         package.loaded["clodex.ui.queue_workspace"] = nil
         original_select = package.loaded["clodex.ui.select"]
@@ -158,6 +169,69 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(item.id, deleted_item_id)
     end)
 
+    it("blocks insert-mode entry keys without shadowing queue actions", function()
+        local workspace = {
+            project_buf = vim.api.nvim_create_buf(false, true),
+            queue_buf = vim.api.nvim_create_buf(false, true),
+            footer_buf = vim.api.nvim_create_buf(false, true),
+            projects = {},
+            queue_index = 1,
+            focus = "projects",
+            app = {},
+            selected_project = function()
+                return nil
+            end,
+            selected_queue_item = function()
+                return nil
+            end,
+            close = function() end,
+            open = function() end,
+            refresh = function() end,
+            set_focus = function() end,
+            move_selection = function() end,
+            open_selected_project = function() end,
+            set_current_project = function() end,
+            activate_selected_project = function() end,
+            deactivate_selected_project = function() end,
+            add_todo = function() end,
+            delete_project = function() end,
+            prompt_project_search = function() end,
+            clear_project_search = function() end,
+            prompt_queue_search = function() end,
+            clear_queue_search = function() end,
+            edit_queue_item = function() end,
+            implement_queue_item = function() end,
+            move_queue_item = function() end,
+            move_queue_item_back = function() end,
+            move_queue_item_to_project = function() end,
+            move_queue_item_to_adjacent_project = function() end,
+            delete_queue_item = function() end,
+        }
+
+        Workspace.attach_keymaps(workspace)
+
+        vim.api.nvim_win_set_buf(0, workspace.project_buf)
+        for _, lhs in ipairs({ "i", "I", "o", "O", "R" }) do
+            assert.is_not.equal("", vim.fn.maparg(lhs, "n", false, true).lhs)
+        end
+
+        vim.api.nvim_win_set_buf(0, workspace.queue_buf)
+        assert.are.equal("i", vim.fn.maparg("i", "n", false, true).lhs)
+        assert.are.equal("/", vim.fn.maparg("/", "n", false, true).lhs)
+        assert.is_not.equal("", vim.fn.maparg("<BS>", "n", false, true).lhs)
+        for _, lhs in ipairs({ "I", "o", "O", "R" }) do
+            assert.is_not.equal("", vim.fn.maparg(lhs, "n", false, true).lhs)
+        end
+
+        vim.api.nvim_win_set_buf(0, workspace.footer_buf)
+        assert.are.equal("i", vim.fn.maparg("i", "n", false, true).lhs)
+        assert.are.equal("/", vim.fn.maparg("/", "n", false, true).lhs)
+        assert.is_not.equal("", vim.fn.maparg("<BS>", "n", false, true).lhs)
+        for _, lhs in ipairs({ "I", "o", "O", "R" }) do
+            assert.is_not.equal("", vim.fn.maparg(lhs, "n", false, true).lhs)
+        end
+    end)
+
     it("keeps the workspace open while queue deletion confirmation is shown", function()
         local project = {
             name = "Test Project",
@@ -211,6 +285,397 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(item.id, deleted_item_id)
         assert.are.equal(1, workspace.queue_index)
         assert.are.equal("queue", workspace.focus)
+    end)
+
+    it("moves the queue selection highlight when keyboard navigation changes the selected item", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local items = {
+            {
+                id = "item-1",
+                title = "First prompt",
+                kind = "todo",
+                prompt = "First prompt\n\nPreview line",
+            },
+            {
+                id = "item-2",
+                title = "Second prompt",
+                kind = "todo",
+                prompt = "Second prompt\n\nAnother preview",
+            },
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = #items,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = items,
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.focus = "queue"
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 80,
+            height = 20,
+            style = "minimal",
+        })
+
+        workspace:render_queue()
+
+        local initial_rows = extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive")
+
+        workspace:move_selection(1)
+
+        local moved_rows = extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive")
+
+        assert.are.same({ 1, 2 }, initial_rows)
+        assert.are.same({ 3, 4 }, moved_rows)
+
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("uses darker selection highlights for the focused picker", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local items = {
+            {
+                id = "item-1",
+                title = "First prompt",
+                kind = "todo",
+                prompt = "First prompt\n\nPreview line",
+            },
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {
+                    active_project_root = project.root,
+                }
+            end,
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = #items,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = items,
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.focus = "queue"
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 42,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+
+        workspace:render_projects()
+        workspace:render_queue()
+        workspace:update_window_highlights()
+
+        assert.are.same({ 0, 1, 2 }, extmark_rows(workspace.project_buf, "ClodexQueueSelectionInactive"))
+        assert.are.same({ 1, 2 }, extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive"))
+        assert.is_truthy(vim.wo[workspace.project_win].winhl:find("Normal:ClodexQueueFocusInactive", 1, true))
+        assert.is_truthy(vim.wo[workspace.project_win].winhl:find("NormalFloat:ClodexQueueFocusInactive", 1, true))
+        assert.is_truthy(vim.wo[workspace.queue_win].winhl:find("Normal:ClodexQueueFocusActive", 1, true))
+        assert.is_truthy(vim.wo[workspace.queue_win].winhl:find("NormalFloat:ClodexQueueFocusActive", 1, true))
+
+        vim.api.nvim_win_close(workspace.project_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("filters queue items by prompt search text", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local items = {
+            {
+                id = "item-1",
+                title = "Fix parser",
+                details = "Adjust token handling",
+                kind = "todo",
+                prompt = "Fix parser\n\nAdjust token handling",
+            },
+            {
+                id = "item-2",
+                title = "Update docs",
+                details = "Document queue search",
+                kind = "todo",
+                prompt = "Update docs\n\nDocument queue search",
+            },
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = #items,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = items,
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.queue_search = "token"
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 80,
+            height = 20,
+            style = "minimal",
+        })
+
+        workspace:render_queue()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
+        assert.are.same({
+            "Filter: token",
+            "",
+            "Planned (1)",
+            "  Fix parser",
+            "    Adjust token handling",
+            "",
+        }, lines)
+
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("shows the filtered empty state when no prompts match", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 1,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {
+                            {
+                                id = "item-1",
+                                title = "Fix parser",
+                                details = "Adjust token handling",
+                                kind = "todo",
+                                prompt = "Fix parser\n\nAdjust token handling",
+                            },
+                        },
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.queue_search = "missing"
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 80,
+            height = 20,
+            style = "minimal",
+        })
+
+        workspace:render_queue()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
+        assert.are.same({
+            "Filter: missing",
+            "",
+            "No prompts match the current filter",
+            "",
+            "Press / to change the filter or Backspace to clear it",
+        }, lines)
+
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("shows implemented commit ids in the prompt preview", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 1,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {
+                            {
+                                id = "item-1",
+                                title = "Fix parser",
+                                details = "Adjust token handling",
+                                prompt = "Fix parser\n\nAdjust token handling",
+                                kind = "todo",
+                                history_commit = "abc1234",
+                            },
+                        },
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 80,
+            height = 20,
+            style = "minimal",
+        })
+
+        workspace:render_queue()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
+        assert.are.same({
+            "Implemented (1)",
+            "  Fix parser  [abc1234]",
+            "    Adjust token handling",
+            "    Commit: abc1234",
+            "",
+        }, lines)
+
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("uses the full editor footprint when the workspace is configured fullscreen", function()
+        local original_list_uis = vim.api.nvim_list_uis
+        vim.api.nvim_list_uis = function()
+            return {
+                {
+                    width = 120,
+                    height = 40,
+                },
+            }
+        end
+
+        local workspace = Workspace.new({}, {
+            queue_workspace = {
+                width = 1,
+                height = 1,
+                project_width = 0.3,
+                footer_height = 3,
+                preview_max_lines = 3,
+                fold_preview = true,
+                date_format = "ago",
+            },
+        })
+
+        local row, col, project_width, queue_width, height, footer_height = workspace:layout()
+
+        vim.api.nvim_list_uis = original_list_uis
+
+        assert.are.equal(0, row)
+        assert.are.equal(0, col)
+        assert.are.equal(120, project_width + queue_width + 5)
+        assert.are.equal(40, height + footer_height + 3)
     end)
 
 end)

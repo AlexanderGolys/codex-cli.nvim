@@ -61,4 +61,18 @@ describe("clodex.ui.state_preview", function()
 
         fs.remove(root)
     end)
+
+    it("renders the command pane with bare command names only", function()
+        local preview = Preview.new(Config.new():setup())
+        preview:ensure_buffers()
+
+        preview:render_commands()
+
+        local lines = vim.api.nvim_buf_get_lines(preview.command_buf, 0, -1, false)
+
+        assert.is_true(#lines > 0)
+        assert.is_true(vim.startswith(lines[1], "Clodex"))
+        assert.is_nil(lines[1]:find(":", 1, true))
+        assert.is_nil(lines[1]:find("  ", 1, true))
+    end)
 end)
