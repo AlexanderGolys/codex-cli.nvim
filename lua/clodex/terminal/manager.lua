@@ -319,31 +319,43 @@ function Manager:open_window(session, parent_win)
   return Snacks.win(opts)
 end
 
+---@param win integer
+---@param tabpage number
+---@return boolean
+local function is_tab_local_normal_window(win, tabpage)
+  if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_tabpage(win) ~= tabpage then
+    return false
+  end
+
+  local config = vim.api.nvim_win_get_config(win)
+  return (config.relative or "") == ""
+end
+
 ---@param tabpage number
 ---@param preferred? integer
 ---@return integer?
 local function split_parent_window(tabpage, preferred)
-  if type(preferred) == "number" and vim.api.nvim_win_is_valid(preferred) then
-    local config = vim.api.nvim_win_get_config(preferred)
-    if vim.api.nvim_win_get_tabpage(preferred) == tabpage and (config.relative or "") == "" then
-      return preferred
-    end
+  if type(preferred) == "number" and is_tab_local_normal_window(preferred, tabpage) then
+    return preferred
   end
 
+  local fallback ---@type integer?
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-    if vim.api.nvim_win_is_valid(win) then
-      local config = vim.api.nvim_win_get_config(win)
-      if (config.relative or "") == "" then
+    if is_tab_local_normal_window(win, tabpage) then
+      fallback = fallback or win
+      if vim.bo[vim.api.nvim_win_get_buf(win)].filetype ~= "clodex_terminal" then
         return win
       end
     end
   end
+
+  return fallback
 end
 
 ---@param state Clodex.TabState
 ---@param session Clodex.TerminalSession
 function Manager:show_in_tab(state, session)
-  local parent_win = split_parent_window(state.tabpage, state.window and state.window.win or nil)
+  local parent_win = state:has_visible_window() and state.window.win or nil
   if state:has_visible_window() then
     local previous = state.session_key and self:session_by_key(state.session_key) or nil
     if previous then
@@ -352,6 +364,7 @@ function Manager:show_in_tab(state, session)
     state:hide_window()
   end
 
+  parent_win = split_parent_window(state.tabpage, parent_win)
   local window
   call_in_tabpage(state.tabpage, function()
     window = self:open_window(session, parent_win)
