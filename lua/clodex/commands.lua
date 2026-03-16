@@ -309,12 +309,17 @@ local function resolve_keymap(values, field, definition)
             end
         end
         for option_key, option_value in pairs(value) do
-            if option_key == 'lhs' or option_key == 'key' or option_key == 'mode' or option_key == 'desc' or option_key == 'enabled' or option_key == 'enable' or option_key == 'opts' or type(option_key) == 'number' then
-                goto continue
+            local reserved_key = option_key == 'lhs'
+                or option_key == 'key'
+                or option_key == 'mode'
+                or option_key == 'desc'
+                or option_key == 'enabled'
+                or option_key == 'enable'
+                or option_key == 'opts'
+                or type(option_key) == 'number'
+            if not reserved_key then
+                opts[option_key] = option_value
             end
-
-            opts[option_key] = option_value
-            ::continue::
         end
     else
         return nil
@@ -406,22 +411,19 @@ function M.list_keymaps(values)
     local keymaps = {} ---@type Clodex.KeymapSpec[]
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
         local keymap = resolve_keymap(values, definition.field, definition)
-        if keymap == nil then
-            goto continue
-        end
+        if keymap ~= nil then
+            local mode = keymap.mode
+            if type(mode) == 'table' then
+                mode = table.concat(mode, ',')
+            end
 
-        local mode = keymap.mode
-        if type(mode) == 'table' then
-            mode = table.concat(mode, ',')
+            keymaps[#keymaps + 1] = {
+                context = 'Global',
+                mode = mode,
+                lhs = keymap.lhs,
+                desc = keymap.desc,
+            }
         end
-
-        keymaps[#keymaps + 1] = {
-            context = 'Global',
-            mode = mode,
-            lhs = keymap.lhs,
-            desc = keymap.desc,
-        }
-        ::continue::
     end
     return keymaps
 end
@@ -435,18 +437,15 @@ function M.register_keymaps(values)
 
     for _, definition in ipairs(GLOBAL_KEYMAPS) do
         local keymap = resolve_keymap(values, definition.field, definition)
-        if keymap == nil then
-            goto continue
+        if keymap ~= nil then
+            vim.keymap.set(keymap.mode, keymap.lhs, function()
+                return REQUIRE_CLODEX()[definition.action]()
+            end, keymap.opts)
+            REGISTERED_KEYMAPS[#REGISTERED_KEYMAPS + 1] = {
+                mode = keymap.mode,
+                lhs = keymap.lhs,
+            }
         end
-
-        vim.keymap.set(keymap.mode, keymap.lhs, function()
-            return REQUIRE_CLODEX()[definition.action]()
-        end, keymap.opts)
-        REGISTERED_KEYMAPS[#REGISTERED_KEYMAPS + 1] = {
-            mode = keymap.mode,
-            lhs = keymap.lhs,
-        }
-        ::continue::
     end
 end
 

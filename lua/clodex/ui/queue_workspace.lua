@@ -315,15 +315,12 @@ local function prompt_preview_lines(item, opts)
         if line ~= "" then
             if not skipped_title then
                 skipped_title = true
-                goto continue
-            end
-            if #preview >= max_lines then
+            elseif #preview >= max_lines then
                 remaining = remaining + 1
             else
                 preview[#preview + 1] = "    " .. line
             end
         end
-        ::continue::
     end
 
     if folded and remaining > 0 then
@@ -1241,72 +1238,70 @@ function Workspace:render_queue()
                     items[#items + 1] = item
                 end
             end
-            if not should_render_queue(queue_name, items) then
-                goto continue
-            end
-
-            local header_text, header_marks = queue_header_line(queue_name, #items)
-            self.queue_rows[#self.queue_rows + 1] = {
-                kind = "header",
-                text = header_text,
-                queue = queue_name,
-            }
-            block:append_line(header_text, header_marks)
-
-            for _, item in ipairs(items) do
-                rendered_items = true
-                local suffix = (queue_name == "implemented" or queue_name == "history") and history_suffix(item) or ""
-                local item_text = "  " .. item.title .. suffix
-                local title_text = "  " .. item.title
+            if should_render_queue(queue_name, items) then
+                local header_text, header_marks = queue_header_line(queue_name, #items)
                 self.queue_rows[#self.queue_rows + 1] = {
-                    kind = "item",
-                    text = item_text,
+                    kind = "header",
+                    text = header_text,
                     queue = queue_name,
-                    item = item,
                 }
-                self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
-                local item_extmarks = {
-                    Extmark.inline(0, 0, #title_text, Prompt.title_group(prompt_item_kind(item))),
-                }
-                if #item_text > #title_text then
-                    item_extmarks[#item_extmarks + 1] =
-                        Extmark.inline(0, #title_text, #item_text, "ClodexQueueItemMuted")
-                end
-                block:append_line(item_text, item_extmarks)
+                block:append_line(header_text, header_marks)
 
-                for _, preview in ipairs(prompt_preview_lines(item, {
-                    max_lines = self.config.queue_workspace.preview_max_lines,
-                    fold = self.config.queue_workspace.fold_preview,
-                })) do
+                for _, item in ipairs(items) do
+                    rendered_items = true
+                    local suffix = (queue_name == "implemented" or queue_name == "history") and history_suffix(item)
+                        or ""
+                    local item_text = "  " .. item.title .. suffix
+                    local title_text = "  " .. item.title
                     self.queue_rows[#self.queue_rows + 1] = {
-                        kind = "preview",
-                        text = preview,
+                        kind = "item",
+                        text = item_text,
                         queue = queue_name,
                         item = item,
                     }
-                    block:append_line(preview, {
-                        Extmark.inline(0, 0, #preview, Prompt.preview_group()),
-                    })
-                end
-                for _, preview in ipairs(item_metadata_preview_lines(item)) do
-                    self.queue_rows[#self.queue_rows + 1] = {
-                        kind = "preview",
-                        text = preview,
-                        queue = queue_name,
-                        item = item,
+                    self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
+                    local item_extmarks = {
+                        Extmark.inline(0, 0, #title_text, Prompt.title_group(prompt_item_kind(item))),
                     }
-                    block:append_line(preview, {
-                        Extmark.inline(0, 0, #preview, "ClodexQueueItemMuted"),
-                    })
+                    if #item_text > #title_text then
+                        item_extmarks[#item_extmarks + 1] =
+                            Extmark.inline(0, #title_text, #item_text, "ClodexQueueItemMuted")
+                    end
+                    block:append_line(item_text, item_extmarks)
+
+                    for _, preview in ipairs(prompt_preview_lines(item, {
+                        max_lines = self.config.queue_workspace.preview_max_lines,
+                        fold = self.config.queue_workspace.fold_preview,
+                    })) do
+                        self.queue_rows[#self.queue_rows + 1] = {
+                            kind = "preview",
+                            text = preview,
+                            queue = queue_name,
+                            item = item,
+                        }
+                        block:append_line(preview, {
+                            Extmark.inline(0, 0, #preview, Prompt.preview_group()),
+                        })
+                    end
+                    for _, preview in ipairs(item_metadata_preview_lines(item)) do
+                        self.queue_rows[#self.queue_rows + 1] = {
+                            kind = "preview",
+                            text = preview,
+                            queue = queue_name,
+                            item = item,
+                        }
+                        block:append_line(preview, {
+                            Extmark.inline(0, 0, #preview, "ClodexQueueItemMuted"),
+                        })
+                    end
                 end
+
+                block:append_line("")
+                self.queue_rows[#self.queue_rows + 1] = {
+                    kind = "header",
+                    text = "",
+                }
             end
-
-            block:append_line("")
-            self.queue_rows[#self.queue_rows + 1] = {
-                kind = "header",
-                text = "",
-            }
-            ::continue::
         end
 
         if not rendered_items then
