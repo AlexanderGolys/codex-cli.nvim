@@ -30,7 +30,7 @@ describe("clodex.project.details", function()
         end
     end)
 
-    it("keeps an other bucket for filtered low-share languages", function()
+    it("returns dominant languages and keeps core-language focus", function()
         for index = 1, 10 do
             write_file(fs.join(root, ("module_%d.lua"):format(index)), "local value = 1\nreturn value\n")
         end
@@ -44,10 +44,10 @@ describe("clodex.project.details", function()
             root = root,
         })
 
-        assert.are.same({ "lua", "sh", "other" }, vim.tbl_map(function(language)
+        assert.are.same({ "lua", "sh" }, vim.tbl_map(function(language)
             return language.name
         end, snapshot.languages))
-        assert.are.same({ 71, 14, 14 }, vim.tbl_map(function(language)
+        assert.are.same({ 83, 17 }, vim.tbl_map(function(language)
             return language.percent
         end, snapshot.languages))
     end)
@@ -70,5 +70,17 @@ describe("clodex.project.details", function()
             return language.percent
         end, snapshot.languages))
         assert.is_true(snapshot.avg_lines_per_file ~= nil)
+    end)
+
+    it("counts average lines from unknown-filetype text files", function()
+        write_file(fs.join(root, "note.md"), "title\nbody\n")
+        write_file(fs.join(root, "changelog.txt"), "line\n")
+
+        local snapshot = details:compute({
+            root = root,
+        })
+
+        assert.are.same({}, snapshot.languages)
+        assert.are.equal(1.5, snapshot.avg_lines_per_file)
     end)
 end)

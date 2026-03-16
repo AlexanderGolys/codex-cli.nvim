@@ -392,41 +392,8 @@ local function format_timestamp(config, timestamp)
     return os.date(config.queue_workspace.date_format or "%H:%M %d.%m.%Y", timestamp)
 end
 
-local LANGUAGE_ICONS = {
-    c = "",
-    cpp = "",
-    css = "",
-    docker = "",
-    go = "",
-    html = "",
-    java = "",
-    js = "",
-    jsx = "",
-    json = "",
-    lua = "",
-    make = "",
-    py = "",
-    rb = "",
-    rs = "",
-    sh = "",
-    sql = "",
-    toml = "",
-    ts = "",
-    tsx = "",
-    vim = "",
-    xml = "󰗀",
-    yaml = "",
-}
-
----@param language string
----@return string
-local function format_language_name(language)
-    local icon = LANGUAGE_ICONS[language]
-    if not icon then
-        return language
-    end
-    return ("%s %s"):format(icon, language)
-end
+local LanguageProfile = require("clodex.project.language")
+local language_profile = LanguageProfile.new()
 
 ---@param languages Clodex.ProjectDetails.LanguageStat[]
 ---@return string
@@ -441,7 +408,7 @@ local function format_languages(languages)
         if index > max_items then
             break
         end
-        parts[#parts + 1] = ("%s %d%%"):format(format_language_name(language.name), language.percent)
+        parts[#parts + 1] = ("%s %d%%"):format(language_profile:format_label(language.name), language.percent)
     end
     if #languages > max_items then
         parts[#parts + 1] = ("+%d"):format(#languages - max_items)

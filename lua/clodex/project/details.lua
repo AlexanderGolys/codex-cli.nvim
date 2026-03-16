@@ -1,5 +1,8 @@
 local fs = require("clodex.util.fs")
 local git = require("clodex.util.git")
+local LanguageProfile = require("clodex.project.language")
+
+local language_profile = LanguageProfile.new()
 
 --- Defines the Clodex.ProjectDetails.LanguageStat type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -37,9 +40,6 @@ local METADATA_VERSION = 1
 local METADATA_DIRNAME = "project-details"
 local MAX_SCANNED_FILES = 5000
 local MAX_COUNTED_FILE_BYTES = 1024 * 1024
-local DOMINANT_LANGUAGE_COVERAGE_PERCENT = 85
-local DOMINANT_LANGUAGE_MIN_PERCENT = 10
-local OTHER_LANGUAGE_NAME = "other"
 local EXCLUDED_DIRS = {
   [".git"] = true,
   [".hg"] = true,
@@ -92,94 +92,6 @@ local function write_metadata(config, project_root, metadata)
   metadata.version = METADATA_VERSION
   fs.write_json(metadata_path(config, project_root), metadata)
 end
-local PROJECT_LANGUAGE_FILETYPES = {
-  c = "c",
-  cpp = "cpp",
-  css = "css",
-  dockerfile = "docker",
-  go = "go",
-  html = "html",
-  java = "java",
-  javascript = "js",
-  javascriptreact = "jsx",
-  json = "json",
-  jsonc = "jsonc",
-  lua = "lua",
-  make = "make",
-  python = "py",
-  ruby = "rb",
-  rust = "rs",
-  sh = "sh",
-  sql = "sql",
-  toml = "toml",
-  typescript = "ts",
-  typescriptreact = "tsx",
-  vim = "vim",
-  xml = "xml",
-  yaml = "yaml",
-}
-
----@param filetype? string
----@return string?
-local function project_language(filetype)
-  if not filetype or filetype == "" then
-    return nil
-  end
-  return PROJECT_LANGUAGE_FILETYPES[filetype]
-end
-
----@param language_totals table<string, integer>
----@param language_file_count integer
----@return Clodex.ProjectDetails.LanguageStat[]
-local function dominant_languages(language_totals, language_file_count)
-  local languages = {} ---@type Clodex.ProjectDetails.LanguageStat[]
-  for name, count in pairs(language_totals) do
-    languages[#languages + 1] = {
-      name = name,
-      files = count,
-      percent = language_file_count > 0 and math.floor((count * 100 / language_file_count) + 0.5) or 0,
-    }
-  end
-
-  table.sort(languages, function(left, right)
-    if left.files ~= right.files then
-      return left.files > right.files
-    end
-    return left.name < right.name
-  end)
-
-  if #languages <= 1 then
-    return languages
-  end
-
-  local dominant = {} ---@type Clodex.ProjectDetails.LanguageStat[]
-  local omitted_files = 0
-  local omitted_percent = 0
-  local coverage = 0
-  for index, language in ipairs(languages) do
-    if index > 1
-      and language.percent < DOMINANT_LANGUAGE_MIN_PERCENT
-      and coverage >= DOMINANT_LANGUAGE_COVERAGE_PERCENT
-    then
-      omitted_files = omitted_files + language.files
-      omitted_percent = omitted_percent + language.percent
-    else
-      dominant[#dominant + 1] = language
-      coverage = coverage + language.percent
-    end
-  end
-
-  if omitted_files > 0 and omitted_percent > 0 then
-    dominant[#dominant + 1] = {
-      name = OTHER_LANGUAGE_NAME,
-      files = omitted_files,
-      percent = omitted_percent,
-    }
-  end
-
-  return dominant
-end
-
 ---@param config Clodex.Config.Values
 ---@return Clodex.ProjectDetails
 function Details.new(config)
@@ -297,7 +209,6 @@ function Details:compute(project)
   local files = list_files(project.root, MAX_SCANNED_FILES)
   local file_count = 0
   local language_totals = {} ---@type table<string, integer>
-  local language_file_count = 0
   local line_total = 0
   local line_file_count = 0
   local last_file_modified_at ---@type integer?
@@ -314,21 +225,20 @@ function Details:compute(project)
       end
 
       local filetype = vim.filetype.match({ filename = path })
-      local language = project_language(filetype)
+      local language = language_profile:normalize_filetype(filetype)
       if language then
         language_totals[language] = (language_totals[language] or 0) + 1
-        language_file_count = language_file_count + 1
       end
 
       local line_count, is_text = line_count_for_file(path, stat)
-      if is_text and line_count ~= nil and language then
+      if is_text and line_count ~= nil then
         line_total = line_total + line_count
         line_file_count = line_file_count + 1
       end
     end
   end
 
-  local languages = dominant_languages(language_totals, language_file_count)
+  local languages = language_profile:dominant_languages(language_totals)
 
   local metadata = read_metadata(self.config, project.root)
   return {
