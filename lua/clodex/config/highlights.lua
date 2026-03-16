@@ -137,6 +137,7 @@ local M = {
     },
     ClodexPromptEditorHint = {
       fg = { from = { "Comment", "LineNr" } },
+      bg = { from = { "ColorColumn", "Visual", "Pmenu" }, attr = "bg" },
     },
     ClodexPromptEditorKey = {
       fg = { from = { "Identifier", "Special" } },

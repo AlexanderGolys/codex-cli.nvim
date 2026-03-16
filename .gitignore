@@ -34,3 +34,10 @@ Thumbs.db
 **.json
 STYLE_GUIDELINES.md
 AGENTS.md
+.clodex/
+.codex-cli/
+.state/
+/bin/clodex-nvim-minimal
+/bin/clodex-nvim-test
+/bin/install-clodex-nvim-tui
+/private/

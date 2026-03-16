@@ -4,18 +4,38 @@ local SnacksSelect = require("snacks.picker.select")
 local PromptComposer = require("clodex.prompt.composer")
 local PromptContext = require("clodex.prompt.context")
 local ui_win = require("clodex.ui.win")
+local unpack_values = require("clodex.util").unpack_values
 
-local PROMPT_EDITOR_MIN_HEIGHT = 6
-local PROMPT_EDITOR_MIN_WIDTH = 56
+local PROMPT_EDITOR_MIN_HEIGHT = 8
+local PROMPT_EDITOR_MIN_WIDTH = 72
 local PROMPT_EDITOR_MAX_MARGIN = 12
-local PROMPT_EDITOR_WIDTH_PADDING = 6
+local PROMPT_EDITOR_WIDTH_PADDING = 10
 local PROMPT_EDITOR_HEIGHT_MARGIN = 10
 local PROMPT_EDITOR_TITLE_HEIGHT = 1
-local PROMPT_EDITOR_WINDOW_GAP = 1
+local PROMPT_EDITOR_WINDOW_GAP = 2
 local PROMPT_EDITOR_BORDER_ROWS = 2
 local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
 local PROMPT_EDITOR_BACKDROP = 40
+local PROMPT_EDITOR_HINT_HEIGHT = 2
+local PROMPT_EDITOR_HINT_LINES = {
+  "  <CR>/<Down>/<Tab> move   <S-Tab> back   <C-s> save   <C-q> queue",
+  "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",
+}
+local PROMPT_EDITOR_HINT_KEYS = {
+  "<CR>",
+  "<Down>",
+  "<Tab>",
+  "<S-Tab>",
+  "<C-s>",
+  "<C-q>",
+  "<C-v>",
+  "&",
+  "<C-x>",
+  "x",
+  "q",
+  "Esc",
+}
 local active_input
 
 ---@param input? snacks.win
@@ -251,14 +271,52 @@ local function insert_text(buf, win, text)
 end
 
 ---@param win integer
-local function style_prompt_editor(win)
+---@param normal_group string?
+local function style_prompt_editor(win, normal_group)
+  normal_group = normal_group or "ClodexPromptEditorNormal"
   vim.wo[win].winhl = table.concat({
-    "NormalFloat:ClodexPromptEditorNormal",
+    ("NormalFloat:%s"):format(normal_group),
     "FloatBorder:ClodexPromptEditorBorder",
     "FloatTitle:ClodexPromptEditorTitle",
-    "FloatFooter:ClodexPromptEditorHint",
   }, ",")
   vim.wo[win].winblend = 0
+end
+
+---@param buf integer
+---@param lines string[]
+local function render_hint_lines(buf, lines)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  for line_index, line in ipairs(lines) do
+    vim.api.nvim_buf_add_highlight(
+      buf,
+      -1,
+      "ClodexPromptEditorHint",
+      line_index - 1,
+      0,
+      -1
+    )
+
+    for _, key in ipairs(PROMPT_EDITOR_HINT_KEYS) do
+      local start = 1
+      while true do
+        local from = line:find(key, start, true)
+        if not from then
+          break
+        end
+        vim.api.nvim_buf_add_highlight(
+          buf,
+          -1,
+          "ClodexPromptEditorKey",
+          line_index - 1,
+          from - 1,
+          from + #key - 1
+        )
+        start = from + #key
+      end
+    end
+  end
+  vim.bo[buf].modifiable = false
 end
 
 ---@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string? }
@@ -279,14 +337,16 @@ function M.multiline_input(opts, on_confirm)
   local min_height = math.max(opts.min_height or PROMPT_EDITOR_MIN_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT)
   local max_height = math.max(editor_height - PROMPT_EDITOR_HEIGHT_MARGIN, min_height)
   local width = math.min(
-    math.max(longest_width({ title, unpack(detail_lines) }) + PROMPT_EDITOR_WIDTH_PADDING, PROMPT_EDITOR_MIN_WIDTH),
+    math.max(
+      longest_width(vim.tbl_flatten({ title, unpack_values(detail_lines), PROMPT_EDITOR_HINT_LINES }))
+        + PROMPT_EDITOR_WIDTH_PADDING,
+      PROMPT_EDITOR_MIN_WIDTH
+    ),
     math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
   )
-  local title_footer = " Start with a short title, then add the implementation details below. "
-  local body_footer = " Enter details   Ctrl-S save   Ctrl-Q queue+exec   Ctrl-V paste image   Esc cancel   & editor context   Ctrl-X prompt shortcut "
-
   local title_buf = vim.api.nvim_create_buf(false, true)
   local body_buf = vim.api.nvim_create_buf(false, true)
+  local hint_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[title_buf].buftype = "nofile"
   vim.bo[title_buf].bufhidden = "wipe"
   vim.bo[title_buf].swapfile = false
@@ -296,6 +356,10 @@ function M.multiline_input(opts, on_confirm)
   vim.bo[body_buf].swapfile = false
   vim.bo[body_buf].filetype = "markdown"
   vim.bo[body_buf].modifiable = true
+  vim.bo[hint_buf].buftype = "nofile"
+  vim.bo[hint_buf].bufhidden = "wipe"
+  vim.bo[hint_buf].swapfile = false
+  vim.bo[hint_buf].modifiable = false
 
   --- Calculates current required popup height from buffer content.
   --- The value is shared by size callback and repositioning math.
@@ -307,7 +371,18 @@ function M.multiline_input(opts, on_confirm)
   local function total_height()
     return PROMPT_EDITOR_TITLE_HEIGHT
       + calc_height()
+      + PROMPT_EDITOR_HINT_HEIGHT
       + (PROMPT_EDITOR_BORDER_ROWS * 2)
+      + (PROMPT_EDITOR_WINDOW_GAP * 2)
+  end
+
+  local function hint_row()
+    return math.max(math.floor((editor_height - total_height()) / 2), 1)
+      + PROMPT_EDITOR_TITLE_HEIGHT
+      + PROMPT_EDITOR_BORDER_ROWS
+      + PROMPT_EDITOR_WINDOW_GAP
+      + PROMPT_EDITOR_BORDER_ROWS
+      + calc_height()
       + PROMPT_EDITOR_WINDOW_GAP
   end
 
@@ -325,8 +400,6 @@ function M.multiline_input(opts, on_confirm)
     border = "rounded",
     title = (" %s "):format(opts.prompt),
     title_pos = "center",
-    footer = title_footer,
-    footer_pos = "center",
     width = width,
     height = PROMPT_EDITOR_TITLE_HEIGHT,
     row = function()
@@ -357,8 +430,6 @@ function M.multiline_input(opts, on_confirm)
     border = "rounded",
     title = " Details ",
     title_pos = "center",
-    footer = body_footer,
-    footer_pos = "center",
     width = width,
     height = function()
       return calc_height()
@@ -390,23 +461,57 @@ function M.multiline_input(opts, on_confirm)
     },
     zindex = PROMPT_EDITOR_ZINDEX,
   })
+  local hint_win = ui_win.open({
+    buf = hint_buf,
+    enter = false,
+    backdrop = PROMPT_EDITOR_BACKDROP,
+    border = "none",
+    width = width,
+    height = PROMPT_EDITOR_HINT_HEIGHT,
+    row = function()
+      return hint_row()
+    end,
+    col = function()
+      return math.max(math.floor((editor_width - width) / 2), 1)
+    end,
+    wo = {
+      wrap = false,
+      linebreak = false,
+      breakindent = false,
+      number = false,
+      relativenumber = false,
+      signcolumn = "no",
+      foldcolumn = "0",
+      cursorline = false,
+      spell = false,
+    },
+    bo = {
+      buftype = "nofile",
+      modifiable = false,
+    },
+    zindex = PROMPT_EDITOR_ZINDEX,
+  })
 
   --- Updates floating window dimensions after every content change.
   --- This keeps the edit popup responsive without manual user action.
   local function resize()
-    if not title_win:valid() or not body_win:valid() then
+    if not title_win:valid() or not body_win:valid() or not hint_win:valid() then
       return
     end
     local next_total_height = total_height()
     local next_body_height = calc_height()
+    local next_hint_row = hint_row()
     if title_win.opts._clodex_total_height == next_total_height
-      and body_win.opts._clodex_height == next_body_height then
+      and body_win.opts._clodex_height == next_body_height
+      and hint_win.opts._clodex_hint_row == next_hint_row then
       return
     end
     title_win.opts._clodex_total_height = next_total_height
     body_win.opts._clodex_height = next_body_height
+    hint_win.opts._clodex_hint_row = next_hint_row
     title_win:update()
     body_win:update()
+    hint_win:update()
   end
 
   local function focus_title()
@@ -439,6 +544,9 @@ function M.multiline_input(opts, on_confirm)
     if title_win:valid() then
       title_win:close()
     end
+    if hint_win:valid() then
+      hint_win:close()
+    end
     vim.schedule(function()
       on_confirm(value, action or "save")
     end)
@@ -446,8 +554,20 @@ function M.multiline_input(opts, on_confirm)
 
   vim.api.nvim_buf_set_lines(title_buf, 0, -1, false, { title })
   vim.api.nvim_buf_set_lines(body_buf, 0, -1, false, detail_lines)
+  render_hint_lines(hint_buf, PROMPT_EDITOR_HINT_LINES)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
+  style_prompt_editor(hint_win.win, "ClodexPromptEditorHint")
+
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = hint_buf,
+    callback = function()
+      if title_win:valid() and body_win:valid() then
+        body_win:close()
+        title_win:close()
+      end
+    end,
+  })
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = title_buf,
@@ -664,6 +784,13 @@ function M.multiline_input(opts, on_confirm)
   vim.keymap.set("n", "<Esc>", function()
     close(nil)
   end, { buffer = body_buf, silent = true })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    once = true,
+    pattern = tostring(hint_win.win),
+    callback = function()
+      close(nil)
+    end,
+  })
   vim.api.nvim_create_autocmd("WinClosed", {
     once = true,
     pattern = tostring(title_win.win),

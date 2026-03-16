@@ -32,6 +32,30 @@ local function random_bytes(count)
     return table.concat(chars)
 end
 
+local function compatibility_unpack(values, start_idx, end_idx)
+    if table.unpack ~= nil then
+        return table.unpack(values, start_idx, end_idx)
+    end
+    if unpack ~= nil then
+        return unpack(values, start_idx, end_idx)
+    end
+
+    start_idx = start_idx or 1
+    end_idx = end_idx or #values
+    if end_idx < start_idx then
+        return nil
+    end
+
+    local function unpack_recursive(index)
+        if index > end_idx then
+            return nil
+        end
+        return values[index], unpack_recursive(index + 1)
+    end
+
+    return unpack_recursive(start_idx)
+end
+
 --- Generates an opaque RFC 4122 version 4 UUID string.
 ---@return string
 function M.uuid_v4()
@@ -41,8 +65,16 @@ function M.uuid_v4()
 
     return string.format(
         "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-        table.unpack(bytes)
+        compatibility_unpack(bytes)
     )
+end
+
+---@param values string[]|number[]
+---@param start_idx? integer
+---@param end_idx? integer
+---@return any
+function M.unpack_values(values, start_idx, end_idx)
+    return compatibility_unpack(values, start_idx, end_idx)
 end
 
 return M

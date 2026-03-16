@@ -1,6 +1,6 @@
 local fs = require("clodex.util.fs")
 local git = require("clodex.util.git")
-local unpack_values = table.unpack or unpack
+local unpack_values = require("clodex.util").unpack_values
 
 --- Defines one expandable editor-context token.
 --- These records drive the `&` completion list in prompt composition buffers.
@@ -196,6 +196,9 @@ local function current_buffer_diags(context)
 end
 
 local function current_line_diags(context)
+  if context.buf == nil or context.cursor_row == nil then
+    return {}
+  end
   return vim.diagnostic.get(context.buf, { lnum = context.cursor_row - 1 })
 end
 
@@ -302,10 +305,16 @@ function M.expand_token(token, context)
   end
 
   if token == "&file" then
+    if context.relative_path == nil then
+      return nil
+    end
     return ("@{%s}"):format(context.relative_path)
   end
 
   if token == "&line" then
+    if context.relative_path == nil or context.cursor_row == nil then
+      return nil
+    end
     return ("@{%s}: line %d"):format(context.relative_path, context.cursor_row)
   end
 
@@ -324,6 +333,9 @@ function M.expand_token(token, context)
   end
 
   if token == "&visible_buff" then
+    if context.visible_start == nil or context.visible_end == nil then
+      return nil
+    end
     return ("@{%s}: lines %d-%d are currently visible in the editor"):format(
       context.relative_path,
       context.visible_start,
@@ -332,6 +344,9 @@ function M.expand_token(token, context)
   end
 
   if token == "&word" and context.current_word ~= "" then
+    if context.relative_path == nil or context.cursor_row == nil then
+      return nil
+    end
     return ("%s under the cursor in @{%s}: line %d"):format(
       quote(context.current_word),
       context.relative_path,
@@ -340,15 +355,24 @@ function M.expand_token(token, context)
   end
 
   if token == "&diagnostic" then
+    if context.buf == nil or context.cursor_row == nil then
+      return nil
+    end
     return format_diagnostics(current_line_diags(context), context.file_path, context.project_root)
   end
 
   if token == "&buff_diagnostics" then
+    if context.buf == nil then
+      return nil
+    end
     return format_diagnostics(current_buffer_diags(context), context.file_path, context.project_root)
       or ("No Neovim diagnostics are currently reported for @{%s}."):format(context.relative_path)
   end
 
   if token == "&all_diagnostics" then
+    if context.project_root == nil then
+      return nil
+    end
     return format_diagnostics(project_diagnostics(context), context.file_path, context.project_root)
       or ("No Neovim diagnostics are currently reported under project root `%s`."):format(context.project_root)
   end

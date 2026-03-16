@@ -57,6 +57,10 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.Session
 ---@field persist_current_project boolean
 
+--- Manual project-history tracking for direct CLI conversations outside queued prompts.
+---@class Clodex.Config.ManualHistory
+---@field model_instructions_file string # Project-local file passed to Codex via `model_instructions_file`; empty disables generation.
+
 --- Runtime-config data structure consumed across managers and UI modules.
 ---@class Clodex.Config.Values
 ---@field codex_cmd string[]
@@ -69,6 +73,7 @@ local fs = require("clodex.util.fs")
 ---@field highlights Clodex.Config.Highlights
 ---@field prompt_execution Clodex.Config.PromptExecution
 ---@field session Clodex.Config.Session
+---@field manual_history Clodex.Config.ManualHistory
 
 --- Root config object exported by `require("clodex.config")`.
 ---@class Clodex.Config
@@ -134,6 +139,9 @@ local function defaults()
         },
         session = {
             persist_current_project = true,
+        },
+        manual_history = {
+            model_instructions_file = "",
         },
     }
 end

@@ -1,4 +1,5 @@
 local fs = require("clodex.util.fs")
+local ModelInstructions = require("clodex.project.model_instructions")
 local Session = require("clodex.terminal.session")
 local TerminalUi = require("clodex.terminal.ui")
 
@@ -22,10 +23,18 @@ local TerminalUi = require("clodex.terminal.ui")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.TerminalManager
 ---@field config Clodex.Config.Values
+---@field model_instructions Clodex.ProjectModelInstructions
 ---@field project_sessions table<string, Clodex.TerminalSession>
 ---@field free_session? Clodex.TerminalSession
 local Manager = {}
 Manager.__index = Manager
+
+---@param session Clodex.TerminalSession
+---@param spec Clodex.TerminalSession.Spec
+---@return boolean
+local function session_requires_restart(session, spec)
+  return session:is_running() and not vim.deep_equal(session.cmd, spec.cmd)
+end
 
 ---@param tabpage number
 ---@param fn fun()
@@ -62,6 +71,7 @@ end
 function Manager.new(config)
   local self = setmetatable({}, Manager)
   self.config = config
+  self.model_instructions = ModelInstructions.new(config)
   self.project_sessions = {}
   return self
 end
@@ -69,6 +79,7 @@ end
 ---@param config Clodex.Config.Values
 function Manager:update_config(config)
   self.config = config
+  self.model_instructions:update_config(config)
 end
 
 ---@param project Clodex.Project
@@ -89,12 +100,14 @@ end
 ---@return Clodex.TerminalSession.Spec
 function Manager:session_spec(target)
   if target.kind == "project" then
+    local cmd = vim.deepcopy(self.config.codex_cmd)
+    vim.list_extend(cmd, self.model_instructions:codex_args(target.project))
     return {
       key = target.project.root,
       kind = "project",
       cwd = target.project.root,
       title = string.format("Clodex: %s", target.project.name),
-      cmd = vim.deepcopy(self.config.codex_cmd),
+      cmd = cmd,
       project_root = target.project.root,
       header_enabled = false,
     }
@@ -117,10 +130,14 @@ function Manager:promote_free_session(project)
     return self.project_sessions[project.root]
   end
 
+  local session = self.free_session
   local spec = self:session_spec({ kind = "project", project = project })
-  spec.cwd = self.free_session.cwd
-  self.free_session:update_identity(spec)
-  self.project_sessions[project.root] = self.free_session
+  spec.cwd = session.cwd
+  if session_requires_restart(session, spec) then
+    session:destroy()
+  end
+  session:update_identity(spec)
+  self.project_sessions[project.root] = session
   self.free_session = nil
   return self.project_sessions[project.root]
 end

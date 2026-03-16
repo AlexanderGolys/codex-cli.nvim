@@ -2,11 +2,13 @@ local History = require("clodex.history")
 local fs = require("clodex.util.fs")
 local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
+local ModelInstructions = require("clodex.project.model_instructions")
 
 ---@class Clodex.ExecutionRunner
 ---@field app Clodex.App
 ---@field config Clodex.Config.Values
 ---@field active table<string, vim.SystemObj>
+---@field model_instructions Clodex.ProjectModelInstructions
 local Runner = {}
 Runner.__index = Runner
 
@@ -69,14 +71,13 @@ local function response_summary(message)
     return summary ~= "" and summary or nil
 end
 
----@param config Clodex.Config.Values
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@param schema_path string
 ---@param output_path string
 ---@return string[]
-local function build_command(config, project, item, schema_path, output_path)
-    local cmd = vim.deepcopy(config.codex_cmd)
+local function build_command(project, item, schema_path, output_path)
+    local cmd = {}
     cmd[#cmd + 1] = "exec"
     cmd[#cmd + 1] = "--cd"
     cmd[#cmd + 1] = project.root
@@ -103,12 +104,14 @@ function Runner.new(app, config)
         app = app,
         config = config,
         active = {},
+        model_instructions = ModelInstructions.new(config),
     }, Runner)
 end
 
 ---@param config Clodex.Config.Values
 function Runner:update_config(config)
     self.config = config
+    self.model_instructions:update_config(config)
 end
 
 ---@param project Clodex.Project
@@ -181,7 +184,8 @@ function Runner:start(project, item)
     local schema_path = fs.join(dir, "response.schema.json")
     local output_path = fs.join(dir, "last-message.json")
     local prompt = self.app.execution:dispatch_prompt(project, item)
-    local cmd = build_command(self.config, project, item, schema_path, output_path)
+    local cmd = vim.deepcopy(self.config.codex_cmd)
+    vim.list_extend(cmd, build_command(project, item, schema_path, output_path))
 
     fs.write_json(schema_path, output_schema())
 
