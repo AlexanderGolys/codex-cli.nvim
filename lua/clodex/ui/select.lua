@@ -18,10 +18,6 @@ local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
 local PROMPT_EDITOR_BACKDROP = 40
 local PROMPT_EDITOR_HINT_HEIGHT = 2
-local PROMPT_EDITOR_HINT_LINES = {
-  "  <CR>/<Down>/<Tab> move   <S-Tab> back   <C-s> save   <C-q> queue",
-  "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",
-}
 local PROMPT_EDITOR_HINT_KEYS = {
   "<CR>",
   "<Down>",
@@ -37,6 +33,11 @@ local PROMPT_EDITOR_HINT_KEYS = {
   "Esc",
 }
 local active_input
+
+---@class Clodex.UiSelect.MultilineAction
+---@field value string
+---@field label string
+---@field key string
 
 ---@param input? snacks.win
 local function clear_active_input(input)
@@ -319,10 +320,29 @@ local function render_hint_lines(buf, lines)
   vim.bo[buf].modifiable = false
 end
 
----@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string? }
----@param on_confirm fun(value?: string, action?: "save"|"queue")
+---@param actions Clodex.UiSelect.MultilineAction[]
+---@return string[]
+local function prompt_editor_hint_lines(actions)
+  local action_chunks = {}
+  for _, action in ipairs(actions) do
+    action_chunks[#action_chunks + 1] = ("%s %s"):format(action.key, action.label)
+  end
+
+  return {
+    ("  <CR>/<Down>/<Tab> move   <S-Tab> back   %s"):format(table.concat(action_chunks, "   ")),
+    "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",
+  }
+end
+
+---@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string?, submit_actions?: Clodex.UiSelect.MultilineAction[] }
+---@param on_confirm fun(value?: string, action?: string)
 function M.multiline_input(opts, on_confirm)
   opts = opts or {}
+  local submit_actions = vim.deepcopy(opts.submit_actions or {
+    { value = "save", label = "save", key = "<C-s>" },
+    { value = "queue", label = "queue", key = "<C-q>" },
+  })
+  local hint_lines = prompt_editor_hint_lines(submit_actions)
   local default = opts.default or ""
   local captured_context = opts.context
   local parsed = PromptComposer.parse(default) or {
@@ -338,7 +358,7 @@ function M.multiline_input(opts, on_confirm)
   local max_height = math.max(editor_height - PROMPT_EDITOR_HEIGHT_MARGIN, min_height)
   local width = math.min(
     math.max(
-      longest_width(vim.tbl_flatten({ title, unpack_values(detail_lines), PROMPT_EDITOR_HINT_LINES }))
+      longest_width(vim.tbl_flatten({ title, unpack_values(detail_lines), hint_lines }))
         + PROMPT_EDITOR_WIDTH_PADDING,
       PROMPT_EDITOR_MIN_WIDTH
     ),
@@ -548,13 +568,13 @@ function M.multiline_input(opts, on_confirm)
       hint_win:close()
     end
     vim.schedule(function()
-      on_confirm(value, action or "save")
+      on_confirm(value, action or submit_actions[1].value)
     end)
   end
 
   vim.api.nvim_buf_set_lines(title_buf, 0, -1, false, { title })
   vim.api.nvim_buf_set_lines(body_buf, 0, -1, false, detail_lines)
-  render_hint_lines(hint_buf, PROMPT_EDITOR_HINT_LINES)
+  render_hint_lines(hint_buf, hint_lines)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "ClodexPromptEditorHint")
@@ -742,12 +762,11 @@ function M.multiline_input(opts, on_confirm)
   vim.keymap.set({ "n", "i" }, "<CR>", focus_body, { buffer = title_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<Down>", focus_body, { buffer = title_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<Tab>", focus_body, { buffer = title_buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-s>", function()
-    submit("save")
-  end, { buffer = title_buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-q>", function()
-    submit("queue")
-  end, { buffer = title_buf, silent = true })
+  for _, action in ipairs(submit_actions) do
+    vim.keymap.set({ "n", "i" }, action.key, function()
+      submit(action.value)
+    end, { buffer = title_buf, silent = true })
+  end
   vim.keymap.set({ "n", "i" }, "<C-v>", function()
     focus_body()
     paste_image()
@@ -760,14 +779,13 @@ function M.multiline_input(opts, on_confirm)
   end, { buffer = title_buf, silent = true })
 
   vim.keymap.set("n", "<CR>", function()
-    submit("save")
+    submit(submit_actions[1].value)
   end, { buffer = body_buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-s>", function()
-    submit("save")
-  end, { buffer = body_buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-q>", function()
-    submit("queue")
-  end, { buffer = body_buf, silent = true })
+  for _, action in ipairs(submit_actions) do
+    vim.keymap.set({ "n", "i" }, action.key, function()
+      submit(action.value)
+    end, { buffer = body_buf, silent = true })
+  end
   vim.keymap.set("n", "&", function()
     insert_context_token(false)
   end, { buffer = body_buf, silent = true })

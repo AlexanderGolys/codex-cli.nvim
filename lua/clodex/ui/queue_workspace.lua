@@ -1254,15 +1254,24 @@ function Workspace:add_todo()
             end
             return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
         end,
-    }, function(body)
+        submit_actions = {
+            { value = "save", label = "plan", key = "<C-s>" },
+            { value = "queue", label = "queue", key = "<C-q>" },
+            { value = "exec", label = "run now", key = "<C-e>" },
+        },
+    }, function(body, action)
         local spec = body and PromptComposer.parse(body) or nil
         if not spec then
             return
         end
+        local queue_opts = action == "exec"
+                and { queue = "queued", implement = true, run_mode = "exec" }
+            or action == "queue" and { queue = "queued" }
+            or nil
         self.app.queue_actions:add_project_todo(project, {
             title = spec.title,
             details = spec.details,
-        })
+        }, queue_opts)
         self.queue_index = 1
         self:refresh()
     end)

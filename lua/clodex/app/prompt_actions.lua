@@ -188,12 +188,20 @@ function PromptActions:prompt_for_todo(project)
     prompt = ("Todo prompt for %s"):format(project.name),
     context = PromptContext.capture({ project = project }),
     paste_image = self:paste_image_callback(project, "todo"),
+    submit_actions = {
+      { value = "save", label = "plan", key = "<C-s>" },
+      { value = "queue", label = "queue", key = "<C-q>" },
+      { value = "exec", label = "run now", key = "<C-e>" },
+    },
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
       return
     end
-    local queue_opts = action == "queue" and { queue = "queued", implement = true, run_mode = "exec" } or nil
+    local queue_opts = action == "exec"
+        and { queue = "queued", implement = true, run_mode = "exec" }
+      or action == "queue" and { queue = "queued" }
+      or nil
     self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
@@ -213,12 +221,20 @@ function PromptActions:compose_category_prompt(project, definition, category, de
     default = default_body or definition.default_title,
     context = PromptContext.capture({ project = project }),
     paste_image = self:paste_image_callback(project, category),
+    submit_actions = {
+      { value = "save", label = "plan", key = "<C-s>" },
+      { value = "queue", label = "queue", key = "<C-q>" },
+      { value = "exec", label = "run now", key = "<C-e>" },
+    },
   }, function(body, action)
     local spec = body and PromptComposer.parse(body) or nil
     if not spec then
       return
     end
-    local queue_opts = action == "queue" and { queue = "queued", implement = true, run_mode = "exec" } or nil
+    local queue_opts = action == "exec"
+        and { queue = "queued", implement = true, run_mode = "exec" }
+      or action == "queue" and { queue = "queued" }
+      or nil
     self.app.queue_actions:add_project_todo(project, {
       title = spec.title,
       details = spec.details,
