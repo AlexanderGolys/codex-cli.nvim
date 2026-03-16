@@ -220,6 +220,10 @@ end
 ---@param win integer
 ---@return string
 function Session:statusline_text(win)
+    local current_win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_is_valid(win) and win ~= current_win then
+        return self:statusline_line_text()
+    end
     if self:window_shows_bottom(win) then
         return ""
     end

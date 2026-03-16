@@ -155,6 +155,16 @@ local M = {
       fg = { from = { "Identifier", "Special" } },
       bold = true,
     },
+    ClodexConfirmButton = {
+      fg = { from = { "Comment", "Normal" } },
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bold = true,
+    },
+    ClodexConfirmButtonActive = {
+      fg = { from = { "Title", "Identifier" } },
+      bg = { from = { "CursorLine", "PmenuSel", "Visual" }, attr = "bg" },
+      bold = true,
+    },
     ClodexQueueTodoName = {
       fg = "#d8873a",
       bold = true,

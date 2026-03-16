@@ -1,11 +1,17 @@
 local M = {}
 local SnacksInput = require("snacks.input")
 local SnacksSelect = require("snacks.picker.select")
-local PromptComposer = require("clodex.prompt.composer")
+local Prompt = require("clodex.prompt")
 local PromptContext = require("clodex.prompt.context")
 local ui_win = require("clodex.ui.win")
 local unpack_values = require("clodex.util").unpack_values
 
+local SELECT_ZINDEX = 70
+local CONFIRM_ZINDEX = 80
+local CONFIRM_BACKDROP = 40
+local CONFIRM_MIN_WIDTH = 28
+local CONFIRM_WIDTH_PADDING = 8
+local CONFIRM_HEIGHT = 3
 local PROMPT_EDITOR_MIN_HEIGHT = 8
 local PROMPT_EDITOR_MIN_WIDTH = 72
 local PROMPT_EDITOR_MAX_MARGIN = 12
@@ -34,6 +40,7 @@ local PROMPT_EDITOR_HINT_KEYS = {
   "Esc",
 }
 local active_input
+local prompt_context_completion = {} ---@type table<integer, Clodex.PromptContext.Capture?>
 
 ---@class Clodex.UiSelect.MultilineAction
 ---@field value string
@@ -64,6 +71,11 @@ function M.select(items, opts, on_choice)
     focus = "list",
     main = {
       enter = true,
+    },
+    layout = {
+      layout = {
+        zindex = SELECT_ZINDEX,
+      },
     },
   }, vim.deepcopy(opts.snacks or {}))
   local picker = SnacksSelect.select(items, opts, on_choice)
@@ -126,6 +138,56 @@ function M.close_active_input()
     return
   end
   win:close()
+end
+
+---@param line string
+---@param cursor_col integer
+---@return integer
+local function completion_start_col(line, cursor_col)
+  local start_col = cursor_col
+  while start_col > 0 do
+    local char = line:sub(start_col, start_col)
+    if char:match("[%w_&]") == nil then
+      break
+    end
+    start_col = start_col - 1
+  end
+  return start_col
+end
+
+--- Provides built-in prompt context completion items for the prompt details buffer.
+--- The menu shows `&token` labels while inserting their expanded plain-text context.
+---@param findstart integer
+---@param base string
+---@return integer|vim.CompletedItem[]
+function M.prompt_context_complete(findstart, base)
+  local buf = vim.api.nvim_get_current_buf()
+  local context = prompt_context_completion[buf]
+  if findstart == 1 then
+    local line = vim.api.nvim_get_current_line()
+    local cursor_col = vim.api.nvim_win_get_cursor(0)[2]
+    return completion_start_col(line, cursor_col)
+  end
+
+  if type(base) ~= "string" or base == "" or not vim.startswith(base, "&") or not context then
+    return {}
+  end
+
+  local matches = {} ---@type vim.CompletedItem[]
+  for _, item in ipairs(PromptContext.tokens(context)) do
+    if not item.disabled and vim.startswith(item.token, base) then
+      local expansion = PromptContext.expand_token(item.token, context)
+      if expansion and expansion ~= "" then
+        matches[#matches + 1] = {
+          word = expansion,
+          abbr = item.label,
+          menu = item.detail,
+          info = expansion,
+        }
+      end
+    end
+  end
+  return matches
 end
 
 ---@param items Clodex.UiSelect.TextChoice[]
@@ -362,7 +424,7 @@ function M.multiline_input(opts, on_confirm)
   local hint_lines = prompt_editor_hint_lines(submit_actions)
   local default = opts.default or ""
   local captured_context = opts.context
-  local parsed = PromptComposer.parse(default) or {
+  local parsed = Prompt.parse(default) or {
     title = vim.trim(default),
     details = nil,
   }
@@ -594,6 +656,7 @@ function M.multiline_input(opts, on_confirm)
     if hint_win:valid() then
       hint_win:close()
     end
+    prompt_context_completion[body_buf] = nil
     vim.schedule(function()
       on_confirm(value, action or submit_actions[1].value)
     end)
@@ -605,6 +668,8 @@ function M.multiline_input(opts, on_confirm)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "ClodexPromptEditorHint")
+  vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
+  prompt_context_completion[body_buf] = prompt_context()
 
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = hint_buf,
@@ -634,69 +699,23 @@ function M.multiline_input(opts, on_confirm)
       close(nil, action)
       return
     end
-    close(PromptComposer.render(current_title, details ~= "" and details or nil), action)
+    close(Prompt.render(current_title, details ~= "" and details or nil), action)
   end
 
-  --- Opens the `&` completion list and inserts the chosen expansion into the buffer.
-  --- Canceling from insert mode falls back to a literal `&` so normal typing still works.
-  local function insert_context_token(insert_literal_on_cancel)
-    local items = PromptContext.tokens(prompt_context())
-    if #items == 0 then
-      if insert_literal_on_cancel then
-        insert_text(body_buf, body_win.win, "&")
-      end
+  --- Starts Neovim's built-in completion popup for prompt context tokens.
+  --- Keeping this native makes prompt authoring feel like ordinary insert completion.
+  local function trigger_context_completion()
+    prompt_context_completion[body_buf] = prompt_context()
+    if not body_win:valid() then
       return
     end
-
-    local picker_items = {}
-    for _, item in ipairs(items) do
-      local expansion = PromptContext.expand_token(item.token, prompt_context())
-      picker_items[#picker_items + 1] = {
-        token = item.token,
-        label = item.label,
-        detail = item.detail,
-        disabled = item.disabled,
-        preview = {
-          text = table.concat({
-            ("# %s"):format(item.label),
-            "",
-            item.detail,
-            "",
-            "## Expansion preview",
-            "",
-            "```text",
-            expansion or "(currently unavailable)",
-            "```",
-          }, "\n"),
-          ft = "markdown",
-          loc = false,
-        },
-        preview_title = item.label,
-      }
-    end
-
-    M.pick_text(picker_items, {
-      prompt = "Insert editor context",
-    }, function(item)
-      if not item then
-        if insert_literal_on_cancel then
-          insert_text(body_buf, body_win.win, "&")
-        end
-        focus_body()
+    vim.api.nvim_set_current_win(body_win.win)
+    vim.cmd.startinsert()
+    vim.schedule(function()
+      if not body_win:valid() or vim.api.nvim_get_current_buf() ~= body_buf then
         return
       end
-
-      if item.disabled then
-        focus_body()
-        return
-      end
-
-      local expansion = PromptContext.expand_token(item.token, prompt_context())
-      if expansion then
-        insert_text(body_buf, body_win.win, expansion)
-        resize()
-      end
-      focus_body()
+      vim.api.nvim_feedkeys(vim.keycode("&<C-x><C-u>"), "n", false)
     end)
   end
 
@@ -706,7 +725,7 @@ function M.multiline_input(opts, on_confirm)
     local items = PromptContext.quick_prompts(prompt_context())
     local picker_items = {}
     for _, item in ipairs(items) do
-      local spec = PromptComposer.parse(item.text) or {
+      local spec = Prompt.parse(item.text) or {
         title = vim.trim(item.text),
         details = nil,
       }
@@ -746,7 +765,7 @@ function M.multiline_input(opts, on_confirm)
         return
       end
 
-      local spec = PromptComposer.parse(item.text) or {
+      local spec = Prompt.parse(item.text) or {
         title = vim.trim(item.text),
         details = nil,
       }
@@ -813,12 +832,15 @@ function M.multiline_input(opts, on_confirm)
       submit(action.value)
     end, { buffer = body_buf, silent = true })
   end
-  vim.keymap.set("n", "&", function()
-    insert_context_token(false)
-  end, { buffer = body_buf, silent = true })
+  vim.keymap.set("n", "&", trigger_context_completion, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "&", function()
-    insert_context_token(true)
-  end, { buffer = body_buf, silent = true })
+    prompt_context_completion[body_buf] = prompt_context()
+    return "&" .. vim.keycode("<C-x><C-u>")
+  end, {
+    buffer = body_buf,
+    silent = true,
+    expr = true,
+  })
   vim.keymap.set("n", "x", insert_quick_prompt, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "<C-x>", insert_quick_prompt, { buffer = body_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, { buffer = body_buf, silent = true })
@@ -826,8 +848,8 @@ function M.multiline_input(opts, on_confirm)
   vim.keymap.set({ "n", "i" }, "<S-Tab>", focus_title, { buffer = body_buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<Up>", function()
     if should_focus_title_from_body() then
-      focus_title()
-      return ""
+      vim.schedule(focus_title)
+      return vim.keycode("<Ignore>")
     end
     return vim.keycode("<Up>")
   end, {
@@ -869,22 +891,157 @@ end
 ---@param prompt string
 ---@param on_choice fun(confirmed: boolean)
 function M.confirm(prompt, on_choice)
-  local items = {
-    { label = "Yes", value = true },
-    { label = "No", value = false },
-  }
+  local confirm_buf = vim.api.nvim_create_buf(false, true)
+  local ui = vim.api.nvim_list_uis()[1]
+  local editor_width = ui and ui.width or vim.o.columns
+  local editor_height = ui and ui.height or vim.o.lines
+  local choice_index = 1
+  local closed = false
+  local win ---@type { win: integer, valid: fun(self: table): boolean, close: fun(self: table) }
 
-  return M.select(items, {
-    prompt = prompt,
-    snacks = {
-      focus = "list",
-    },
-    format_item = function(item)
-      return item.label
+  vim.bo[confirm_buf].buftype = "nofile"
+  vim.bo[confirm_buf].bufhidden = "hide"
+  vim.bo[confirm_buf].swapfile = false
+  vim.bo[confirm_buf].modifiable = false
+
+  local width = math.min(
+    math.max(vim.fn.strdisplaywidth(prompt) + CONFIRM_WIDTH_PADDING, CONFIRM_MIN_WIDTH),
+    math.max(editor_width - 12, 24)
+  )
+
+  local function choice_line()
+    local yes = choice_index == 1 and "[ Yes ]" or "  Yes  "
+    local no = choice_index == 2 and "[ No ]" or "  No  "
+    return ("%s    %s"):format(yes, no)
+  end
+
+  local function render()
+    vim.bo[confirm_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(confirm_buf, 0, -1, false, {
+      prompt,
+      "",
+      choice_line(),
+    })
+    vim.api.nvim_buf_clear_namespace(confirm_buf, -1, 0, -1)
+    vim.api.nvim_buf_add_highlight(
+      confirm_buf,
+      -1,
+      choice_index == 1 and "ClodexConfirmButtonActive" or "ClodexConfirmButton",
+      2,
+      0,
+      7
+    )
+    vim.api.nvim_buf_add_highlight(
+      confirm_buf,
+      -1,
+      choice_index == 2 and "ClodexConfirmButtonActive" or "ClodexConfirmButton",
+      2,
+      11,
+      17
+    )
+    vim.bo[confirm_buf].modifiable = false
+  end
+
+  local function finish(confirmed)
+    if closed then
+      return
+    end
+    closed = true
+    if win and win:valid() then
+      win:close()
+    end
+    vim.schedule(function()
+      on_choice(confirmed)
+    end)
+  end
+
+  local function move_choice(delta)
+    choice_index = choice_index + delta
+    if choice_index < 1 then
+      choice_index = 2
+    elseif choice_index > 2 then
+      choice_index = 1
+    end
+    render()
+  end
+
+  render()
+
+  local win_id = vim.api.nvim_open_win(confirm_buf, true, {
+    relative = "editor",
+    style = "minimal",
+    border = "rounded",
+    title = " Confirm ",
+    title_pos = "center",
+    width = width,
+    height = CONFIRM_HEIGHT,
+    row = math.max(math.floor((editor_height - CONFIRM_HEIGHT) / 2), 1),
+    col = math.max(math.floor((editor_width - width) / 2), 1),
+    zindex = CONFIRM_ZINDEX,
+    noautocmd = true,
+  })
+  win = {
+    win = win_id,
+    valid = function(self)
+      return vim.api.nvim_win_is_valid(self.win)
     end,
-  }, function(item)
-    on_choice(item and item.value or false)
+    close = function(self)
+      if self:valid() then
+        vim.api.nvim_win_close(self.win, true)
+      end
+    end,
+  }
+  style_prompt_editor(win.win)
+  vim.wo[win.win].cursorline = false
+
+  local function map(lhs, rhs)
+    vim.keymap.set("n", lhs, rhs, {
+      buffer = confirm_buf,
+      nowait = true,
+      silent = true,
+    })
+  end
+
+  map("<Left>", function()
+    move_choice(-1)
   end)
+  map("h", function()
+    move_choice(-1)
+  end)
+  map("<Tab>", function()
+    move_choice(1)
+  end)
+  map("<Right>", function()
+    move_choice(1)
+  end)
+  map("l", function()
+    move_choice(1)
+  end)
+  map("<CR>", function()
+    finish(choice_index == 1)
+  end)
+  map("y", function()
+    finish(true)
+  end)
+  map("n", function()
+    finish(false)
+  end)
+  map("q", function()
+    finish(false)
+  end)
+  map("<Esc>", function()
+    finish(false)
+  end)
+
+  vim.api.nvim_create_autocmd("WinClosed", {
+    once = true,
+    pattern = tostring(win.win),
+    callback = function()
+      finish(false)
+    end,
+  })
+
+  return win
 end
 
 return M

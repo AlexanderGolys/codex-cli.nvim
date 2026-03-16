@@ -1,4 +1,4 @@
-local Category = require("clodex.prompt.category")
+local Prompt = require("clodex.prompt")
 local fs = require("clodex.util.fs")
 local util = require("clodex.util")
 
@@ -186,7 +186,7 @@ local function migrate_project_asset(root_dir, project_root, item)
     return false
   end
 
-  local category = Category.is_valid(item.kind) and item.kind or "todo"
+  local category = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
   local destination = fs.join(project_storage_dir(root_dir, project_root), "prompt-assets", category, fs.basename(image_path))
   if destination == image_path then
     return false
@@ -245,7 +245,7 @@ function Queue:load(project)
         item.id = util.uuid_v4()
         changed = true
       end
-      item.kind = Category.is_valid(item.kind) and item.kind or "todo"
+      item.kind = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
       changed = migrate_project_asset(self.root_dir, project.root, item) or changed
     end
   end
@@ -314,7 +314,7 @@ function Queue:add_todo(project, spec)
   local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
   local item = {
     id = util.uuid_v4(),
-    kind = Category.is_valid(spec.kind) and spec.kind or "todo",
+    kind = Prompt.categories.is_valid(spec.kind) and spec.kind or "todo",
     title = vim.trim(spec.title),
     details = spec.details and vim.trim(spec.details) or nil,
     prompt = render_prompt(vim.trim(spec.title), spec.details and vim.trim(spec.details) or nil),
@@ -415,7 +415,7 @@ function Queue:update_item(project, item_id_value, attrs)
         if attrs.details ~= nil then
           item.details = attrs.details ~= false and vim.trim(attrs.details) or nil
         end
-        if attrs.kind ~= nil and Category.is_valid(attrs.kind) then
+        if attrs.kind ~= nil and Prompt.categories.is_valid(attrs.kind) then
           item.kind = attrs.kind
         end
         if attrs.image_path ~= nil then

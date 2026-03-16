@@ -12,6 +12,9 @@ name: %s
 description: Handle clodex.nvim queued prompt executions by updating the local workspace queue file when the work is complete.
 ---
 
+Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task.
+Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request.
+
 # Queue Completion
 
 Use this skill when a prompt includes `$%s`.
@@ -50,10 +53,6 @@ local function prompt_prefix_lines(item)
         lines[#lines + 1] = "Use that local image file as part of the implementation context."
         lines[#lines + 1] = ""
     end
-    lines[#lines + 1] =
-    "Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task."
-    lines[#lines + 1] =
-    "Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request."
     lines[#lines + 1] = ""
     return lines
 end

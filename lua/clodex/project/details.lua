@@ -26,6 +26,8 @@ local language_profile = LanguageProfile.new()
 ---@class Clodex.ProjectDetails.Metadata
 ---@field version integer
 ---@field last_codex_activity_at? integer
+---@field captured_at? integer
+---@field snapshot? Clodex.ProjectDetails.Snapshot
 
 --- Defines the Clodex.ProjectDetails type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -92,6 +94,34 @@ local function write_metadata(config, project_root, metadata)
   metadata.version = METADATA_VERSION
   fs.write_json(metadata_path(config, project_root), metadata)
 end
+
+---@param snapshot Clodex.ProjectDetails.Snapshot?
+---@return Clodex.ProjectDetails.Snapshot?
+local function normalize_snapshot(snapshot)
+  if type(snapshot) ~= "table" then
+    return nil
+  end
+
+  return {
+    file_count = tonumber(snapshot.file_count) or 0,
+    avg_lines_per_file = tonumber(snapshot.avg_lines_per_file) or nil,
+    remote_name = type(snapshot.remote_name) == "string" and snapshot.remote_name or nil,
+    last_codex_activity_at = tonumber(snapshot.last_codex_activity_at) or nil,
+    last_file_modified_at = tonumber(snapshot.last_file_modified_at) or nil,
+    languages = type(snapshot.languages) == "table" and vim.deepcopy(snapshot.languages) or {},
+  }
+end
+
+---@param self Clodex.ProjectDetails
+---@param project_root string
+---@param snapshot Clodex.ProjectDetails.Snapshot
+---@param captured_at? integer
+local function cache_snapshot(self, project_root, snapshot, captured_at)
+  self.cache[project_root] = {
+    captured_at = captured_at or os.time(),
+    snapshot = normalize_snapshot(snapshot) or snapshot,
+  }
+end
 ---@param config Clodex.Config.Values
 ---@return Clodex.ProjectDetails
 function Details.new(config)
@@ -110,10 +140,22 @@ end
 ---@return Clodex.ProjectDetails.Snapshot?
 function Details:get_cached(project)
   local cached = self.cache[project.root]
-  if not cached then
+  if cached then
+    return vim.deepcopy(cached.snapshot)
+  end
+
+  local metadata = read_metadata(self.config, project.root)
+  local snapshot = normalize_snapshot(metadata.snapshot)
+  if not snapshot then
     return nil
   end
-  return vim.deepcopy(cached.snapshot)
+
+  if metadata.last_codex_activity_at and not snapshot.last_codex_activity_at then
+    snapshot.last_codex_activity_at = metadata.last_codex_activity_at
+  end
+
+  cache_snapshot(self, project.root, snapshot, metadata.captured_at)
+  return vim.deepcopy(snapshot)
 end
 
 --- Records the latest Codex interaction timestamp for a project.
@@ -123,6 +165,9 @@ function Details:touch_activity(project, timestamp)
   local project_root = project.root
   local metadata = read_metadata(self.config, project_root)
   metadata.last_codex_activity_at = timestamp or os.time()
+  if metadata.snapshot then
+    metadata.snapshot.last_codex_activity_at = metadata.last_codex_activity_at
+  end
   write_metadata(self.config, project_root, metadata)
 
   local cached = self.cache[project_root]
@@ -261,10 +306,11 @@ function Details:get(project)
   end
 
   local snapshot = self:compute(project)
-  self.cache[project.root] = {
-    captured_at = now,
-    snapshot = snapshot,
-  }
+  local metadata = read_metadata(self.config, project.root)
+  metadata.captured_at = now
+  metadata.snapshot = vim.deepcopy(snapshot)
+  write_metadata(self.config, project.root, metadata)
+  cache_snapshot(self, project.root, snapshot, now)
   return vim.deepcopy(snapshot)
 end
 

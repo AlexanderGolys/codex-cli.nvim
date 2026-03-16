@@ -2,6 +2,7 @@ local Commands = require("clodex.commands")
 local Extmark = require("clodex.ui.extmark")
 local TextBlock = require("clodex.ui.text_block")
 local ui_win = require("clodex.ui.win")
+local fs = require("clodex.util.fs")
 
 --- Defines the Clodex.StatePreview type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -530,6 +531,59 @@ local function append_keymaps(self, block)
   end
 end
 
+---@param path string
+---@return string
+local function read_file(path)
+  local file = io.open(path, "r")
+  if not file then
+    return ""
+  end
+  local content = file:read("*a") or ""
+  file:close()
+  return content
+end
+
+---@param self Clodex.StatePreview
+---@param block Clodex.TextBlock
+---@param snapshot Clodex.App.StateSnapshot
+local function append_prompt_skill(self, block, snapshot)
+  push_line(self, block, "Prompt Skill", {
+    Extmark.inline(0, 0, #"Prompt Skill", "ClodexStateSection"),
+  })
+
+  local project = snapshot.active_project or snapshot.detected_project
+  if not project then
+    push_line(self, block, "> none", {
+      Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+      Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
+    })
+    return
+  end
+
+  local app = self.app
+  local execution = app and app.execution or nil
+  if not execution or not execution.uses_prompt_skill or not execution:uses_prompt_skill() then
+    append_field(self, block, "status", "disabled")
+    return
+  end
+
+  local skill_file = execution:skill_file(project)
+  local created = fs.is_file(skill_file)
+  append_field(self, block, "project", project.name)
+  append_field(self, block, "status", created and "created" or "not created")
+  append_field(self, block, "path", skill_file)
+
+  if not created then
+    return
+  end
+
+  for _, line in ipairs(vim.split(read_file(skill_file), "\n", { plain = true })) do
+    push_line(self, block, ("  %s"):format(line), {
+      Extmark.inline(0, 0, 2, "ClodexStateFieldLabel"),
+    })
+  end
+end
+
 ---@param snapshot Clodex.App.StateSnapshot
 --- Renders project/tab/state details from an app snapshot into the state pane.
 --- The snapshot is assumed to already include project details and resolved target.
@@ -597,6 +651,9 @@ function Preview:render_state(snapshot)
   })
   append_keymaps(self, block)
 
+  push_line(self, block, "")
+  append_prompt_skill(self, block, snapshot)
+
   block:render(self.state_buf, self.state_ns)
 end
 
@@ -649,6 +706,7 @@ function Preview:refresh(app)
   if not self:is_open() then
     return
   end
+  self.app = app
   self:render(app:state_snapshot())
 end
 
@@ -662,6 +720,7 @@ function Preview:toggle(app)
   end
 
   self:show()
+  self.app = app
   self:render(app:state_snapshot())
 end
 

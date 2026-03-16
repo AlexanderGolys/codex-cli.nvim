@@ -1,13 +1,11 @@
 local ui = require("clodex.ui.select")
 local Extmark = require("clodex.ui.extmark")
 local PromptAssets = require("clodex.prompt.assets")
-local PromptComposer = require("clodex.prompt.composer")
+local Prompt = require("clodex.prompt")
 local PromptContext = require("clodex.prompt.context")
 local TextBlock = require("clodex.ui.text_block")
-local PromptHighlight = require("clodex.prompt.highlight")
 local ui_win = require("clodex.ui.win")
 local notify = require("clodex.util.notify")
-local Category = require("clodex.prompt.category")
 
 --- Defines the Clodex.QueueWorkspace.QueueRow type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -255,7 +253,7 @@ end
 ---@param item Clodex.QueueItem
 ---@return Clodex.PromptCategory
 local function prompt_item_kind(item)
-    return Category.get(item.kind).id
+    return Prompt.categories.get(item.kind).id
 end
 
 ---@param item Clodex.QueueItem
@@ -1154,7 +1152,7 @@ function Workspace:render_queue()
                 }
                 self.queue_item_rows[#self.queue_item_rows + 1] = #self.queue_rows
                 local item_extmarks = {
-                    Extmark.inline(0, 0, #title_text, PromptHighlight.title_group(prompt_item_kind(item))),
+                    Extmark.inline(0, 0, #title_text, Prompt.title_group(prompt_item_kind(item))),
                 }
                 if #item_text > #title_text then
                     item_extmarks[#item_extmarks + 1] =
@@ -1173,7 +1171,7 @@ function Workspace:render_queue()
                         item = item,
                     }
                     block:append_line(preview, {
-                        Extmark.inline(0, 0, #preview, PromptHighlight.preview_group()),
+                        Extmark.inline(0, 0, #preview, Prompt.preview_group()),
                     })
                 end
             end
@@ -1317,7 +1315,7 @@ function Workspace:add_todo()
             { value = "exec", label = "run now", key = "<C-e>" },
         },
     }, function(body, action)
-        local spec = body and PromptComposer.parse(body) or nil
+        local spec = body and Prompt.parse(body) or nil
         if not spec then
             return
         end
@@ -1344,7 +1342,7 @@ function Workspace:edit_queue_item()
 
     ui.multiline_input({
         prompt = ("Edit prompt for %s"):format(project.name),
-        default = PromptComposer.render(item.title, item.details),
+        default = Prompt.render(item.title, item.details),
         context = PromptContext.capture({ project = project }),
         paste_image = function()
             local image_path = PromptAssets.save_clipboard_image(
@@ -1358,7 +1356,7 @@ function Workspace:edit_queue_item()
             return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
         end,
     }, function(body)
-        local spec = body and PromptComposer.parse(body) or nil
+        local spec = body and Prompt.parse(body) or nil
         if not spec then
             return
         end

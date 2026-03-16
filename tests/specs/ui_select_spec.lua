@@ -195,4 +195,50 @@ describe("clodex.ui.select", function()
             },
         }, picker.focused[1])
     end)
+
+    it("focuses the confirmation popup window when it opens", function()
+        local confirm_window = select.confirm("Delete prompt?", function() end)
+
+        wait_for(function()
+            return confirm_window and confirm_window:valid() and vim.api.nvim_get_current_win() == confirm_window.win
+        end)
+    end)
+
+    it("uses built-in completion items for prompt context insertion", function()
+        local source_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(source_buf, "/tmp/example.lua")
+        vim.bo[source_buf].buftype = ""
+        vim.bo[source_buf].filetype = "lua"
+        vim.api.nvim_buf_set_lines(source_buf, 0, -1, false, {
+            "local value = 1",
+            "return value",
+        })
+        vim.api.nvim_win_set_buf(0, source_buf)
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        select.multiline_input({
+            prompt = "Test prompt",
+            default = "Test title",
+        }, function() end)
+
+        wait_for(function()
+            return #opened_windows == 3 and vim.api.nvim_get_current_win() == opened_windows[1].win
+        end)
+
+        local body_window = opened_windows[2]
+        vim.api.nvim_set_current_win(body_window.win)
+
+        assert.are.equal(
+            "v:lua.require'clodex.ui.select'.prompt_context_complete",
+            vim.bo[body_window.buf].completefunc
+        )
+
+        local start_col = select.prompt_context_complete(1, "")
+        local items = select.prompt_context_complete(0, "&f")
+
+        assert.are.equal(0, start_col)
+        assert.is_true(#items > 0)
+        assert.are.equal("&file", items[1].abbr)
+        assert.are.equal("@{example.lua}", items[1].word)
+    end)
 end)

@@ -1,9 +1,6 @@
 local PromptAssets = require("clodex.prompt.assets")
-local PromptCategory = require("clodex.prompt.category")
-local PromptComposer = require("clodex.prompt.composer")
+local Prompt = require("clodex.prompt")
 local PromptContext = require("clodex.prompt.context")
-local PromptLibrary = require("clodex.prompt.library")
-local PromptTitle = require("clodex.prompt.title")
 local fs = require("clodex.util.fs")
 local notify = require("clodex.util.notify")
 local ui = require("clodex.ui.select")
@@ -99,7 +96,7 @@ end
 ---@param callback fun(project: Clodex.Project, category: Clodex.PromptCategory)
 function PromptActions:pick_category(project, callback)
   local items = {} ---@type { label: string, detail: string, category: Clodex.PromptCategoryDef, preview: { text: string, ft?: string, loc?: boolean }, preview_title: string }[]
-  for _, category in ipairs(PromptCategory.list()) do
+  for _, category in ipairs(Prompt.categories.list()) do
     items[#items + 1] = {
       label = category.label,
       detail = category.default_title,
@@ -113,7 +110,7 @@ function PromptActions:pick_category(project, callback)
           "## Example prompt",
           "",
           "```text",
-          PromptComposer.render(category.default_title, nil),
+          Prompt.render(category.default_title, nil),
           "```",
         }, "\n"),
         ft = "markdown",
@@ -194,7 +191,7 @@ function PromptActions:prompt_for_todo(project)
       { value = "exec", label = "run now", key = "<C-e>" },
     },
   }, function(body, action)
-    local spec = body and PromptComposer.parse(body) or nil
+    local spec = body and Prompt.parse(body) or nil
     if not spec then
       return
     end
@@ -227,7 +224,7 @@ function PromptActions:compose_category_prompt(project, definition, category, de
       { value = "exec", label = "run now", key = "<C-e>" },
     },
   }, function(body, action)
-    local spec = body and PromptComposer.parse(body) or nil
+    local spec = body and Prompt.parse(body) or nil
     if not spec then
       return
     end
@@ -246,7 +243,7 @@ end
 ---@param project Clodex.Project
 ---@param category Clodex.PromptCategory
 function PromptActions:prompt_for_category(project, category)
-  local definition = PromptCategory.get(category)
+  local definition = Prompt.categories.get(category)
   self:compose_category_prompt(project, definition, category)
 end
 
@@ -285,7 +282,7 @@ end
 
 ---@param project Clodex.Project
 function PromptActions:prompt_for_library(project)
-  local templates = PromptLibrary.list()
+  local templates = Prompt.library.list()
   local items = {}
   for _, template in ipairs(templates) do
     items[#items + 1] = vim.tbl_extend("force", template, {
@@ -300,7 +297,7 @@ function PromptActions:prompt_for_library(project)
           "## Template body",
           "",
           "```text",
-          PromptComposer.render(template.title, template.details),
+          Prompt.render(template.title, template.details),
           "```",
         }, "\n"),
         ft = "markdown",
@@ -316,7 +313,7 @@ function PromptActions:prompt_for_library(project)
     if not template then
       return
     end
-    self:compose_category_prompt(project, PromptCategory.get(template.kind), template.kind, PromptComposer.render(
+    self:compose_category_prompt(project, Prompt.categories.get(template.kind), template.kind, Prompt.render(
       template.title,
       template.details
     ))
@@ -350,7 +347,7 @@ end
 ---@param spec { title: string, details?: string }
 ---@return { title: string, details?: string, broken: boolean }
 function PromptActions:normalize_spec(project, spec)
-  local normalized = PromptTitle.normalize({
+  local normalized = Prompt.normalize_title({
     title = spec.title,
     details = spec.details,
     max_width = self.app.queue_workspace:prompt_title_width(),
@@ -439,7 +436,7 @@ end
 ---@param body string
 ---@return string?
 local function freeform_message(body)
-  local spec = PromptComposer.parse(body)
+  local spec = Prompt.parse(body)
   if not spec then
     return nil
   end

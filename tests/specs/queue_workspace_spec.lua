@@ -1,10 +1,12 @@
 describe("clodex.ui.queue_workspace", function()
     local Workspace
     local original_select
+    local confirm_callbacks
 
     before_each(function()
         package.loaded["clodex.ui.queue_workspace"] = nil
         original_select = package.loaded["clodex.ui.select"]
+        confirm_callbacks = {}
         package.loaded["snacks.input"] = {
             input = function() end,
         }
@@ -15,7 +17,7 @@ describe("clodex.ui.queue_workspace", function()
         }
         package.loaded["clodex.ui.select"] = {
             confirm = function(_prompt, on_choice)
-                on_choice(true)
+                confirm_callbacks[#confirm_callbacks + 1] = on_choice
             end,
             close_active_input = function() end,
         }
@@ -113,6 +115,9 @@ describe("clodex.ui.queue_workspace", function()
             project_buf = vim.api.nvim_create_buf(false, true),
             queue_buf = vim.api.nvim_create_buf(false, true),
             footer_buf = vim.api.nvim_create_buf(false, true),
+            projects = { project },
+            queue_index = 1,
+            focus = "queue",
             app = {
                 queue_actions = {
                     delete_queue_item = function(_, queued_project, item_id)
@@ -127,6 +132,8 @@ describe("clodex.ui.queue_workspace", function()
             selected_queue_item = function()
                 return item, "queued"
             end,
+            close = function() end,
+            open = function() end,
             refresh = function() end,
         }
 
@@ -140,10 +147,70 @@ describe("clodex.ui.queue_workspace", function()
 
         Workspace.delete_queue_item(workspace)
         vim.wait(100, function()
+            return #confirm_callbacks == 1
+        end)
+        confirm_callbacks[1](true)
+        vim.wait(100, function()
             return deleted_item_id ~= nil
         end)
 
         assert.are.equal(project, deleted_project)
         assert.are.equal(item.id, deleted_item_id)
     end)
+
+    it("keeps the workspace open while queue deletion confirmation is shown", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Delete prompt",
+        }
+        local close_count = 0
+        local deleted_item_id
+        local workspace = {
+            queue_index = 2,
+            focus = "queue",
+            projects = { project },
+            app = {
+                queue_actions = {
+                    delete_queue_item = function(_, queued_project, item_id)
+                        assert.are.same(project, queued_project)
+                        deleted_item_id = item_id
+                    end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "queued"
+            end,
+            close = function()
+                close_count = close_count + 1
+            end,
+            refresh = function() end,
+        }
+
+        Workspace.delete_queue_item(workspace)
+
+        vim.wait(100, function()
+            return #confirm_callbacks == 1
+        end)
+
+        assert.are.equal(0, close_count)
+
+        confirm_callbacks[1](true)
+
+        vim.wait(100, function()
+            return deleted_item_id ~= nil
+        end)
+
+        assert.are.equal(0, close_count)
+        assert.are.equal(item.id, deleted_item_id)
+        assert.are.equal(1, workspace.queue_index)
+        assert.are.equal("queue", workspace.focus)
+    end)
+
 end)

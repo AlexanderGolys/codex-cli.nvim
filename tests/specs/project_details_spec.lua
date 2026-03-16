@@ -16,17 +16,27 @@ end
 
 describe("clodex.project.details", function()
     local root
+    local data_home
     local details
+    local original_xdg_data_home
 
     before_each(function()
         root = temp_dir()
+        data_home = temp_dir()
+        original_xdg_data_home = vim.env.XDG_DATA_HOME
+        vim.env.XDG_DATA_HOME = data_home
         details = Details.new(Config.new():setup())
     end)
 
     after_each(function()
         details = nil
+        vim.env.XDG_DATA_HOME = original_xdg_data_home
+        original_xdg_data_home = nil
         if root then
             fs.remove(root)
+        end
+        if data_home then
+            fs.remove(data_home)
         end
     end)
 
@@ -82,5 +92,34 @@ describe("clodex.project.details", function()
 
         assert.are.same({}, snapshot.languages)
         assert.are.equal(1.5, snapshot.avg_lines_per_file)
+    end)
+
+    it("hydrates cached details from persisted metadata for unhighlighted projects", function()
+        write_file(fs.join(root, "plugin.lua"), "local M = {}\nreturn M\n")
+        local project = {
+            root = root,
+        }
+
+        local first_snapshot = details:get(project)
+        local reloaded = Details.new(Config.new():setup())
+        local cached_snapshot = reloaded:get_cached(project)
+
+        assert.are.same(first_snapshot, cached_snapshot)
+    end)
+
+    it("keeps persisted snapshot activity in sync when the project is touched", function()
+        write_file(fs.join(root, "plugin.lua"), "local M = {}\nreturn M\n")
+        local project = {
+            root = root,
+        }
+        local timestamp = 1710000000
+
+        details:get(project)
+        details:touch_activity(project, timestamp)
+
+        local reloaded = Details.new(Config.new():setup())
+        local cached_snapshot = reloaded:get_cached(project)
+
+        assert.are.equal(timestamp, cached_snapshot.last_codex_activity_at)
     end)
 end)

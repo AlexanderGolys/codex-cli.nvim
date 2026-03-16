@@ -1,0 +1,358 @@
+--- Shared prompt definitions and formatting helpers used across prompt actions and UI.
+---@alias Clodex.PromptCategory
+---| "todo"
+---| "error"
+---| "visual"
+---| "adjustment"
+---| "refactor"
+---| "idea"
+---| "explain"
+---| "library"
+
+---@class Clodex.PromptCategoryDef
+---@field id Clodex.PromptCategory
+---@field label string
+---@field title_prefix? string
+---@field highlight string
+---@field default_title string
+
+---@class Clodex.PromptComposer.Spec
+---@field title string
+---@field details? string
+
+---@class Clodex.PromptLibrary.Template
+---@field id string
+---@field label string
+---@field title string
+---@field details string
+---@field kind Clodex.PromptCategory
+
+---@class Clodex.Prompt.NormalizeResult
+---@field title string
+---@field details? string
+---@field broken boolean
+
+---@class Clodex.Prompt
+---@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean }
+---@field library { list: fun(): Clodex.PromptLibrary.Template[], get: fun(id: string): Clodex.PromptLibrary.Template? }
+local M = {}
+
+local WHITESPACE_SUFFIX = " [...]"
+local MIDWORD_SUFFIX = "-[...]"
+local TITLE_GROUP_SUFFIX = {
+    todo = "TodoTitle",
+    error = "ErrorTitle",
+    visual = "VisualTitle",
+    adjustment = "AdjustmentTitle",
+    refactor = "RefactorTitle",
+    idea = "IdeaTitle",
+    explain = "ExplainTitle",
+    library = "IdeaTitle",
+}
+
+---@type Clodex.PromptCategoryDef[]
+local categories = {
+    {
+        id = "todo",
+        label = "TODO",
+        highlight = "todo_title",
+        default_title = "New todo",
+    },
+    {
+        id = "error",
+        label = "Error",
+        highlight = "error_title",
+        default_title = "Investigate runtime error",
+        title_prefix = "Investigate runtime error",
+    },
+    {
+        id = "visual",
+        label = "Visual",
+        highlight = "visual_title",
+        default_title = "Review image and implement requested changes",
+    },
+    {
+        id = "adjustment",
+        label = "Adjustment",
+        highlight = "adjustment_title",
+        default_title = "Adjust existing behavior",
+    },
+    {
+        id = "refactor",
+        label = "Refactor",
+        highlight = "refactor_title",
+        default_title = "Refactor implementation",
+    },
+    {
+        id = "idea",
+        label = "Idea",
+        highlight = "idea_title",
+        default_title = "Explore an idea",
+    },
+    {
+        id = "explain",
+        label = "Explain",
+        highlight = "explain_title",
+        default_title = "Explain the current behavior",
+    },
+    {
+        id = "library",
+        label = "Library",
+        highlight = "idea_title",
+        default_title = "Use a saved prompt template",
+    },
+}
+
+local categories_by_id = {} ---@type table<Clodex.PromptCategory, Clodex.PromptCategoryDef>
+for _, category in ipairs(categories) do
+    categories_by_id[category.id] = category
+end
+
+---@type Clodex.PromptLibrary.Template[]
+local templates = {
+    {
+        id = "fix-diagnostics",
+        label = "Fix diagnostics",
+        title = "Fix diagnostics from the current project",
+        kind = "adjustment",
+        details = table.concat({
+            "Use `&all_diagnostics` as the primary problem list.",
+            "Group related issues, fix them in a coherent order, and mention any follow-up validation.",
+        }, "\n\n"),
+    },
+    {
+        id = "explain-current-file",
+        label = "Explain current file",
+        title = "Explain the current file",
+        kind = "explain",
+        details = table.concat({
+            "Explain `&file` in terms of its responsibilities, main control flow, and important assumptions.",
+            "Call out any non-obvious edge cases or follow-up refactors worth considering.",
+        }, "\n\n"),
+    },
+    {
+        id = "refactor-selection",
+        label = "Refactor selection",
+        title = "Refactor the selected code",
+        kind = "refactor",
+        details = table.concat({
+            "Focus on `&selection` and keep behavior intact while reducing duplication.",
+            "Keep behavior intact, reduce duplication, and explain any structural tradeoffs.",
+        }, "\n\n"),
+    },
+    {
+        id = "fix-buffer-diagnostics",
+        label = "Fix buffer diagnostics",
+        title = "Fix diagnostics from the current buffer",
+        kind = "idea",
+        details = table.concat({
+            "Use `&buff_diagnostics` as the main issue list.",
+            "Fix what should be fixed and explain clearly why any remaining diagnostics should be ignored.",
+        }, "\n\n"),
+    },
+}
+
+local templates_by_id = {} ---@type table<string, Clodex.PromptLibrary.Template>
+for _, template in ipairs(templates) do
+    templates_by_id[template.id] = template
+end
+
+local function prepend_details(title, details)
+    local parts = {} ---@type string[]
+    local head = vim.trim(title or "")
+    local tail = vim.trim(details or "")
+    if head ~= "" then
+        parts[#parts + 1] = head
+    end
+    if tail ~= "" then
+        parts[#parts + 1] = tail
+    end
+    return #parts > 0 and table.concat(parts, "\n\n") or nil
+end
+
+M.categories = {}
+
+---@return Clodex.PromptCategoryDef[]
+function M.categories.list()
+    return vim.deepcopy(categories)
+end
+
+---@param id? string
+---@return Clodex.PromptCategoryDef
+function M.categories.get(id)
+    return categories_by_id[id] or categories_by_id.todo
+end
+
+---@param id? string
+---@return boolean
+function M.categories.is_valid(id)
+    return categories_by_id[id] ~= nil
+end
+
+M.library = {}
+
+---@return Clodex.PromptLibrary.Template[]
+function M.library.list()
+    return vim.deepcopy(templates)
+end
+
+---@param id string
+---@return Clodex.PromptLibrary.Template?
+function M.library.get(id)
+    local template = templates_by_id[id]
+    return template and vim.deepcopy(template) or nil
+end
+
+---@param title string
+---@param details? string
+---@return string
+function M.render(title, details)
+    local lines = { vim.trim(title or "") }
+    local body = details and vim.trim(details) or ""
+    if body ~= "" then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = body
+    end
+    return table.concat(lines, "\n")
+end
+
+---@param body string
+---@return Clodex.PromptComposer.Spec?
+function M.parse(body)
+    local trimmed = vim.trim(body or "")
+    if trimmed == "" then
+        return nil
+    end
+
+    local lines = vim.split(trimmed, "\n", { plain = true })
+    local title_index ---@type integer?
+    for index, line in ipairs(lines) do
+        if vim.trim(line) ~= "" then
+            title_index = index
+            break
+        end
+    end
+    if not title_index then
+        return nil
+    end
+
+    local title = vim.trim(lines[title_index])
+    if title == "" then
+        return nil
+    end
+
+    local detail_lines = {}
+    for index = title_index + 1, #lines do
+        detail_lines[#detail_lines + 1] = lines[index]
+    end
+
+    local details = vim.trim(table.concat(detail_lines, "\n"))
+    return {
+        title = title,
+        details = details ~= "" and details or nil,
+    }
+end
+
+---@param kind? Clodex.PromptCategory|string
+---@return string
+function M.title_group(kind)
+    local suffix = TITLE_GROUP_SUFFIX[M.categories.get(kind).id] or TITLE_GROUP_SUFFIX.todo
+    return "ClodexPrompt" .. suffix
+end
+
+---@return string
+function M.preview_group()
+    return "ClodexPromptPreviewText"
+end
+
+---@param opts { title: string, details?: string, max_width?: integer }
+---@return Clodex.Prompt.NormalizeResult
+function M.normalize_title(opts)
+    local title = vim.trim(opts.title or "")
+    local details = vim.trim(opts.details or "")
+    local max_width = math.max(tonumber(opts.max_width) or 0, 1)
+    if title == "" or vim.fn.strdisplaywidth(title) <= max_width then
+        return {
+            title = title,
+            details = details ~= "" and details or nil,
+            broken = false,
+        }
+    end
+
+    for idx = 1, #title do
+        local ch = title:sub(idx, idx)
+        local next_text = title:sub(idx + 1)
+        if ch:match("[%.!?]") and next_text:match("^%s+%S") then
+            local prev = idx > 1 and title:sub(idx - 1, idx - 1) or ""
+            if prev:match("[%w%]%)\"']") and vim.fn.strdisplaywidth(title:sub(1, idx)) <= max_width then
+                return {
+                    title = vim.trim(title:sub(1, idx)),
+                    details = prepend_details(next_text, details),
+                    broken = true,
+                }
+            end
+        end
+    end
+
+    for idx = 1, #title do
+        if title:sub(idx, idx) == "," then
+            local prev = idx > 1 and title:sub(idx - 1, idx - 1) or ""
+            local next_text = title:sub(idx + 1)
+            if prev ~= "" and not prev:match("%s") and next_text:match("^%s+%S") then
+                if vim.fn.strdisplaywidth(title:sub(1, idx)) <= max_width then
+                    local tail = vim.trim(next_text)
+                    if tail:sub(1, 1):match("%l") then
+                        tail = tail:sub(1, 1):upper() .. tail:sub(2)
+                    end
+                    return {
+                        title = vim.trim(title:sub(1, idx)),
+                        details = prepend_details(tail, details),
+                        broken = true,
+                    }
+                end
+            end
+        end
+    end
+
+    local whitespace_idx ---@type integer?
+    for idx = 1, #title do
+        if title:sub(idx, idx):match("%s") then
+            local head = title:sub(1, idx - 1):gsub("%s+$", "")
+            if head ~= "" and vim.fn.strdisplaywidth(head .. WHITESPACE_SUFFIX) <= max_width then
+                whitespace_idx = idx
+            end
+        end
+    end
+    if whitespace_idx then
+        return {
+            title = title:sub(1, whitespace_idx - 1):gsub("%s+$", "") .. WHITESPACE_SUFFIX,
+            details = prepend_details(title:sub(whitespace_idx + 1), details),
+            broken = true,
+        }
+    end
+
+    local best = ""
+    for idx = 1, #title do
+        local head = title:sub(1, idx)
+        if vim.fn.strdisplaywidth(head .. MIDWORD_SUFFIX) > max_width then
+            break
+        end
+        best = head
+    end
+
+    if best == "" then
+        return {
+            title = MIDWORD_SUFFIX:sub(1, math.max(max_width, 1)),
+            details = prepend_details(title, details),
+            broken = true,
+        }
+    end
+
+    return {
+        title = best .. MIDWORD_SUFFIX,
+        details = prepend_details(title:sub(#best + 1), details),
+        broken = true,
+    }
+end
+
+return M

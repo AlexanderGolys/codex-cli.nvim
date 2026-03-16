@@ -1,7 +1,7 @@
 local M = {}
 
 local did_register = false
-local Category = require("clodex.prompt.category")
+local Prompt = require("clodex.prompt")
 local PRIMARY_COMMAND_PREFIX = "Clodex"
 local REQUIRE_CLODEX = function()
     return require("clodex")
@@ -336,7 +336,7 @@ local function command_specs()
         specs[#specs + 1] = command_spec(definition)
     end
 
-    for _, category in ipairs(Category.list()) do
+    for _, category in ipairs(Prompt.categories.list()) do
         for _, spec in ipairs(category_command_specs(category)) do
             specs[#specs + 1] = spec
         end
