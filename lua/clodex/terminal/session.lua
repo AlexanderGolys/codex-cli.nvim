@@ -371,6 +371,17 @@ end
 
 ---@param text string
 ---@return boolean
+local function is_opencode_backend(self)
+    for _, arg in ipairs(self.cmd or {}) do
+        if arg:match("opencode") then
+            return true
+        end
+    end
+    return false
+end
+
+---@param text string
+---@return boolean
 function Session:dispatch_prompt(text)
     text = vim.trim(text or "")
     if text == "" then
@@ -380,10 +391,15 @@ function Session:dispatch_prompt(text)
         return false
     end
 
-    local normalized = text:gsub("\r\n", "\n"):gsub("\n", "\r")
+    local normalized
+    if is_opencode_backend(self) then
+        normalized = text:gsub("\r\n", "\n")
+    else
+        normalized = text:gsub("\r\n", "\n"):gsub("\n", "\r")
+    end
     local ok = pcall(vim.fn.chansend, self.job_id, normalized)
     if not ok then
-        notify.error(("Failed to send prompt to Codex session at %s"):format(self.cwd))
+        notify.error(("Failed to send prompt to session at %s"):format(self.cwd))
         return false
     end
 
