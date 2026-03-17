@@ -1,5 +1,5 @@
+local Backend = require("clodex.backend")
 local fs = require("clodex.util.fs")
-local ModelInstructions = require("clodex.project.model_instructions")
 local Session = require("clodex.terminal.session")
 local TerminalUi = require("clodex.terminal.ui")
 
@@ -23,7 +23,6 @@ local TerminalUi = require("clodex.terminal.ui")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.TerminalManager
 ---@field config Clodex.Config.Values
----@field model_instructions Clodex.ProjectModelInstructions
 ---@field project_sessions table<string, Clodex.TerminalSession>
 ---@field free_session? Clodex.TerminalSession
 local Manager = {}
@@ -93,7 +92,6 @@ end
 function Manager.new(config)
   local self = setmetatable({}, Manager)
   self.config = config
-  self.model_instructions = ModelInstructions.new(config)
   self.project_sessions = {}
   return self
 end
@@ -101,7 +99,6 @@ end
 ---@param config Clodex.Config.Values
 function Manager:update_config(config)
   self.config = config
-  self.model_instructions:update_config(config)
 end
 
 ---@param project Clodex.Project
@@ -122,8 +119,7 @@ end
 ---@return Clodex.TerminalSession.Spec
 function Manager:session_spec(target)
   if target.kind == "project" then
-    local cmd = vim.deepcopy(self.config.codex_cmd)
-    vim.list_extend(cmd, self.model_instructions:codex_args(target.project))
+    local cmd = Backend.cli_cmd(self.config)
     return {
       key = target.project.root,
       kind = "project",
@@ -140,7 +136,7 @@ function Manager:session_spec(target)
     kind = "free",
     cwd = target.cwd,
     title = string.format("Clodex: %s", target.cwd),
-    cmd = vim.deepcopy(self.config.codex_cmd),
+    cmd = Backend.cli_cmd(self.config),
     header_enabled = true,
   }
 end

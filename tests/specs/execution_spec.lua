@@ -17,6 +17,12 @@ local function new_execution(skills_dir)
     }))
 end
 
+local function new_opencode_execution()
+    return Execution.new(Config.new():setup({
+        backend = "opencode",
+    }))
+end
+
 describe("clodex.workspace.execution", function()
     it("syncs the global prompt skill from the repo template", function()
         local root = temp_dir()
@@ -81,6 +87,29 @@ describe("clodex.workspace.execution", function()
         assert.matches("Current queue item id: `todo%-1`", todo_prompt)
         assert.matches("Current prompt kind: `todo`", todo_prompt)
         assert.matches("Commit policy for this prompt: `required`", todo_prompt)
+
+        fs.remove(root)
+    end)
+
+    it("syncs the checked-in skill into the project-local opencode skills dir", function()
+        local root = temp_dir()
+        local project = {
+            name = "Demo",
+            root = fs.join(root, "project"),
+        }
+        fs.ensure_dir(project.root)
+
+        local execution = new_opencode_execution()
+        execution:sync_prompt_skill(project)
+
+        local skill_file = execution:skill_file(project)
+        local file = assert(io.open(skill_file, "rb"))
+        local content = file:read("*a")
+        file:close()
+
+        assert.matches("%.opencode/skills/prompt%-nvim%-clodex/SKILL%.md$", skill_file)
+        assert.matches("Manual History", content)
+        assert.matches("%$prompt%-nvim%-clodex", content)
 
         fs.remove(root)
     end)

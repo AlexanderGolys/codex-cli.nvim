@@ -546,15 +546,6 @@ local function append_prompt_skill(self, block, snapshot)
     Extmark.inline(0, 0, #"Prompt Skill", "ClodexStateSection"),
   })
 
-  local project = snapshot.active_project or snapshot.detected_project
-  if not project then
-    push_line(self, block, "> none", {
-      Extmark.inline(0, 0, 1, "ClodexStateMarker"),
-      Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
-    })
-    return
-  end
-
   local app = self.app
   local execution = app and app.execution or nil
   if not execution or not execution.uses_prompt_skill or not execution:uses_prompt_skill() then
@@ -562,10 +553,14 @@ local function append_prompt_skill(self, block, snapshot)
     return
   end
 
-  local skill_file = execution:skill_file(project)
+  local project = snapshot.active_project or snapshot.detected_project
+  local ok, skill_file = pcall(execution.skill_file, execution, project)
+  if not ok or type(skill_file) ~= "string" or skill_file == "" then
+    append_field(self, block, "status", "unresolved")
+    return
+  end
   local created = fs.is_file(skill_file)
-  append_field(self, block, "project", project.name)
-  append_field(self, block, "status", created and "created" or "not created")
+  append_field(self, block, "status", created and "synced" or "not installed")
   append_field(self, block, "path", skill_file)
 
   if not created then

@@ -8,33 +8,6 @@ local fs = require("clodex.util.fs")
 local Execution = {}
 Execution.__index = Execution
 
-local SKILL_TEMPLATE = [[---
-name: prompt-nvim-clodex
-description: Handle clodex.nvim queued prompt executions by updating the local workspace queue file when the work is complete.
----
-
-Treat obvious typos in the user-written title and prompt text as mistakes to silently normalize before you interpret the task.
-Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation in your understanding of the request.
-
-# Queue Completion
-
-Use this skill when a prompt includes `$__CLODEX_SKILL_NAME__`.
-
-When the prompt provides a queue item id and prompt kind before the skill call:
-
-1. Finish the requested work first.
-2. If the prompt kind is `ask`, do not create a commit for this queue item.
-3. For any other prompt kind, create a focused git commit before you update the queue item when the project root is git-backed. If the project root is not a git repository, skip the commit step and leave `history_commit` unset.
-4. Resolve the project-local workspace JSON file from the current repository root as `.clodex/workspaces/<sha256(project_root):sub(1, 16)>.json`, then update that file only after the work is complete.
-5. Find the queue item with the provided id in `queues.queued`, `queues.implemented`, or `queues.history`.
-6. If it is still in `queues.queued`, move that same item into `queues.implemented` without changing its `id`.
-7. If it is already in `queues.implemented`, update it in place.
-8. If it is already in `queues.history`, update it in place instead of duplicating it.
-9. Set `history_summary`, `history_commit` when a commit exists, `history_completed_at`, and refresh `updated_at`.
-10. If more prompts are waiting in the project's workspace file under `queues.queued`, continue with the next queued prompt immediately after finishing the current one.
-11. Repeat until `queues.queued` is empty. Do not start prompts that are only in `queues.planned` or `queues.implemented`.
-]]
-
 local SOURCE_PATH = fs.normalize(debug.getinfo(1, "S").source:sub(2))
 local REPO_ROOT = fs.dirname(fs.dirname(fs.dirname(fs.dirname(SOURCE_PATH))))
 local REPO_SKILL_TEMPLATE_PATH = fs.join(REPO_ROOT, ".codex", "skills", "prompt-nvim-clodex", "SKILL.md")
@@ -49,15 +22,6 @@ local function is_absolute_path(path)
 end
 
 ---@return string
-local function codex_home()
-    local configured = trim(vim.env.CODEX_HOME)
-    if configured ~= "" then
-        return fs.normalize(vim.fn.expand(configured))
-    end
-
-    return fs.join(vim.fn.expand("~"), ".codex")
-end
-
 --- Computes a stable directory name for one project's local execution data.
 ---@param project_root string
 ---@return string
@@ -83,8 +47,9 @@ local function execution_dir(config, project_root)
 end
 
 ---@param config Clodex.Config.Values
+---@param project_root string?
 ---@return string?
-local function skills_dir(config)
+local function skills_dir(config, project_root)
     local dir = trim(config.prompt_execution.skills_dir)
     if dir == "" then
         return nil
@@ -94,7 +59,15 @@ local function skills_dir(config)
     if is_absolute_path(expanded) then
         return expanded
     end
-    return fs.join(codex_home(), expanded)
+
+    if config.backend == "opencode" then
+        if not project_root or project_root == "" then
+            return nil
+        end
+        return fs.join(project_root, expanded)
+    end
+
+    return expanded
 end
 
 ---@param config Clodex.Config.Values
@@ -106,20 +79,18 @@ end
 
 ---@param config Clodex.Config.Values
 ---@return string
-local function generated_skill_content(config)
-    local template = SKILL_TEMPLATE
-    if fs.is_file(REPO_SKILL_TEMPLATE_PATH) then
-        local file = io.open(REPO_SKILL_TEMPLATE_PATH, "rb")
-        if file then
-            local content = file:read("*a")
-            file:close()
-            if content and content ~= "" then
-                template = content
-            end
-        end
+local function repo_skill_content()
+    local file = io.open(REPO_SKILL_TEMPLATE_PATH, "rb")
+    if not file then
+        error(("Could not open prompt skill template: %s"):format(REPO_SKILL_TEMPLATE_PATH))
     end
 
-    return template:gsub("__CLODEX_SKILL_NAME__", skill_name(config))
+    local content = file:read("*a")
+    file:close()
+    if not content or content == "" then
+        error(("Prompt skill template is empty: %s"):format(REPO_SKILL_TEMPLATE_PATH))
+    end
+    return content
 end
 
 ---@param item Clodex.QueueItem
@@ -165,23 +136,28 @@ function Execution:uses_prompt_skill()
     return trim(self.config.prompt_execution.skill_name) ~= "" and trim(self.config.prompt_execution.skills_dir) ~= ""
 end
 
+---@param project Clodex.Project?
 ---@return string
-function Execution:skill_dir()
-    return assert(skills_dir(self.config))
+function Execution:skill_dir(project)
+    local project_root = project and project.root or nil
+    return assert(skills_dir(self.config, project_root))
 end
 
+---@param project Clodex.Project?
 ---@return string
-function Execution:skill_file()
-    return fs.join(self:skill_dir(), skill_name(self.config), "SKILL.md")
+function Execution:skill_file(project)
+    return fs.join(self:skill_dir(project), skill_name(self.config), "SKILL.md")
 end
 
 ---@return boolean
-function Execution:sync_prompt_skill()
+---@param project Clodex.Project?
+function Execution:sync_prompt_skill(project)
     if not self:uses_prompt_skill() then
         return false
     end
 
-    fs.write_file(self:skill_file(), generated_skill_content(self.config))
+    local file = self:skill_file(project)
+    fs.write_file(file, repo_skill_content())
     return true
 end
 
@@ -195,6 +171,10 @@ end
 ---@param item Clodex.QueueItem
 ---@return string
 function Execution:dispatch_prompt(project, item)
+    if self:uses_prompt_skill() then
+        self:sync_prompt_skill(project)
+    end
+
     local instruction_lines = completion_instruction_lines(item, self.config)
 
     local prompt_lines = prompt_prefix_lines(item)

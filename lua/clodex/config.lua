@@ -1,4 +1,5 @@
 local HighlightConfig = require("clodex.config.highlights")
+local Backend = require("clodex.backend")
 local fs = require("clodex.util.fs")
 
 --- Persistent plugin settings used to resolve workspace and project registry files.
@@ -8,7 +9,7 @@ local fs = require("clodex.util.fs")
 ---@field session_state_dir string
 ---@field history_file string
 
---- Terminal UI/runtime options for Codex subprocess windows.
+--- Terminal UI/runtime options for interactive backend subprocess windows.
 ---@class Clodex.Config.Terminal
 ---@field win snacks.win.Config|{}
 ---@field start_insert boolean
@@ -49,7 +50,7 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.PromptExecution
 ---@field receipts_dir string # Backward-compatible base directory for project-local execution artifacts.
 ---@field poll_ms integer
----@field skills_dir? string # Project-local path under each project root; empty string disables generated skill mode.
+---@field skills_dir? string # Backend-specific skill root; codex uses a global dir, opencode uses a project-local dir.
 ---@field skill_name string
 
 --- Session integration toggles for tab-scoped Clodex state.
@@ -77,13 +78,15 @@ local fs = require("clodex.util.fs")
 ---@field queue_workspace string|Clodex.Config.KeymapConfig|false
 ---@field state_preview string|Clodex.Config.KeymapConfig|false
 
---- Manual project-history tracking for direct CLI conversations outside queued prompts.
+--- Legacy manual-history settings kept for compatibility.
 ---@class Clodex.Config.ManualHistory
----@field model_instructions_file string # Project-local file passed to Codex via `model_instructions_file`; empty disables generation.
+---@field model_instructions_file string # Deprecated and ignored.
 
 --- Runtime-config data structure consumed across managers and UI modules.
 ---@class Clodex.Config.Values
+---@field backend Clodex.Backend.Name
 ---@field codex_cmd string[]
+---@field opencode_cmd string[]
 ---@field storage Clodex.Config.Storage
 ---@field terminal Clodex.Config.Terminal
 ---@field project_detection Clodex.Config.ProjectDetection
@@ -109,7 +112,9 @@ end
 local function defaults()
     local storage_root = default_storage_root()
     return {
+        backend = "codex",
         codex_cmd = { "codex" },
+        opencode_cmd = { "opencode" },
         storage = {
             projects_file = fs.join(storage_root, "projects.json"),
             workspaces_dir = fs.join(".clodex", "workspaces"),
@@ -154,7 +159,7 @@ local function defaults()
         prompt_execution = {
             receipts_dir = fs.join(".clodex", "prompt-executions"),
             poll_ms = 5000,
-            skills_dir = fs.join(".codex", "skills"),
+            skills_dir = Backend.default_skills_dir("codex"),
             skill_name = "prompt-nvim-clodex",
         },
         session = {
@@ -175,6 +180,34 @@ local function defaults()
             model_instructions_file = "",
         },
     }
+end
+
+---@param values Clodex.Config.Values
+---@param opts table
+---@return boolean
+local function option_provided(values, opts, ...)
+    local current = opts
+    for index = 1, select("#", ...) do
+        local key = select(index, ...)
+        if type(current) ~= "table" then
+            return false
+        end
+        current = current[key]
+        if current == nil then
+            return false
+        end
+    end
+    return true
+end
+
+---@param values Clodex.Config.Values
+---@param opts table
+local function apply_backend_defaults(values, opts)
+    values.backend = Backend.normalize(values.backend)
+
+    if not option_provided(values, opts, "prompt_execution", "skills_dir") then
+        values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
+    end
 end
 
 --- Checks whether a value is a keyed table compatible with config overwrite paths.
@@ -338,6 +371,7 @@ end
 ---@return Clodex.Config.Values
 function Config:setup(opts)
     self.values = Config.merge(defaults(), opts or {})
+    apply_backend_defaults(self.values, opts or {})
     return self.values
 end
 

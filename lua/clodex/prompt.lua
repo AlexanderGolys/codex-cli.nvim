@@ -1,13 +1,15 @@
 --- Shared prompt definitions and formatting helpers used across prompt actions and UI.
 ---@alias Clodex.PromptCategory
 ---| "todo"
----| "error"
+---| "bug"
 ---| "visual"
 ---| "adjustment"
 ---| "refactor"
 ---| "idea"
+---| "ask"
 ---| "explain"
 ---| "library"
+---| "notworking"
 
 ---@class Clodex.PromptCategoryDef
 ---@field id Clodex.PromptCategory
@@ -33,7 +35,7 @@
 ---@field broken boolean
 
 ---@class Clodex.Prompt
----@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean }
+---@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean, requires_commit: fun(id?: string): boolean }
 ---@field library { list: fun(): Clodex.PromptLibrary.Template[], get: fun(id: string): Clodex.PromptLibrary.Template? }
 local M = {}
 
@@ -41,13 +43,15 @@ local WHITESPACE_SUFFIX = " [...]"
 local MIDWORD_SUFFIX = "-[...]"
 local TITLE_GROUP_SUFFIX = {
     todo = "TodoTitle",
-    error = "ErrorTitle",
+    bug = "BugTitle",
     visual = "VisualTitle",
     adjustment = "AdjustmentTitle",
     refactor = "RefactorTitle",
     idea = "IdeaTitle",
+    ask = "ExplainTitle",
     explain = "ExplainTitle",
     library = "IdeaTitle",
+    notworking = "NotWorkingTitle",
 }
 
 ---@type Clodex.PromptCategoryDef[]
@@ -59,11 +63,11 @@ local categories = {
         default_title = "New todo",
     },
     {
-        id = "error",
-        label = "Error",
-        highlight = "error_title",
-        default_title = "Investigate runtime error",
-        title_prefix = "Investigate runtime error",
+        id = "bug",
+        label = "Bug",
+        highlight = "bug_title",
+        default_title = "Investigate runtime bug",
+        title_prefix = "Investigate runtime bug",
     },
     {
         id = "visual",
@@ -90,10 +94,10 @@ local categories = {
         default_title = "Explore an idea",
     },
     {
-        id = "explain",
-        label = "Explain",
+        id = "ask",
+        label = "Ask",
         highlight = "explain_title",
-        default_title = "Explain the current behavior",
+        default_title = "Ask about the current behavior",
     },
     {
         id = "library",
@@ -101,12 +105,19 @@ local categories = {
         highlight = "idea_title",
         default_title = "Use a saved prompt template",
     },
+    {
+        id = "notworking",
+        label = "Not Working",
+        highlight = "notworking_title",
+        default_title = "Fix a previously implemented feature that is not working",
+    },
 }
 
 local categories_by_id = {} ---@type table<Clodex.PromptCategory, Clodex.PromptCategoryDef>
 for _, category in ipairs(categories) do
     categories_by_id[category.id] = category
 end
+categories_by_id.explain = categories_by_id.ask
 
 ---@type Clodex.PromptLibrary.Template[]
 local templates = {
@@ -122,9 +133,9 @@ local templates = {
     },
     {
         id = "explain-current-file",
-        label = "Explain current file",
-        title = "Explain the current file",
-        kind = "explain",
+        label = "Ask about current file",
+        title = "Ask about the current file",
+        kind = "ask",
         details = table.concat({
             "Explain `&file` in terms of its responsibilities, main control flow, and important assumptions.",
             "Call out any non-obvious edge cases or follow-up refactors worth considering.",
@@ -187,6 +198,12 @@ end
 ---@return boolean
 function M.categories.is_valid(id)
     return categories_by_id[id] ~= nil
+end
+
+---@param id? string
+---@return boolean
+function M.categories.requires_commit(id)
+    return M.categories.get(id).id ~= "ask"
 end
 
 M.library = {}

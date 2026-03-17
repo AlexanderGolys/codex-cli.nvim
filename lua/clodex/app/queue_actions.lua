@@ -31,7 +31,6 @@ local PREVIOUS_QUEUE = {
   implemented = "queued",
   history = "implemented",
 }
-local REOPEN_REGRESSION_NOTE = "The previously implemented behavior is not working as expected. Investigate the regression and fix it."
 
 ---@param item Clodex.QueueItem
 ---@param opts Clodex.AppQueueActions.RewindOpts
@@ -42,22 +41,54 @@ local function rewind_item_spec(item, opts)
     return moved
   end
 
-  local details = vim.trim(moved.details or "")
-  local note = vim.trim(opts.note or "")
   local parts = {} ---@type string[]
-  parts[#parts + 1] = REOPEN_REGRESSION_NOTE
+  local original_title = vim.trim(moved.title or "")
+  local original_details = vim.trim(moved.details or "")
+  local note = vim.trim(opts.note or "")
+  local commit_id = vim.trim(moved.history_commit or "")
+  local commit_summary = vim.trim(moved.history_summary or "")
+
+  parts[#parts + 1] = ("A previously implemented feature or fix is not working as expected. The original implementation needs to be investigated and fixed.")
+  parts[#parts + 1] = ""
+  parts[#parts + 1] = "## Original Prompt"
+  if original_title ~= "" then
+    parts[#parts + 1] = ("**Title:** %s"):format(original_title)
+  end
+  if original_details ~= "" then
+    parts[#parts + 1] = ""
+    parts[#parts + 1] = original_details
+  end
+
+  if commit_id ~= "" or commit_summary ~= "" then
+    parts[#parts + 1] = ""
+    parts[#parts + 1] = "## Implementation Details"
+    if commit_id ~= "" then
+      parts[#parts + 1] = ("**Commit:** `%s`"):format(commit_id)
+    end
+    if commit_summary ~= "" then
+      parts[#parts + 1] = ("**Summary:** %s"):format(commit_summary)
+    end
+  end
+
   if note ~= "" then
+    parts[#parts + 1] = ""
+    parts[#parts + 1] = "## User Note"
     parts[#parts + 1] = note
   end
-  if details ~= "" and not vim.startswith(details, REOPEN_REGRESSION_NOTE) then
-    parts[#parts + 1] = details
-  end
-  moved.details = table.concat(parts, "\n\n")
+
+  parts[#parts + 1] = ""
+  parts[#parts + 1] = "## Instructions"
+  parts[#parts + 1] = "Investigate why the previously implemented functionality is not working correctly. Review the original implementation, identify the regression or bug, and implement a fix. Ensure the behavior works as originally intended."
+
+  moved.details = table.concat(parts, "\n")
   moved.prompt = moved.title
   if moved.details and moved.details ~= "" then
     moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
   end
-  moved.kind = "error"
+  moved.kind = "notworking"
+  moved.history_summary = nil
+  moved.history_commit = nil
+  moved.history_completed_at = nil
   return moved
 end
 

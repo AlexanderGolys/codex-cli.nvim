@@ -55,10 +55,24 @@ describe("clodex.config", function()
             assert.are.equal(false, values.terminal.start_insert)
             assert.are.equal("right", values.terminal.win.position)
             assert.are.equal(true, values.project_detection.auto_suggest_git_root)
+            assert.are.equal("codex", values.backend)
             assert.are.equal("codex", values.codex_cmd[1])
+            assert.are.equal("opencode", values.opencode_cmd[1])
+            assert.matches("%.codex/skills$", values.prompt_execution.skills_dir)
             assert.are.equal("<leader>pt", values.keymaps.toggle.lhs)
             assert.are.equal("<leader>pq", values.keymaps.queue_workspace.lhs)
             assert.are.equal("<leader>ps", values.keymaps.state_preview.lhs)
+        end)
+
+        it("switches the default skill root when opencode backend is selected", function()
+            local cfg = Config.new()
+            local values = cfg:setup({
+                backend = "opencode",
+            })
+
+            assert.are.equal("opencode", values.backend)
+            assert.are.same({ "opencode" }, values.opencode_cmd)
+            assert.are.equal(".opencode/skills", values.prompt_execution.skills_dir)
         end)
 
         it("darkens adjusted highlight colors relative to their source background", function()

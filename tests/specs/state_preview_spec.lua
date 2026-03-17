@@ -9,9 +9,18 @@ local function temp_dir()
 end
 
 describe("clodex.ui.state_preview", function()
+    after_each(function()
+        for _, name in ipairs({ "clodex-state-preview-state", "clodex-state-preview-commands" }) do
+            local bufnr = vim.fn.bufnr(name)
+            if bufnr > 0 and vim.api.nvim_buf_is_valid(bufnr) then
+                pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+            end
+        end
+    end)
+
     it("shows prompt skill details in the state panel", function()
         local root = temp_dir()
-        local skill_file = fs.join(root, ".codex", "skills", "prompt-nvim-clodex", "SKILL.md")
+        local skill_file = fs.join(root, "skills", "prompt-nvim-clodex", "SKILL.md")
         fs.write_file(skill_file, "---\nname: prompt-nvim-clodex\n---\nSkill body\n")
 
         local preview = Preview.new(Config.new():setup())
@@ -21,8 +30,7 @@ describe("clodex.ui.state_preview", function()
                 uses_prompt_skill = function()
                     return true
                 end,
-                skill_file = function(_, project)
-                    assert.are.equal(root, project.root)
+                skill_file = function()
                     return skill_file
                 end,
             },
@@ -53,8 +61,7 @@ describe("clodex.ui.state_preview", function()
 
         local lines = vim.api.nvim_buf_get_lines(preview.state_buf, 0, -1, false)
         assert.is_true(vim.tbl_contains(lines, "Prompt Skill"))
-        assert.is_true(vim.tbl_contains(lines, "project:             Demo"))
-        assert.is_true(vim.tbl_contains(lines, "status:              created"))
+        assert.is_true(vim.tbl_contains(lines, "status:              synced"))
         assert.is_true(vim.tbl_contains(lines, "  ---"))
         assert.is_true(vim.tbl_contains(lines, "  name: prompt-nvim-clodex"))
         assert.is_true(vim.tbl_contains(lines, "  Skill body"))

@@ -1,14 +1,13 @@
+local Backend = require("clodex.backend")
 local History = require("clodex.history")
 local fs = require("clodex.util.fs")
 local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
-local ModelInstructions = require("clodex.project.model_instructions")
 
 ---@class Clodex.ExecutionRunner
 ---@field app Clodex.App
 ---@field config Clodex.Config.Values
 ---@field active table<string, vim.SystemObj>
----@field model_instructions Clodex.ProjectModelInstructions
 local Runner = {}
 Runner.__index = Runner
 
@@ -104,14 +103,12 @@ function Runner.new(app, config)
         app = app,
         config = config,
         active = {},
-        model_instructions = ModelInstructions.new(config),
     }, Runner)
 end
 
 ---@param config Clodex.Config.Values
 function Runner:update_config(config)
     self.config = config
-    self.model_instructions:update_config(config)
 end
 
 ---@param project Clodex.Project
@@ -174,6 +171,15 @@ end
 ---@param item Clodex.QueueItem
 ---@return boolean
 function Runner:start(project, item)
+    if not Backend.supports_direct_exec(self.config.backend) then
+        notify.warn(
+            ("%s direct exec mode is not supported yet; use the interactive session flow instead."):format(
+                Backend.display_name(self.config.backend)
+            )
+        )
+        return false
+    end
+
     local key = run_key(project, item)
     if self.active[key] then
         notify.warn(("Direct Codex run is already active for %s: %s"):format(project.name, item.title))
@@ -184,7 +190,7 @@ function Runner:start(project, item)
     local schema_path = fs.join(dir, "response.schema.json")
     local output_path = fs.join(dir, "last-message.json")
     local prompt = self.app.execution:dispatch_prompt(project, item)
-    local cmd = vim.deepcopy(self.config.codex_cmd)
+    local cmd = Backend.cli_cmd(self.config)
     vim.list_extend(cmd, build_command(project, item, schema_path, output_path))
 
     fs.write_json(schema_path, output_schema())

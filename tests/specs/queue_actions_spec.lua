@@ -95,15 +95,7 @@ describe("clodex.app.queue_actions", function()
 
         local queue_name, _, moved = queue:find_item(project, item.id)
         assert.are.equal("queued", queue_name)
-        assert.are.equal("error", moved.kind)
-        assert.are.equal(
-            "The previously implemented behavior is not working as expected. Investigate the regression and fix it.\n\nreturn to queued",
-            moved.details
-        )
-        assert.are.equal(
-            "fix prompt flow\n\nThe previously implemented behavior is not working as expected. Investigate the regression and fix it.\n\nreturn to queued",
-            moved.prompt
-        )
+        assert.are.equal("notworking", moved.kind)
         assert.are.equal(nil, moved.history_summary)
         assert.are.equal(nil, moved.history_completed_at)
         assert.are.equal(1, refresh_count)
@@ -117,6 +109,10 @@ describe("clodex.app.queue_actions", function()
             kind = "todo",
         })
         queue:advance(project, item.id)
+        queue:update_implemented_item(project, item.id, {
+            summary = "implementation complete",
+            completed_at = "2026-01-01T00:00:00Z",
+        })
 
         actions:rewind_queue_item(project, item.id, {
             queue = "implemented",
@@ -126,10 +122,13 @@ describe("clodex.app.queue_actions", function()
 
         local queue_name, _, moved = queue:find_item(project, item.id)
         assert.are.equal("queued", queue_name)
-        assert.are.equal(
-            "The previously implemented behavior is not working as expected. Investigate the regression and fix it.\n\nFails when the cache is cold.\n\nreturn to queued",
-            moved.details
-        )
+        assert.are.equal("notworking", moved.kind)
+        assert.is_true(moved.details:find("## User Note") ~= nil)
+        assert.is_true(moved.details:find("Fails when the cache is cold%.") ~= nil)
+        assert.is_true(moved.details:find("## Implementation Details") ~= nil)
+        assert.is_true(moved.details:find("implementation complete") ~= nil)
+        assert.are.equal(nil, moved.history_summary)
+        assert.are.equal(nil, moved.history_commit)
     end)
 
     it("moves a history item to another project when the source queue is specified", function()

@@ -61,7 +61,7 @@ local M = {
       fg = { from = "@constructor" },
       bold = true,
     },
-    ClodexPromptErrorTitle = {
+    ClodexPromptBugTitle = {
       fg = { from = "DiagnosticError" },
       bold = true,
     },
@@ -83,6 +83,10 @@ local M = {
     },
     ClodexPromptExplainTitle = {
       fg = { from = "Type" },
+      bold = true,
+    },
+    ClodexPromptNotWorkingTitle = {
+      fg = { from = "DiagnosticWarn" },
       bold = true,
     },
     ClodexPromptPreviewText = {
@@ -171,6 +175,10 @@ local M = {
       fg = { from = { "Identifier", "Special" } },
       bold = true,
     },
+    ClodexPromptEditorContext = {
+      fg = "#4aa8d8",
+      bold = true,
+    },
     ClodexConfirmButton = {
       fg = { from = { "Comment", "Normal" } },
       bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
@@ -204,14 +212,14 @@ local M = {
       bold = true,
     },
     ClodexQueueImplementedName = {
-      fg = "#6ebf7c",
+      fg = "#e879f9",
       bold = true,
     },
     ClodexQueueImplementedBracket = {
-      fg = "#91d89b",
+      fg = "#f0abfc",
     },
     ClodexQueueImplementedCount = {
-      fg = "#b6ecbc",
+      fg = "#f5d0fe",
       bold = true,
     },
     ClodexQueueHistoryName = {
