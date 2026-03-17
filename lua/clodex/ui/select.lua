@@ -25,6 +25,7 @@ local PROMPT_EDITOR_BORDER_COLS = 2
 local PROMPT_EDITOR_ZINDEX = 70
 local PROMPT_EDITOR_BACKDROP = 40
 local PROMPT_EDITOR_HINT_HEIGHT = 2
+local PROMPT_CONTEXT_HIGHLIGHT_NS = vim.api.nvim_create_namespace("clodex_prompt_context_highlight")
 local PROMPT_EDITOR_HINT_KEYS = {
   "<CR>",
   "<Down>",
@@ -153,6 +154,27 @@ local function completion_start_col(line, cursor_col)
     start_col = start_col - 1
   end
   return start_col
+end
+
+---@param buf integer
+local function configure_prompt_context_completeopt(buf)
+  local completeopt = vim.bo[buf].completeopt or ""
+  local options = vim.split(completeopt, ",", { plain = true, trimempty = true })
+  local filtered = {} ---@type string[]
+  local seen = {} ---@type table<string, boolean>
+
+  for _, option in ipairs(options) do
+    if option ~= "noinsert" and option ~= "" and not seen[option] then
+      seen[option] = true
+      filtered[#filtered + 1] = option
+    end
+  end
+
+  if not seen.longest then
+    filtered[#filtered + 1] = "longest"
+  end
+
+  vim.bo[buf].completeopt = table.concat(filtered, ",")
 end
 
 --- Provides built-in prompt context completion items for the prompt details buffer.
@@ -395,6 +417,53 @@ local function render_hint_lines(buf, lines)
     end
   end
   vim.bo[buf].modifiable = false
+end
+
+---@param context Clodex.PromptContext.Capture?
+---@return table<string, boolean>
+local function prompt_context_token_lookup(context)
+  local lookup = {} ---@type table<string, boolean>
+  for _, item in ipairs(PromptContext.tokens(context)) do
+    if not item.disabled then
+      lookup[item.token] = true
+    end
+  end
+  return lookup
+end
+
+---@param buf integer
+---@param context Clodex.PromptContext.Capture?
+local function render_prompt_context_highlights(buf, context)
+  vim.api.nvim_buf_clear_namespace(buf, PROMPT_CONTEXT_HIGHLIGHT_NS, 0, -1)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  local token_lookup = prompt_context_token_lookup(context)
+  if next(token_lookup) == nil then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for row, line in ipairs(lines) do
+    local search_from = 1
+    while true do
+      local start_col, end_col = line:find("&[%a_][%w_]*", search_from)
+      if not start_col then
+        break
+      end
+
+      local token = line:sub(start_col, end_col)
+      if token_lookup[token] then
+        vim.api.nvim_buf_set_extmark(buf, PROMPT_CONTEXT_HIGHLIGHT_NS, row - 1, start_col - 1, {
+          end_row = row - 1,
+          end_col = end_col,
+          hl_group = "ClodexPromptEditorContext",
+        })
+      end
+      search_from = end_col + 1
+    end
+  end
 end
 
 ---@param actions Clodex.UiSelect.MultilineAction[]
@@ -669,7 +738,9 @@ function M.multiline_input(opts, on_confirm)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "ClodexPromptEditorHint")
   vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
+  configure_prompt_context_completeopt(body_buf)
   prompt_context_completion[body_buf] = prompt_context()
+  render_prompt_context_highlights(body_buf, prompt_context_completion[body_buf])
 
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = hint_buf,
@@ -687,7 +758,10 @@ function M.multiline_input(opts, on_confirm)
   })
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = body_buf,
-    callback = resize,
+    callback = function()
+      resize()
+      render_prompt_context_highlights(body_buf, prompt_context())
+    end,
   })
 
   --- Submits the full current buffer content into the confirm callback.

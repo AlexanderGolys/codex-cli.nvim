@@ -8,11 +8,13 @@ describe("clodex.ui.select", function()
     local select
     local opened_windows
     local original_ui_win
+    local original_completeopt
     local picker_select_calls
 
     before_each(function()
         package.loaded["clodex.ui.select"] = nil
         original_ui_win = package.loaded["clodex.ui.win"]
+        original_completeopt = vim.o.completeopt
         opened_windows = {}
         picker_select_calls = {}
         package.loaded["snacks.input"] = {
@@ -115,6 +117,7 @@ describe("clodex.ui.select", function()
         package.loaded["clodex.ui.win"] = original_ui_win
         package.loaded["snacks.input"] = nil
         package.loaded["snacks.picker.select"] = nil
+        vim.o.completeopt = original_completeopt
     end)
 
     it("switches focus between title and details with Tab and Up, and keeps fields visually stacked", function()
@@ -205,6 +208,7 @@ describe("clodex.ui.select", function()
     end)
 
     it("uses built-in completion items for prompt context insertion", function()
+        vim.o.completeopt = "menuone,noinsert,noselect"
         local source_buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_name(source_buf, "/tmp/example.lua")
         vim.bo[source_buf].buftype = ""
@@ -232,6 +236,7 @@ describe("clodex.ui.select", function()
             "v:lua.require'clodex.ui.select'.prompt_context_complete",
             vim.bo[body_window.buf].completefunc
         )
+        assert.are.equal("menuone,noselect,longest", vim.bo[body_window.buf].completeopt)
 
         local start_col = select.prompt_context_complete(1, "")
         local items = select.prompt_context_complete(0, "&f")
@@ -281,5 +286,44 @@ describe("clodex.ui.select", function()
             'Title\n\n@{example.lua}\n\n"value" under the cursor in @{example.lua}: line 3',
             submitted
         )
+    end)
+
+    it("highlights only valid prompt context tokens in the details buffer", function()
+        select.multiline_input({
+            prompt = "Test prompt",
+            default = table.concat({
+                "Title",
+                "",
+                "&file and &line",
+                "&missing should stay plain",
+                "&filex should stay plain too",
+            }, "\n"),
+            context = {
+                relative_path = "example.lua",
+                file_path = "/tmp/example.lua",
+                project_root = "/tmp",
+                cursor_row = 3,
+            },
+        }, function() end)
+
+        wait_for(function()
+            return #opened_windows == 3
+        end)
+
+        local body_window = opened_windows[2]
+        local ns = vim.api.nvim_get_namespaces().clodex_prompt_context_highlight
+        local marks = vim.api.nvim_buf_get_extmarks(body_window.buf, ns, 0, -1, { details = true })
+
+        assert.are.same({
+            { row = 0, col = 0, end_col = 5, hl_group = "ClodexPromptEditorContext" },
+            { row = 0, col = 10, end_col = 15, hl_group = "ClodexPromptEditorContext" },
+        }, vim.tbl_map(function(mark)
+            return {
+                row = mark[2],
+                col = mark[3],
+                end_col = mark[4].end_col,
+                hl_group = mark[4].hl_group,
+            }
+        end, marks))
     end)
 end)
