@@ -158,7 +158,10 @@ end
 
 ---@param buf integer
 local function configure_prompt_context_completeopt(buf)
-  local completeopt = vim.bo[buf].completeopt or ""
+  local completeopt = vim.bo[buf].completeopt
+  if completeopt == "" then
+    completeopt = vim.o.completeopt
+  end
   local options = vim.split(completeopt, ",", { plain = true, trimempty = true })
   local filtered = {} ---@type string[]
   local seen = {} ---@type table<string, boolean>
