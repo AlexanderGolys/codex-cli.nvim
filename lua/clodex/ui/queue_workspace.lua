@@ -50,6 +50,7 @@ local notify = require("clodex.util.notify")
 ---@field queue_rows Clodex.QueueWorkspace.QueueRow[]
 ---@field queue_item_rows integer[]
 ---@field suppress_open_until? integer
+---@field focus_augroup? integer
 local Workspace = {}
 Workspace.__index = Workspace
 
@@ -325,10 +326,7 @@ local function prompt_preview_lines(item, opts)
 
     if folded and remaining > 0 then
         if #preview >= max_lines then
-            preview[#preview] = ("    ... (+%d more line%s)"):format(
-                remaining + 1,
-                remaining == 0 and "" or "s"
-            )
+            preview[#preview] = ("    ... (+%d more lines)"):format(remaining + 1)
         else
             preview[#preview + 1] = ("    ... (+%d more line%s)"):format(remaining, remaining == 1 and "" or "s")
         end
@@ -410,15 +408,15 @@ local function footer_actions(focus)
         }
     end
 
-    return {
-        title = " Queue Actions ",
-        lines = {
-            "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
-            "/: filter prompts by title/details/body   Backspace: clear filter",
-            "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   Ctrl-S: save",
-        },
-    }
-end
+        return {
+            title = " Queue Actions ",
+            lines = {
+                "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
+                "/: search prompt list by title/details/body   Backspace: clear filter",
+                "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   !: mark not working   Ctrl-S: save",
+            },
+        }
+    end
 
 ---@param _queue_name Clodex.QueueName
 ---@param items Clodex.QueueItem[]
@@ -767,6 +765,7 @@ function Workspace:open()
 
     self:configure_windows()
     self:attach_keymaps()
+    self:attach_focus_tracking()
     self:refresh(true)
 end
 
@@ -798,6 +797,7 @@ end
 --- This is used by command flows when a view or session should stop being active.
 function Workspace:close()
     require("clodex.ui.select").close_active_input()
+    self:clear_focus_tracking()
     local wins = {
         self.project_win,
         self.queue_win,
@@ -815,9 +815,79 @@ function Workspace:close()
     end
 end
 
+function Workspace:clear_focus_tracking()
+    if not self.focus_augroup then
+        return
+    end
+    pcall(vim.api.nvim_del_augroup_by_id, self.focus_augroup)
+    self.focus_augroup = nil
+end
+
+function Workspace:sync_focus_to_current_win()
+    if not self:is_open() then
+        return
+    end
+
+    local current_win = vim.api.nvim_get_current_win()
+    if current_win == self.project_win then
+        self:set_focus("projects")
+        return
+    end
+    if current_win == self.queue_win then
+        self:set_focus("queue")
+    end
+end
+
+function Workspace:attach_focus_tracking()
+    self:clear_focus_tracking()
+
+    local group = vim.api.nvim_create_augroup(("clodex_queue_workspace_focus_%d"):format(self.project_buf or 0), {
+        clear = true,
+    })
+    self.focus_augroup = group
+
+    local function watch(buf)
+        vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+            group = group,
+            buffer = buf,
+            callback = function()
+                self:sync_focus_to_current_win()
+            end,
+        })
+    end
+
+    if buf_valid(self.project_buf) then
+        watch(self.project_buf)
+    end
+    if buf_valid(self.queue_buf) then
+        watch(self.queue_buf)
+    end
+end
+
 function Workspace:attach_keymaps()
     local function map(buf, lhs, rhs)
         vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
+    end
+
+    local function when_focused(target, action)
+        return function()
+            if self.focus ~= target then
+                return
+            end
+            action()
+        end
+    end
+
+    local function footer_by_focus(project_action, queue_action)
+        return function()
+            if self.focus == "projects" then
+                project_action()
+                return
+            end
+            if self.focus == "queue" then
+                queue_action()
+            end
+        end
     end
 
     local function block_insert_keys(buf, keys)
@@ -901,62 +971,97 @@ function Workspace:attach_keymaps()
         map(buf, "<CR>", function()
             self:open_selected_project()
         end)
-        map(buf, "s", function()
-            self:set_current_project()
-        end)
-        map(buf, "A", function()
-            self:activate_selected_project()
-        end)
-        map(buf, "X", function()
-            self:deactivate_selected_project()
-        end)
-        map(buf, "a", function()
-            self:add_todo()
-        end)
-        map(buf, "D", function()
-            self:delete_project()
-        end)
-        map(buf, "/", function()
-            self:prompt_project_search()
-        end)
-        map(buf, "<BS>", function()
-            self:clear_project_search()
-        end)
     end
 
+    map(self.project_buf, "s", function()
+        self:set_current_project()
+    end)
+    map(self.project_buf, "A", function()
+        self:activate_selected_project()
+    end)
+    map(self.project_buf, "X", function()
+        self:deactivate_selected_project()
+    end)
+    map(self.project_buf, "a", function()
+        self:add_todo()
+    end)
+    map(self.project_buf, "D", function()
+        self:delete_project()
+    end)
+    map(self.project_buf, "/", function()
+        self:prompt_project_search()
+    end)
+    map(self.project_buf, "<BS>", function()
+        self:clear_project_search()
+    end)
+
+    map(self.queue_buf, "a", function()
+        self:add_todo()
+    end)
+    map(self.queue_buf, "/", function()
+        self:prompt_queue_search()
+    end)
+    map(self.queue_buf, "<BS>", function()
+        self:clear_queue_search()
+    end)
     for _, buf in ipairs({ self.queue_buf, self.footer_buf }) do
-        map(buf, "/", function()
-            self:prompt_queue_search()
-        end)
-        map(buf, "<BS>", function()
-            self:clear_queue_search()
-        end)
-        map(buf, "e", function()
+        map(buf, "e", when_focused("queue", function()
             self:edit_queue_item()
-        end)
-        map(buf, "i", function()
+        end))
+        map(buf, "i", when_focused("queue", function()
             self:implement_queue_item()
-        end)
-        map(buf, "m", function()
+        end))
+        map(buf, "m", when_focused("queue", function()
             self:move_queue_item()
-        end)
-        map(buf, "M", function()
+        end))
+        map(buf, "M", when_focused("queue", function()
             self:move_queue_item_back()
-        end)
-        map(buf, "p", function()
+        end))
+        map(buf, "!", when_focused("queue", function()
+            self:mark_queue_item_not_working()
+        end))
+        map(buf, "p", when_focused("queue", function()
             self:move_queue_item_to_project()
-        end)
-        map(buf, "H", function()
+        end))
+        map(buf, "H", when_focused("queue", function()
             self:move_queue_item_to_adjacent_project(-1)
-        end)
-        map(buf, "L", function()
+        end))
+        map(buf, "L", when_focused("queue", function()
             self:move_queue_item_to_adjacent_project(1)
-        end)
-        map(buf, "d", function()
+        end))
+        map(buf, "d", when_focused("queue", function()
             self:set_focus("queue")
             self:delete_queue_item()
-        end)
+        end))
     end
+
+    map(self.footer_buf, "s", when_focused("projects", function()
+        self:set_current_project()
+    end))
+    map(self.footer_buf, "A", when_focused("projects", function()
+        self:activate_selected_project()
+    end))
+    map(self.footer_buf, "X", when_focused("projects", function()
+        self:deactivate_selected_project()
+    end))
+    map(self.footer_buf, "a", footer_by_focus(function()
+        self:add_todo()
+    end, function()
+        self:add_todo()
+    end))
+    map(self.footer_buf, "D", when_focused("projects", function()
+        self:delete_project()
+    end))
+    map(self.footer_buf, "/", footer_by_focus(function()
+        self:prompt_project_search()
+    end, function()
+        self:prompt_queue_search()
+    end))
+    map(self.footer_buf, "<BS>", footer_by_focus(function()
+        self:clear_project_search()
+    end, function()
+        self:clear_queue_search()
+    end))
 
     map(self.project_buf, "<LeftMouse>", function()
         project_click(false)
@@ -977,7 +1082,22 @@ function Workspace:set_focus(focus)
     if focus == "queue" and not self:selected_project() then
         return
     end
+    if self.focus == focus then
+        self:apply_focus()
+        return
+    end
     self.focus = focus
+    if self:is_open() then
+        self:render_projects()
+        self:render_queue()
+        self:render_footer()
+        if win_valid(self.footer_win) then
+            vim.api.nvim_win_set_config(self.footer_win, {
+                title = footer_actions(self.focus).title,
+                title_pos = "center",
+            })
+        end
+    end
     self:apply_focus()
 end
 
@@ -993,9 +1113,9 @@ end
 
 function Workspace:apply_focus()
     self:update_window_highlights()
-    local win = self.footer_win
+    local win = self.focus == "projects" and self.project_win or self.queue_win
     if not win_valid(win) then
-        win = self.focus == "projects" and self.project_win or self.queue_win
+        win = win_valid(self.project_win) and self.project_win or self.queue_win
     end
     if win_valid(win) then
         vim.api.nvim_set_current_win(win)
@@ -1566,69 +1686,38 @@ function Workspace:move_queue_item_back()
         return
     end
 
-    local function move_back(copy)
-        self.app.queue_actions:rewind_queue_item(project, item.id, { copy = copy, queue = queue_name })
+    self.app.queue_actions:rewind_queue_item(project, item.id, { queue = queue_name })
+    self.queue_index = 1
+    self:refresh()
+end
+
+function Workspace:mark_queue_item_not_working()
+    local project = self:selected_project()
+    local item, queue_name = self:selected_queue_item()
+    if not project or not item or not queue_name then
+        notify.warn("No queue item selected")
+        return
+    end
+
+    if queue_name ~= "implemented" then
+        notify.warn("Only implemented items can be marked as not working")
+        return
+    end
+
+    ui.input({
+        prompt = "Optional note",
+    }, function(note)
+        if note == nil then
+            return
+        end
+        self.app.queue_actions:rewind_queue_item(project, item.id, {
+            queue = queue_name,
+            mark_not_working = true,
+            note = note,
+        })
         self.queue_index = 1
         self:refresh()
-    end
-
-    local function move_back_marked_not_working()
-        ui.input({
-            prompt = "Optional note",
-        }, function(note)
-            if note == nil then
-                return
-            end
-            self.app.queue_actions:rewind_queue_item(project, item.id, {
-                queue = queue_name,
-                mark_not_working = true,
-                note = note,
-            })
-            self.queue_index = 1
-            self:refresh()
-        end)
-    end
-
-    if queue_name == "implemented" then
-        ui.select({
-            { label = "Move back to queued",             copy = false, mark_not_working = false },
-            { label = "Duplicate back to queued",        copy = true,  mark_not_working = false },
-            { label = "Move back as not working",        copy = false, mark_not_working = true },
-        }, {
-            prompt = ("Move '%s' back"):format(item.title),
-            format_item = function(choice)
-                return choice.label
-            end,
-        }, function(choice)
-            if choice then
-                if choice.mark_not_working then
-                    move_back_marked_not_working()
-                    return
-                end
-                move_back(choice.copy)
-            end
-        end)
-        return
-    end
-
-    if queue_name == "history" then
-        ui.select({
-            { label = "Move back to implemented",      copy = false },
-            { label = "Duplicate back to implemented", copy = true },
-        }, {
-            prompt = ("Move '%s' back"):format(item.title),
-            format_item = function(choice)
-                return choice.label
-            end,
-        }, function(choice)
-            if choice then
-                move_back(choice.copy)
-            end
-        end)
-        return
-    end
-
-    move_back(false)
+    end)
 end
 
 function Workspace:move_queue_item_to_project()
