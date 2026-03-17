@@ -85,10 +85,6 @@ local M = {
       fg = { from = "Type" },
       bold = true,
     },
-    ClodexPromptNotWorkingTitle = {
-      fg = { from = "DiagnosticWarn" },
-      bold = true,
-    },
     ClodexPromptPreviewText = {
       fg = { from = "Directory" },
     },
@@ -212,14 +208,14 @@ local M = {
       bold = true,
     },
     ClodexQueueImplementedName = {
-      fg = "#e879f9",
+      fg = "#f5a0d0",
       bold = true,
     },
     ClodexQueueImplementedBracket = {
-      fg = "#f0abfc",
+      fg = "#f8b8dc",
     },
     ClodexQueueImplementedCount = {
-      fg = "#f5d0fe",
+      fg = "#fcd0e8",
       bold = true,
     },
     ClodexQueueHistoryName = {
