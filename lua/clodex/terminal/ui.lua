@@ -2,6 +2,8 @@ local M = {}
 local STATUSLINE_EXPR = "%!v:lua.require('clodex.terminal.ui').statusline()"
 local WINBAR_EXPR = "%!v:lua.require('clodex.terminal.ui').winbar()"
 
+local Backend = require("clodex.backend")
+
 ---@param win? integer
 ---@return Clodex.TerminalSession?
 local function current_session(win)
@@ -20,6 +22,19 @@ local function current_session(win)
     return instance.terminals:session_by_buf(vim.api.nvim_win_get_buf(target))
 end
 
+---@return boolean
+local function is_opencode_backend()
+    local ok, app = pcall(require, "clodex.app")
+    if not ok then
+        return false
+    end
+    local instance = app.instance and app.instance() or nil
+    if not instance or not instance.config then
+        return false
+    end
+    return Backend.normalize(instance.config:get().backend) == "opencode"
+end
+
 local function current_window()
     local win = vim.api.nvim_get_current_win()
     return vim.api.nvim_win_is_valid(win) and win or nil
@@ -35,6 +50,9 @@ end
 function M.apply_window(win)
     local target = win
     if not clodex_terminal_window(target) then
+        return
+    end
+    if is_opencode_backend() then
         return
     end
     vim.wo[target].statusline = STATUSLINE_EXPR

@@ -287,6 +287,14 @@ end
 ---@return snacks.win
 function Manager:open_window(session, parent_win)
   local Snacks = require("snacks")
+  local is_opencode = Backend.normalize(self.config.backend) == "opencode"
+  local wo = {
+    enter = true,
+  }
+  if not is_opencode then
+    wo.statusline = "%!v:lua.require('clodex.terminal.ui').statusline()"
+    wo.winbar = "%!v:lua.require('clodex.terminal.ui').winbar()"
+  end
   local opts = Snacks.win.resolve("terminal", self.config.terminal.win, {
     buf = session.buf,
     enter = true,
@@ -295,13 +303,12 @@ function Manager:open_window(session, parent_win)
     bo = {
       filetype = "clodex_terminal",
     },
-    wo = {
-      statusline = "%!v:lua.require('clodex.terminal.ui').statusline()",
-      winbar = "%!v:lua.require('clodex.terminal.ui').winbar()",
-    },
+    wo = wo,
     on_win = function()
-      TerminalUi.statusline()
-      TerminalUi.winbar()
+      if not is_opencode then
+        TerminalUi.statusline()
+        TerminalUi.winbar()
+      end
       if self.config.terminal.start_insert then
         vim.cmd.startinsert()
       end
