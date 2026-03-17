@@ -372,8 +372,11 @@ end
 ---@param text string
 ---@return boolean
 local function is_opencode_backend(self)
-    for _, arg in ipairs(self.cmd or {}) do
-        if arg:match("opencode") then
+    if type(self.cmd) ~= "table" then
+        return false
+    end
+    for _, arg in ipairs(self.cmd) do
+        if type(arg) == "string" and arg:match("opencode") then
             return true
         end
     end
