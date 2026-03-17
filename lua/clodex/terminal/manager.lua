@@ -288,12 +288,12 @@ end
 function Manager:open_window(session, parent_win)
   local Snacks = require("snacks")
   local is_opencode = Backend.normalize(self.config.backend) == "opencode"
-  local wo = {
-    enter = true,
-  }
+  local wo
   if not is_opencode then
-    wo.statusline = "%!v:lua.require('clodex.terminal.ui').statusline()"
-    wo.winbar = "%!v:lua.require('clodex.terminal.ui').winbar()"
+    wo = {
+      statusline = "%!v:lua.require('clodex.terminal.ui').statusline()",
+      winbar = "%!v:lua.require('clodex.terminal.ui').winbar()",
+    }
   end
   local opts = Snacks.win.resolve("terminal", self.config.terminal.win, {
     buf = session.buf,
