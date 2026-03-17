@@ -159,7 +159,7 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(1, refresh_count)
     end)
 
-    it("moves a queued item to implemented before dispatching it", function()
+    it("keeps a queued item in queued when dispatching interactively", function()
         local item = queue:add_todo(project, {
             title = "stay queued",
             queue = "queued",
@@ -184,13 +184,13 @@ describe("clodex.app.queue_actions", function()
         assert.is_true(ok)
         assert.are.same(project, dispatched_project)
         assert.are.same(item.id, dispatched_item.id)
-        assert.are.equal("implemented", queue_name)
+        assert.are.equal("queued", queue_name)
         assert.are.equal(item.id, current_item.id)
         assert.are.same(project, remembered_project)
         assert.are.equal(1, refresh_count)
     end)
 
-    it("moves all queued items to implemented before dispatching them", function()
+    it("moves all queued items to dispatched but keeps them in queued for interactive mode", function()
         local first = queue:add_todo(project, {
             title = "first",
             queue = "queued",
@@ -216,15 +216,73 @@ describe("clodex.app.queue_actions", function()
         actions:implement_queued_items(project)
 
         assert.are.same({ second.id, first.id }, dispatched_ids)
-        assert.are.equal("implemented", queue:find_item(project, first.id))
-        assert.are.equal("implemented", queue:find_item(project, second.id))
+        assert.are.equal("queued", queue:find_item(project, first.id))
+        assert.are.equal("queued", queue:find_item(project, second.id))
         assert.are.same(project, remembered_project)
         assert.are.equal(1, refresh_count)
     end)
 
-    it("moves a queued item back when dispatch fails", function()
+    it("moves a queued item to implemented before dispatching in exec mode", function()
+        local item = queue:add_todo(project, {
+            title = "exec mode",
+            queue = "queued",
+            kind = "todo",
+        })
+        local started_project
+        local started_item
+        local remembered_project
+
+        actions.app.exec_runner = {
+            start = function(_, project, item)
+                started_project = project
+                started_item = item
+                return true
+            end,
+        }
+        actions.app.project_details_store = {
+            touch_activity = function() end,
+        }
+        actions.remember_workspace_revision = function(_, queued_project)
+            remembered_project = queued_project
+        end
+
+        local ok = actions:start_queued_item(project, item.id, "exec")
+        local queue_name, _, current_item = queue:find_item(project, item.id)
+
+        assert.is_true(ok)
+        assert.are.same(project, started_project)
+        assert.are.same(item.id, started_item.id)
+        assert.are.equal("implemented", queue_name)
+        assert.are.equal(item.id, current_item.id)
+        assert.are.same(project, remembered_project)
+    end)
+
+    it("moves a queued item back when exec dispatch fails", function()
         local item = queue:add_todo(project, {
             title = "retry later",
+            queue = "queued",
+            kind = "todo",
+        })
+
+        actions.app.exec_runner = {
+            start = function()
+                return false
+            end,
+        }
+
+        local ok = actions:start_queued_item(project, item.id, "exec")
+        local queue_name, _, current_item = queue:find_item(project, item.id)
+
+        assert.is_false(ok)
+        assert.are.equal("queued", queue_name)
+        assert.are.equal(item.id, current_item.id)
+        assert.are.equal(nil, current_item.history_summary)
+        assert.are.equal(0, refresh_count)
+    end)
+
+    it("keeps a queued item in queued when interactive dispatch fails", function()
+        local item = queue:add_todo(project, {
+            title = "stay queued on fail",
             queue = "queued",
             kind = "todo",
         })

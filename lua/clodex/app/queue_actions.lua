@@ -177,24 +177,25 @@ function QueueActions:start_queued_item(project, item_id, mode)
     return false
   end
 
-  local implemented_item = move_item_to_implemented(self.app, project, item_id)
-  if not implemented_item then
-    notify.warn("Could not move the queued item to implemented")
-    return false
-  end
-
-  local started
   if mode == "exec" then
-    started = self:dispatch_item_direct(project, implemented_item)
-  else
-    started = self:dispatch_item(project, implemented_item)
-  end
+    local implemented_item = move_item_to_implemented(self.app, project, item_id)
+    if not implemented_item then
+      notify.warn("Could not move the queued item to implemented")
+      return false
+    end
 
-  if started then
+    local started = self:dispatch_item_direct(project, implemented_item)
+    if not started then
+      move_item_back_to_queued(self.app, project, item_id)
+      return false
+    end
     return true
   end
 
-  move_item_back_to_queued(self.app, project, item_id)
+  local started = self:dispatch_item(project, queued_item)
+  if started then
+    return true
+  end
   return false
 end
 
