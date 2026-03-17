@@ -8,45 +8,79 @@ local function temp_dir()
     return dir
 end
 
+local function new_execution(skills_dir)
+    return Execution.new(Config.new():setup({
+        prompt_execution = {
+            skills_dir = skills_dir,
+            skill_name = "prompt-nvim-clodex",
+        },
+    }))
+end
+
 describe("clodex.workspace.execution", function()
-    it("generates the project-local prompt skill from the repo-local template", function()
+    it("syncs the global prompt skill from the repo template", function()
         local root = temp_dir()
-        local project = {
-            name = "Demo",
-            root = root,
-        }
-        fs.ensure_dir(fs.join(root, ".git"))
-        local execution = Execution.new(Config.new():setup())
+        local execution = new_execution(fs.join(root, "skills"))
 
-        execution:ensure_prompt_skill(project)
+        execution:sync_prompt_skill()
 
-        local file = assert(io.open(execution:skill_file(project), "rb"))
+        local file = assert(io.open(execution:skill_file(), "rb"))
         local content = file:read("*a")
         file:close()
 
-        assert.matches("Create a focused git commit", content)
+        assert.matches("prompt kind is `ask`, do not create a commit", content)
+        assert.matches("create a focused git commit", content)
         assert.matches("queues%.implemented", content)
         assert.matches("%$prompt%-nvim%-clodex", content)
 
         fs.remove(root)
     end)
 
-    it("skips the commit requirement in generated skills for non-git project roots", function()
+    it("overwrites stale global skill content during sync", function()
         local root = temp_dir()
-        local project = {
-            name = "Demo",
-            root = root,
-        }
-        local execution = Execution.new(Config.new():setup())
+        local execution = new_execution(fs.join(root, "skills"))
 
-        execution:ensure_prompt_skill(project)
+        fs.write_file(execution:skill_file(), "stale")
+        execution:sync_prompt_skill()
 
-        local file = assert(io.open(execution:skill_file(project), "rb"))
+        local file = assert(io.open(execution:skill_file(), "rb"))
         local content = file:read("*a")
         file:close()
 
-        assert.matches("skip the commit step", content)
-        assert.matches("history_commit` when a commit exists", content)
+        assert.are_not.equal("stale", content)
+        assert.matches("Repeat until `queues%.queued` is empty", content)
+
+        fs.remove(root)
+    end)
+
+    it("renders queue prompts with item id and kind-aware commit policy", function()
+        local root = temp_dir()
+        local project = {
+            name = "Demo",
+            root = fs.join(root, "project"),
+        }
+        fs.ensure_dir(project.root)
+        local execution = new_execution(fs.join(root, "skills"))
+
+        local ask_prompt = execution:dispatch_prompt(project, {
+            id = "ask-1",
+            kind = "ask",
+            prompt = "Explain the behavior",
+        })
+        local todo_prompt = execution:dispatch_prompt(project, {
+            id = "todo-1",
+            kind = "todo",
+            prompt = "Implement the fix",
+        })
+
+        assert.matches("Current queue item id: `ask%-1`", ask_prompt)
+        assert.matches("Current prompt kind: `ask`", ask_prompt)
+        assert.matches("Commit policy for this prompt: `skip`", ask_prompt)
+        assert.matches("%$prompt%-nvim%-clodex", ask_prompt)
+
+        assert.matches("Current queue item id: `todo%-1`", todo_prompt)
+        assert.matches("Current prompt kind: `todo`", todo_prompt)
+        assert.matches("Commit policy for this prompt: `required`", todo_prompt)
 
         fs.remove(root)
     end)

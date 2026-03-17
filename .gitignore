@@ -37,7 +37,8 @@ AGENTS.md
 .clodex/
 .codex-cli/
 .state/
-/bin/clodex-nvim-minimal
-/bin/clodex-nvim-test
-/bin/install-clodex-nvim-tui
 /private/
+.codex/
+.data/
+AGENTS.md
+bin/

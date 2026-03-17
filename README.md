@@ -114,7 +114,7 @@ The plugin supports several prompt categories out of the box:
 - `adjustment`
 - `refactor`
 - `idea`
-- `explain`
+- `ask`
 - `library`
 
 These categories control default titles, visual highlighting, and some specialized behavior:
@@ -127,7 +127,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 ### Workspace-based prompt execution
 
-Queued prompts are dispatched with a workspace-update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, create a focused git commit for that prompt, then update the project's workspace file in place using the provided implemented-item id. Items in `queues.planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
+Queued prompts are dispatched with a workspace-update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, then update the project-local workspace file in place using the provided implemented-item id. Items in `queues.planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
 
 That gives you:
 
@@ -232,7 +232,7 @@ require("clodex").setup({
   prompt_execution = {
     receipts_dir = ".clodex/prompt-executions",
     poll_ms = 5000,
-    skills_dir = ".codex/skills",
+    skills_dir = vim.fn.expand("~/.codex/skills"),
     skill_name = "prompt-nvim-clodex",
   },
   manual_history = {
@@ -299,11 +299,11 @@ require("clodex").setup({
 
 `prompt_execution.skills_dir`
 
-- Project-local skill root under each project directory.
-- Default is `.codex/skills`, so the generated skill is written at `<project>/.codex/skills/<skill_name>/SKILL.md`.
-- Clodex does not need to modify global Codex config files for queued prompt execution.
-- Set this to an empty string to disable generated skill mode and fall back to inline `$prompt` instructions.
-- Queued prompt dispatch then ends with `$prompt-nvim-clodex` instead of inlining the full workspace-update instructions every time.
+- Global Codex skills root.
+- Default is `~/.codex/skills`, so `setup()` syncs the checked-in skill into `<skills_dir>/<skill_name>/SKILL.md`.
+- Clodex overwrites that global skill on startup so queued prompt execution always uses the latest bundled contract.
+- Set this to an empty string to disable synced skill mode and fall back to inline `$prompt` instructions.
+- Queued prompt dispatch still ends with `$prompt-nvim-clodex` instead of inlining the full workspace-update instructions every time.
 
 `manual_history.model_instructions_file`
 
@@ -345,14 +345,14 @@ Queue and prompt commands:
 - `:ClodexPromptAdjustment`
 - `:ClodexPromptRefactor`
 - `:ClodexPromptIdea`
-- `:ClodexPromptExplain`
+- `:ClodexPromptAsk`
 - `:ClodexPromptTodoFor`
 - `:ClodexPromptErrorFor`
 - `:ClodexPromptVisualFor`
 - `:ClodexPromptAdjustmentFor`
 - `:ClodexPromptRefactorFor`
 - `:ClodexPromptIdeaFor`
-- `:ClodexPromptExplainFor`
+- `:ClodexPromptAskFor`
 
 
 ## Queue Workspace
@@ -391,9 +391,9 @@ When a queued item is dispatched:
 1. The plugin ensures the target project session is running.
 2. It moves that item from `queued` to `implemented`.
 3. It renders the queue item into a Codex prompt.
-4. It appends execution instructions describing which workspace file and implemented item id must be updated.
+4. It appends execution instructions describing which queue item id and prompt kind must be used for completion.
 5. If a prompt skill is configured, it appends `$prompt-nvim-clodex`.
-6. Codex performs the work, creates a focused commit, and updates the implemented queue item when done.
+6. Codex performs the work, skips commits for `ask` prompts, creates a focused commit for other kinds when the project is git-backed, and updates the implemented queue item when done.
 7. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
 8. The plugin polls workspace revisions on a timer and refreshes the matching implemented item in Neovim.
 
