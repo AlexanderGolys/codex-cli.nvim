@@ -25,28 +25,29 @@ function M.get_root(path)
     end
 end
 
---- Reads the current commit hash for a repository, optionally short form.
+--- Fetches the short commit hash (8 chars) for a given hash.
 ---@param root string
----@param short? boolean
+---@param hash string
 ---@return string?
-function M.head_commit(root, short)
-    if not root or root == "" then
+function M.short_commit(root, hash)
+    if not root or root == "" or not hash or hash == "" then
         return
     end
 
-    local args = { "git", "-C", root, "rev-parse" }
-    if short then
-        args[#args + 1] = "--short"
-    end
-    args[#args + 1] = "HEAD"
+    local result = vim.system({
+        "git",
+        "-C",
+        root,
+        "rev-parse",
+        "--short=8",
+        hash,
+    }, { text = true }):wait()
 
-    local result = vim.system(args, { text = true }):wait()
     if result.code ~= 0 then
         return
     end
 
-    local output = vim.trim(result.stdout or "")
-    return output ~= "" and output or nil
+    return vim.trim(result.stdout or "")
 end
 
 --- Parses a Git remote URL into a repository name for display.
@@ -75,7 +76,7 @@ function M.remote_name(root)
     end
 
     local commands = {
-        { "git", "-C", root, "config", "--get",   "remote.origin.url" },
+        { "git", "-C", root, "config", "--get", "remote.origin.url" },
         { "git", "-C", root, "remote", "get-url", "origin" },
     }
 

@@ -285,12 +285,14 @@ local function queue_item_matches_search(item, queue_name, query)
         return true
     end
 
-    local text = table.concat({
-        item.title or "",
-        item.details or "",
-        item.prompt or "",
-        prompt_queue_label(queue_name),
-    }, "\n"):lower()
+    local text = table
+        .concat({
+            item.title or "",
+            item.details or "",
+            item.prompt or "",
+            prompt_queue_label(queue_name),
+        }, "\n")
+        :lower()
     return text:find(query, 1, true) ~= nil
 end
 
@@ -340,11 +342,13 @@ local function prompt_preview_lines(item, opts)
 end
 
 ---@param item Clodex.QueueItem
+---@param project_root? string
 ---@return string[]
-local function item_metadata_preview_lines(item)
+local function item_metadata_preview_lines(item, project_root)
     local preview = {} ---@type string[]
     if item.history_commit and item.history_commit ~= "" then
-        preview[#preview + 1] = ("    Commit: %s"):format(item.history_commit)
+        local short = project_root and git.short_commit(project_root, item.history_commit) or item.history_commit
+        preview[#preview + 1] = ("    Commit: %s%s"):format(COMMIT_ICON, short or item.history_commit)
     end
     return preview
 end
@@ -408,15 +412,15 @@ local function footer_actions(focus)
         }
     end
 
-        return {
-            title = " Queue Actions ",
-            lines = {
-                "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
-                "/: search prompt list by title/details/body   Backspace: clear filter",
-                "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   !: mark not working   Ctrl-S: save",
-            },
-        }
-    end
+    return {
+        title = " Queue Actions ",
+        lines = {
+            "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
+            "/: search prompt list by title/details/body   Backspace: clear filter",
+            "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   !: mark not working   Ctrl-S: save",
+        },
+    }
+end
 
 ---@param _queue_name Clodex.QueueName
 ---@param items Clodex.QueueItem[]
@@ -431,20 +435,24 @@ local function footer_text(text)
     return text:gsub("Left/Right", "←/→"):gsub("Up/Down", "↑/↓")
 end
 
+local git = require("clodex.util.git")
+
+local COMMIT_ICON = "󰜘 "
+
 ---@param item Clodex.QueueItem
+---@param project_root? string
 ---@return string
-local function history_suffix(item)
+local function history_suffix(item, project_root)
     local parts = {} ---@type string[]
     if item.history_summary and item.history_summary ~= "" then
         parts[#parts + 1] = item.history_summary
     end
     if item.history_commit and item.history_commit ~= "" then
-        parts[#parts + 1] = item.history_commit
+        local short = project_root and git.short_commit(project_root, item.history_commit) or item.history_commit
+        parts[#parts + 1] = COMMIT_ICON .. (short or item.history_commit)
     end
     return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
 end
-
-
 
 ---@param timestamp? integer
 ---@param config Clodex.Config.Values
@@ -522,8 +530,7 @@ local function project_detail_extmarks(detail, has_remote)
         local start_col = detail:find(label, search_from, true)
         if start_col then
             local label_start = start_col - 1
-            marks[#marks + 1] =
-                Extmark.inline(0, label_start, label_start + #label, "ClodexStateFieldLabel")
+            marks[#marks + 1] = Extmark.inline(0, label_start, label_start + #label, "ClodexStateFieldLabel")
             search_from = start_col + #label
         end
     end
@@ -593,10 +600,7 @@ local function project_detail_lines(config, app, summary, details)
         }
     end
     return {
-        ("    Files:%d  %s"):format(
-            details.file_count,
-            " " .. GITHUB_ICON
-        ),
+        ("    Files:%d  %s"):format(details.file_count, " " .. GITHUB_ICON),
         ("    Lang:%s  %s"):format(
             format_languages(details.languages),
             format_timestamp(details.last_file_modified_at, config)
@@ -710,8 +714,8 @@ end
 
 ---@return integer
 function Workspace:prompt_title_width()
-    local queue_width = win_valid(self.queue_win) and vim.api.nvim_win_get_width(self.queue_win) or
-    select(4, self:layout())
+    local queue_width = win_valid(self.queue_win) and vim.api.nvim_win_get_width(self.queue_win)
+        or select(4, self:layout())
     return math.max(queue_width - ITEM_TITLE_PREFIX_WIDTH, 1)
 end
 
@@ -892,8 +896,7 @@ function Workspace:attach_keymaps()
 
     local function block_insert_keys(buf, keys)
         for _, lhs in ipairs(keys) do
-            map(buf, lhs, function()
-            end)
+            map(buf, lhs, function() end)
         end
     end
 
@@ -1005,63 +1008,127 @@ function Workspace:attach_keymaps()
         self:clear_queue_search()
     end)
     for _, buf in ipairs({ self.queue_buf, self.footer_buf }) do
-        map(buf, "e", when_focused("queue", function()
-            self:edit_queue_item()
-        end))
-        map(buf, "i", when_focused("queue", function()
-            self:implement_queue_item()
-        end))
-        map(buf, "m", when_focused("queue", function()
-            self:move_queue_item()
-        end))
-        map(buf, "M", when_focused("queue", function()
-            self:move_queue_item_back()
-        end))
-        map(buf, "!", when_focused("queue", function()
-            self:mark_queue_item_not_working()
-        end))
-        map(buf, "p", when_focused("queue", function()
-            self:move_queue_item_to_project()
-        end))
-        map(buf, "H", when_focused("queue", function()
-            self:move_queue_item_to_adjacent_project(-1)
-        end))
-        map(buf, "L", when_focused("queue", function()
-            self:move_queue_item_to_adjacent_project(1)
-        end))
-        map(buf, "d", when_focused("queue", function()
-            self:set_focus("queue")
-            self:delete_queue_item()
-        end))
+        map(
+            buf,
+            "e",
+            when_focused("queue", function()
+                self:edit_queue_item()
+            end)
+        )
+        map(
+            buf,
+            "i",
+            when_focused("queue", function()
+                self:implement_queue_item()
+            end)
+        )
+        map(
+            buf,
+            "m",
+            when_focused("queue", function()
+                self:move_queue_item()
+            end)
+        )
+        map(
+            buf,
+            "M",
+            when_focused("queue", function()
+                self:move_queue_item_back()
+            end)
+        )
+        map(
+            buf,
+            "!",
+            when_focused("queue", function()
+                self:mark_queue_item_not_working()
+            end)
+        )
+        map(
+            buf,
+            "p",
+            when_focused("queue", function()
+                self:move_queue_item_to_project()
+            end)
+        )
+        map(
+            buf,
+            "H",
+            when_focused("queue", function()
+                self:move_queue_item_to_adjacent_project(-1)
+            end)
+        )
+        map(
+            buf,
+            "L",
+            when_focused("queue", function()
+                self:move_queue_item_to_adjacent_project(1)
+            end)
+        )
+        map(
+            buf,
+            "d",
+            when_focused("queue", function()
+                self:set_focus("queue")
+                self:delete_queue_item()
+            end)
+        )
     end
 
-    map(self.footer_buf, "s", when_focused("projects", function()
-        self:set_current_project()
-    end))
-    map(self.footer_buf, "A", when_focused("projects", function()
-        self:activate_selected_project()
-    end))
-    map(self.footer_buf, "X", when_focused("projects", function()
-        self:deactivate_selected_project()
-    end))
-    map(self.footer_buf, "a", footer_by_focus(function()
-        self:add_todo()
-    end, function()
-        self:add_todo()
-    end))
-    map(self.footer_buf, "D", when_focused("projects", function()
-        self:delete_project()
-    end))
-    map(self.footer_buf, "/", footer_by_focus(function()
-        self:prompt_project_search()
-    end, function()
-        self:prompt_queue_search()
-    end))
-    map(self.footer_buf, "<BS>", footer_by_focus(function()
-        self:clear_project_search()
-    end, function()
-        self:clear_queue_search()
-    end))
+    map(
+        self.footer_buf,
+        "s",
+        when_focused("projects", function()
+            self:set_current_project()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "A",
+        when_focused("projects", function()
+            self:activate_selected_project()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "X",
+        when_focused("projects", function()
+            self:deactivate_selected_project()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "a",
+        footer_by_focus(function()
+            self:add_todo()
+        end, function()
+            self:add_todo()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "D",
+        when_focused("projects", function()
+            self:delete_project()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "/",
+        footer_by_focus(function()
+            self:prompt_project_search()
+        end, function()
+            self:prompt_queue_search()
+        end)
+    )
+    map(
+        self.footer_buf,
+        "<BS>",
+        footer_by_focus(function()
+            self:clear_project_search()
+        end, function()
+            self:clear_queue_search()
+        end)
+    )
 
     map(self.project_buf, "<LeftMouse>", function()
         project_click(false)
@@ -1235,8 +1302,7 @@ function Workspace:render_projects()
 
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
-        local details = project.root == selected_root
-            and self.app.project_details_store:get(project)
+        local details = project.root == selected_root and self.app.project_details_store:get(project)
             or self.app.project_details_store:get_cached(project)
         local title, count_spans = project_title_text(project, summary, max_width)
         local count_suffix = project_count_suffix(summary)
@@ -1256,12 +1322,8 @@ function Workspace:render_projects()
         local counts_start = title:find(count_suffix, 1, true)
         if counts_start then
             for _, span in ipairs(count_spans) do
-                item_extmarks[#item_extmarks + 1] = Extmark.inline(
-                    0,
-                    counts_start - 1 + span.start_col,
-                    counts_start - 1 + span.end_col,
-                    span.hl_group
-                )
+                item_extmarks[#item_extmarks + 1] =
+                    Extmark.inline(0, counts_start - 1 + span.start_col, counts_start - 1 + span.end_col, span.hl_group)
             end
         end
         block:append_line(title, item_extmarks)
@@ -1285,12 +1347,7 @@ function Workspace:render_projects()
             })
             block:append_line("")
             block:append_line("Press / to change the filter or Backspace to clear it", {
-                Extmark.inline(
-                    0,
-                    0,
-                    #"Press / to change the filter or Backspace to clear it",
-                    "ClodexQueueItemMuted"
-                ),
+                Extmark.inline(0, 0, #"Press / to change the filter or Backspace to clear it", "ClodexQueueItemMuted"),
             })
         else
             block:append_line("No projects configured")
@@ -1313,11 +1370,7 @@ function Workspace:render_projects()
         while self.project_rows[last_row + 1] and self.project_rows[last_row + 1].project == selected.project do
             last_row = last_row + 1
         end
-        block:add_extmarks(selection_marks(
-            selected_row,
-            last_row,
-            selection_highlight(self.focus == "projects")
-        ))
+        block:add_extmarks(selection_marks(selected_row, last_row, selection_highlight(self.focus == "projects")))
     end
 
     block:render(self.project_buf, PROJECT_NS)
@@ -1369,7 +1422,8 @@ function Workspace:render_queue()
 
                 for _, item in ipairs(items) do
                     rendered_items = true
-                    local suffix = (queue_name == "implemented" or queue_name == "history") and history_suffix(item)
+                    local suffix = (queue_name == "implemented" or queue_name == "history")
+                            and history_suffix(item, project and project.root)
                         or ""
                     local item_text = "  " .. item.title .. suffix
                     local title_text = "  " .. item.title
@@ -1389,10 +1443,12 @@ function Workspace:render_queue()
                     end
                     block:append_line(item_text, item_extmarks)
 
-                    for _, preview in ipairs(prompt_preview_lines(item, {
-                        max_lines = self.config.queue_workspace.preview_max_lines,
-                        fold = self.config.queue_workspace.fold_preview,
-                    })) do
+                    for _, preview in
+                        ipairs(prompt_preview_lines(item, {
+                            max_lines = self.config.queue_workspace.preview_max_lines,
+                            fold = self.config.queue_workspace.fold_preview,
+                        }))
+                    do
                         self.queue_rows[#self.queue_rows + 1] = {
                             kind = "preview",
                             text = preview,
@@ -1403,7 +1459,7 @@ function Workspace:render_queue()
                             Extmark.inline(0, 0, #preview, Prompt.preview_group()),
                         })
                     end
-                    for _, preview in ipairs(item_metadata_preview_lines(item)) do
+                    for _, preview in ipairs(item_metadata_preview_lines(item, project and project.root)) do
                         self.queue_rows[#self.queue_rows + 1] = {
                             kind = "preview",
                             text = preview,
@@ -1460,11 +1516,7 @@ function Workspace:render_queue()
             while self.queue_rows[last_row + 1] and self.queue_rows[last_row + 1].item == item.item do
                 last_row = last_row + 1
             end
-            block:add_extmarks(selection_marks(
-                selected_row,
-                last_row,
-                selection_highlight(self.focus == "queue")
-            ))
+            block:add_extmarks(selection_marks(selected_row, last_row, selection_highlight(self.focus == "queue")))
         end
     end
 
@@ -1558,11 +1610,8 @@ function Workspace:add_todo()
         prompt = ("Todo prompt for %s"):format(project.name),
         context = PromptContext.capture({ project = project }),
         paste_image = function()
-            local image_path = PromptAssets.save_clipboard_image(
-                self.config.storage.workspaces_dir,
-                project.root,
-                "todo"
-            )
+            local image_path =
+                PromptAssets.save_clipboard_image(self.config.storage.workspaces_dir, project.root, "todo")
             if not image_path then
                 return nil
             end
@@ -1578,8 +1627,7 @@ function Workspace:add_todo()
         if not spec then
             return
         end
-        local queue_opts = action == "exec"
-                and { queue = "queued", implement = true, run_mode = "exec" }
+        local queue_opts = action == "exec" and { queue = "queued", implement = true, run_mode = "exec" }
             or action == "queue" and { queue = "queued" }
             or nil
         self.app.queue_actions:add_project_todo(project, {
@@ -1604,11 +1652,8 @@ function Workspace:edit_queue_item()
         default = Prompt.render(item.title, item.details),
         context = PromptContext.capture({ project = project }),
         paste_image = function()
-            local image_path = PromptAssets.save_clipboard_image(
-                self.config.storage.workspaces_dir,
-                project.root,
-                item.kind
-            )
+            local image_path =
+                PromptAssets.save_clipboard_image(self.config.storage.workspaces_dir, project.root, item.kind)
             if not image_path then
                 return nil
             end
@@ -1772,7 +1817,7 @@ function Workspace:prompt_move_to_project(project, item, queue_name, target_proj
 
     if queue_name == "history" then
         ui.select({
-            { label = "Move history item",      copy = false },
+            { label = "Move history item", copy = false },
             { label = "Duplicate history item", copy = true },
         }, {
             prompt = ("Transfer '%s' to %s"):format(item.title, target_project.name),
