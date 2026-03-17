@@ -41,50 +41,48 @@ local function rewind_item_spec(item, opts)
     return moved
   end
 
-  local parts = {} ---@type string[]
+  local sections = {} ---@type string[]
+
   local original_title = vim.trim(moved.title or "")
   local original_details = vim.trim(moved.details or "")
   local note = vim.trim(opts.note or "")
   local commit_id = vim.trim(moved.history_commit or "")
   local commit_summary = vim.trim(moved.history_summary or "")
 
-  parts[#parts + 1] = ("A previously implemented feature or fix is not working as expected. The original implementation needs to be investigated and fixed.")
-  parts[#parts + 1] = ""
-  parts[#parts + 1] = "## Original Prompt"
+  local header = "A previously implemented feature or fix is not working as expected. The original implementation needs to be investigated and fixed."
+  sections[#sections + 1] = header
+
+  local original_section = { "## Original Prompt" }
   if original_title ~= "" then
-    parts[#parts + 1] = ("**Title:** %s"):format(original_title)
+    original_section[#original_section + 1] = ("**Title:** %s"):format(original_title)
   end
   if original_details ~= "" then
-    parts[#parts + 1] = ""
-    parts[#parts + 1] = original_details
+    original_section[#original_section + 1] = original_details
+  end
+  if #original_section > 1 then
+    sections[#sections + 1] = table.concat(original_section, "\n\n")
   end
 
   if commit_id ~= "" or commit_summary ~= "" then
-    parts[#parts + 1] = ""
-    parts[#parts + 1] = "## Implementation Details"
+    local impl_section = { "## Implementation Details" }
     if commit_id ~= "" then
-      parts[#parts + 1] = ("**Commit:** `%s`"):format(commit_id)
+      impl_section[#impl_section + 1] = ("**Commit:** `%s`"):format(commit_id)
     end
     if commit_summary ~= "" then
-      parts[#parts + 1] = ("**Summary:** %s"):format(commit_summary)
+      impl_section[#impl_section + 1] = ("**Summary:** %s"):format(commit_summary)
     end
+    sections[#sections + 1] = table.concat(impl_section, "\n\n")
   end
 
   if note ~= "" then
-    parts[#parts + 1] = ""
-    parts[#parts + 1] = "## User Note"
-    parts[#parts + 1] = note
+    sections[#sections + 1] = "## User Note\n\n" .. note
   end
 
-  parts[#parts + 1] = ""
-  parts[#parts + 1] = "## Instructions"
-  parts[#parts + 1] = "Investigate why the previously implemented functionality is not working correctly. Review the original implementation, identify the regression or bug, and implement a fix. Ensure the behavior works as originally intended."
+  local instructions = "## Instructions\n\nInvestigate why the previously implemented functionality is not working correctly. Review the original implementation, identify the regression or bug, and implement a fix. Ensure the behavior works as originally intended."
+  sections[#sections + 1] = instructions
 
-  moved.details = table.concat(parts, "\n")
-  moved.prompt = moved.title
-  if moved.details and moved.details ~= "" then
-    moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
-  end
+  moved.details = table.concat(sections, "\n\n")
+  moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
   moved.kind = "notworking"
   moved.history_summary = nil
   moved.history_commit = nil
