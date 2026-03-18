@@ -391,15 +391,6 @@ local function render_hint_lines(buf, lines)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   for line_index, line in ipairs(lines) do
-    vim.api.nvim_buf_add_highlight(
-      buf,
-      -1,
-      "ClodexPromptEditorHint",
-      line_index - 1,
-      0,
-      -1
-    )
-
     for _, key in ipairs(PROMPT_EDITOR_HINT_KEYS) do
       local start = 1
       while true do
