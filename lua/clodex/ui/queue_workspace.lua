@@ -75,6 +75,7 @@ local PROJECT_DETAIL_LABELS = {
     "Lang:",
 }
 local GITHUB_ICON = ""
+local COMMIT_ICON = "󰜘 "
 local ELLIPSIS = "..."
 local PANEL_BORDER_COLS = 2
 local PANEL_GAP_COLS = 1
@@ -347,8 +348,8 @@ end
 local function item_metadata_preview_lines(item, project_root)
     local preview = {} ---@type string[]
     if item.history_commit and item.history_commit ~= "" then
-        local short = project_root and git.short_commit(project_root, item.history_commit) or item.history_commit
-        preview[#preview + 1] = ("    Commit: %s%s"):format(COMMIT_ICON, short or item.history_commit)
+        local short = item.history_commit:sub(1, 8)
+        preview[#preview + 1] = ("    %s%s"):format(COMMIT_ICON, short)
     end
     return preview
 end
@@ -435,10 +436,6 @@ local function footer_text(text)
     return text:gsub("Left/Right", "←/→"):gsub("Up/Down", "↑/↓")
 end
 
-local git = require("clodex.util.git")
-
-local COMMIT_ICON = "󰜘 "
-
 ---@param item Clodex.QueueItem
 ---@param project_root? string
 ---@return string
@@ -448,8 +445,8 @@ local function history_suffix(item, project_root)
         parts[#parts + 1] = item.history_summary
     end
     if item.history_commit and item.history_commit ~= "" then
-        local short = project_root and git.short_commit(project_root, item.history_commit) or item.history_commit
-        parts[#parts + 1] = COMMIT_ICON .. (short or item.history_commit)
+        local short = item.history_commit:sub(1, 8)
+        parts[#parts + 1] = COMMIT_ICON .. short
     end
     return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
 end
@@ -502,18 +499,32 @@ local function format_languages(languages)
         return "-"
     end
 
-    local parts = {} ---@type string[]
-    local max_items = 3
-    for index, language in ipairs(languages) do
-        if index > max_items then
-            break
+    local icons = {} ---@type string[]
+    local has_py = false
+    local has_ts_js = false
+
+    for _, language in ipairs(languages) do
+        local icon = language_profile.ICONS[language.name]
+        if icon then
+            icons[#icons + 1] = icon
+            if language.name == "py" then
+                has_py = true
+            end
+            if language.name == "ts" or language.name == "js" then
+                has_ts_js = true
+            end
         end
-        parts[#parts + 1] = ("%s %d%%"):format(language_profile:format_label(language.name), language.percent)
     end
-    if #languages > max_items then
-        parts[#parts + 1] = ("+%d"):format(#languages - max_items)
+
+    if #icons == 0 then
+        return "-"
     end
-    return table.concat(parts, ", ")
+
+    if #icons == 1 or (has_py and has_ts_js) then
+        return table.concat({ icons[1], icons[2] or "" }, " ")
+    end
+
+    return icons[1]
 end
 
 ---@param detail string

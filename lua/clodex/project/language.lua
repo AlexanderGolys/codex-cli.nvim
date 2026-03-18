@@ -193,4 +193,6 @@ function LanguageProfile:format_label(language)
   return ("%s %s"):format(icon, language)
 end
 
+LanguageProfile.ICONS = LANGUAGE_ICONS
+
 return LanguageProfile
