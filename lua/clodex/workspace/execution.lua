@@ -21,14 +21,6 @@ local function is_absolute_path(path)
     return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
 end
 
----@return string
---- Computes a stable directory name for one project's local execution data.
----@param project_root string
----@return string
-local function project_id(project_root)
-    return vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
-end
-
 --- Resolves the canonical project-local execution root.
 --- The old `receipts_dir` option is still honored as the base artifacts directory for compatibility.
 ---@param config Clodex.Config.Values
@@ -47,27 +39,13 @@ local function execution_dir(config, project_root)
 end
 
 ---@param config Clodex.Config.Values
----@param project_root string?
----@return string?
-local function skills_dir(config, project_root)
-    local dir = trim(config.prompt_execution.skills_dir)
+---@return string
+local function skills_dir(config)
+    local dir = vim.trim(config.prompt_execution.skills_dir or "")
     if dir == "" then
-        return nil
+        return ""
     end
-
-    local expanded = fs.normalize(vim.fn.expand(dir))
-    if is_absolute_path(expanded) then
-        return expanded
-    end
-
-    if config.backend == "opencode" then
-        if not project_root or project_root == "" then
-            return nil
-        end
-        return fs.join(project_root, expanded)
-    end
-
-    return expanded
+    return fs.normalize(vim.fn.expand(dir))
 end
 
 ---@param config Clodex.Config.Values
@@ -118,6 +96,44 @@ local function prompt_prefix_lines(item)
     return lines
 end
 
+--- Generates a guidance block for the queue workflow cycle.
+--- This is embedded in prompts so agents always know what to do next,
+--- even when handling prompts directly without the Neovim UI.
+---@param project Clodex.Project
+---@param next_item? Clodex.QueueItem
+---@return string
+function Execution:cycle_guidance(project, next_item)
+    local lines = {
+        "",
+        "--- Queue Cycle Guidance ---",
+        "",
+        ("Workspace directory: %s/.clodex/"):format(project.root),
+    }
+
+    if next_item then
+        local requires_commit = Prompt.categories.requires_commit(next_item.kind)
+        lines[#lines + 1] = ("Next queued item: `%s`"):format(next_item.title)
+        lines[#lines + 1] = ("Kind: `%s`"):format(next_item.kind)
+        lines[#lines + 1] = ("Id: `%s`"):format(next_item.id)
+        if requires_commit then
+            lines[#lines + 1] = "Note: This kind requires a commit."
+        end
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "After completing the current item, use advance_to_history() to move it to history."
+    else
+        lines[#lines + 1] = "No more queued items."
+    end
+
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Available queue automation tools:"
+    lines[#lines + 1] = "- advance_item(project, item_id): Move item to next queue (planned->queued->implemented)"
+    lines[#lines + 1] = "- advance_to_history(project, item_id, summary?, commits?): Complete item, move to history"
+    lines[#lines + 1] = "- rewind_item(project, item_id, opts?): Move item back to previous queue"
+    lines[#lines + 1] = "- next_item_guidance(project): Get guidance for continuing to next queued item"
+
+    return table.concat(lines, "\n")
+end
+
 ---@param config Clodex.Config.Values
 ---@return Clodex.Workspace.Execution
 function Execution.new(config)
@@ -133,30 +149,27 @@ end
 
 ---@return boolean
 function Execution:uses_prompt_skill()
-    return trim(self.config.prompt_execution.skill_name) ~= "" and trim(self.config.prompt_execution.skills_dir) ~= ""
+    local dir = skills_dir(self.config)
+    return dir ~= "" and trim(self.config.prompt_execution.skill_name) ~= ""
 end
 
----@param project Clodex.Project?
 ---@return string
-function Execution:skill_dir(project)
-    local project_root = project and project.root or nil
-    return assert(skills_dir(self.config, project_root))
+function Execution:skill_dir()
+    return assert(skills_dir(self.config))
 end
 
----@param project Clodex.Project?
 ---@return string
-function Execution:skill_file(project)
-    return fs.join(self:skill_dir(project), skill_name(self.config), "SKILL.md")
+function Execution:skill_file()
+    return fs.join(self:skill_dir(), skill_name(self.config), "SKILL.md")
 end
 
 ---@return boolean
----@param project Clodex.Project?
-function Execution:sync_prompt_skill(project)
+function Execution:sync_prompt_skill()
     if not self:uses_prompt_skill() then
         return false
     end
 
-    local file = self:skill_file(project)
+    local file = self:skill_file()
     fs.write_file(file, repo_skill_content())
     return true
 end
@@ -164,15 +177,20 @@ end
 ---@param project Clodex.Project
 ---@return string
 function Execution:project_execution_dir(project)
-    return fs.join(execution_dir(self.config, project.root), project_id(project.root))
+    return fs.join(project.root, ".clodex", "prompt-executions")
 end
 
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
+---@param next_item? Clodex.QueueItem
 ---@return string
-function Execution:dispatch_prompt(project, item)
+function Execution:dispatch_prompt(project, item, next_item)
+    if not item.prompt or vim.trim(item.prompt) == "" then
+        return ""
+    end
+
     if self:uses_prompt_skill() then
-        self:sync_prompt_skill(project)
+        self:sync_prompt_skill()
     end
 
     local instruction_lines = completion_instruction_lines(item, self.config)
@@ -185,6 +203,9 @@ function Execution:dispatch_prompt(project, item)
         lines[#lines + 1] = ""
         vim.list_extend(lines, instruction_lines)
         lines[#lines + 1] = ("$%s"):format(skill_name(self.config))
+        if next_item then
+            vim.list_extend(lines, vim.split(self:cycle_guidance(project, next_item), "\n"))
+        end
         return table.concat(lines, "\n")
     end
 
@@ -192,6 +213,9 @@ function Execution:dispatch_prompt(project, item)
     lines[#lines + 1] = ""
     lines[#lines + 1] = "$prompt"
     vim.list_extend(lines, instruction_lines)
+    if next_item then
+        vim.list_extend(lines, vim.split(self:cycle_guidance(project, next_item), "\n"))
+    end
     return table.concat(lines, "\n")
 end
 

@@ -111,6 +111,23 @@ function Runner:update_config(config)
     self.config = config
 end
 
+--- Returns the next queued item after the given item_id, or nil if none.
+---@param project Clodex.Project
+---@param current_item_id string
+---@return Clodex.QueueItem?
+function Runner:get_next_queued_item(project, current_item_id)
+    local queues = self.app.queue:queues(project)
+    if not queues or not queues.queued or #queues.queued == 0 then
+        return nil
+    end
+    for i, item in ipairs(queues.queued) do
+        if item.id == current_item_id and queues.queued[i + 1] then
+            return queues.queued[i + 1]
+        end
+    end
+    return nil
+end
+
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@param summary string?
@@ -146,15 +163,23 @@ function Runner:handle_completion(project, item, result, run_dir, output_path)
     if result.code == 0 then
         local summary = response_summary(message)
         self:complete_item(project, item, summary)
-        if self.app.queue:find_item(project, item.id) == "implemented" then
+        local still_in_implemented = self.app.queue:find_item(project, item.id) == "implemented"
+        if still_in_implemented then
             notify.warn(
-                ("Direct Codex run finished for %s but did not update the implemented item automatically: %s"):format(
+                ("Direct Codex run finished for %s but did not update the implemented item automatically: %s\n\n%s"):format(
                     project.name,
-                    item.title
+                    item.title,
+                    self.app.queue_cycle:next_item_guidance(project)
                 )
             )
         else
-            notify.notify(("Direct Codex run finished for %s: %s"):format(project.name, item.title))
+            notify.notify(
+                ("Direct Codex run finished for %s: %s\n\n%s"):format(
+                    project.name,
+                    item.title,
+                    self.app.queue_cycle:next_item_guidance(project)
+                )
+            )
         end
     else
         notify.error(
@@ -189,7 +214,12 @@ function Runner:start(project, item)
     local dir = run_dir(self.app.execution, project, item)
     local schema_path = fs.join(dir, "response.schema.json")
     local output_path = fs.join(dir, "last-message.json")
-    local prompt = self.app.execution:dispatch_prompt(project, item)
+    local next_item = self:get_next_queued_item(project, item.id)
+    local prompt = self.app.execution:dispatch_prompt(project, item, next_item)
+    if prompt == "" then
+        notify.warn(("Cannot run empty prompt for %s"):format(project.name))
+        return false
+    end
     local cmd = Backend.cli_cmd(self.config)
     vim.list_extend(cmd, build_command(project, item, schema_path, output_path))
 

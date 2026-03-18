@@ -1,3 +1,4 @@
+local Backend = require("clodex.backend")
 local Config = require("clodex.config")
 local Commands = require("clodex.commands")
 local ExecutionRunner = require("clodex.execution.runner")
@@ -5,6 +6,7 @@ local History = require("clodex.history")
 local ProjectActions = require("clodex.app.project_actions")
 local PromptActions = require("clodex.app.prompt_actions")
 local QueueActions = require("clodex.app.queue_actions")
+local QueueCycle = require("clodex.app.queue_cycle")
 local ProjectDetails = require("clodex.project.details")
 local ProjectBookmarks = require("clodex.project.bookmarks")
 local ProjectCheatsheet = require("clodex.project.cheatsheet")
@@ -20,6 +22,7 @@ local Queue = require("clodex.workspace.queue")
 local TerminalUi = require("clodex.terminal.ui")
 local TerminalLualine = require("clodex.terminal.lualine")
 local fs = require("clodex.util.fs")
+local notify = require("clodex.util.notify")
 
 --- Defines the Clodex.App type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -40,9 +43,12 @@ local fs = require("clodex.util.fs")
 ---@field project_actions Clodex.AppProjectActions
 ---@field prompt_actions Clodex.AppPromptActions
 ---@field queue_actions Clodex.AppQueueActions
+---@field queue_cycle Clodex.QueueCycle
 ---@field session_persistence Clodex.SessionPersistence
 ---@field group? integer
 ---@field execution_timer? uv.uv_timer_t
+---@field current_tab fun(self: Clodex.App): Clodex.TabState
+---@field resolve_target fun(self: Clodex.App, state: Clodex.TabState): Clodex.TerminalTarget
 
 --- Defines the Clodex.App.StateSnapshot type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -93,7 +99,7 @@ local FORWARDED_METHODS = {
     open_project_bookmarks_picker = { field = "project_actions", method = "open_project_bookmarks_picker" },
     implement_next_queued_item = { field = "queue_actions", method = "implement_next_queued_item" },
     implement_all_queued_items = { field = "queue_actions", method = "implement_all_queued_items" },
-    add_error_todo = { field = "prompt_actions", method = "add_error_todo" },
+    add_bug_todo = { field = "prompt_actions", method = "add_bug_todo" },
     activate_project = { field = "project_actions", method = "activate_project" },
     set_current_project = { field = "project_actions", method = "set_current_project" },
     clear_active_project = { field = "project_actions", method = "clear_active_project" },
@@ -234,6 +240,7 @@ function App.new()
     self.project_actions = ProjectActions.new(self)
     self.prompt_actions = PromptActions.new(self)
     self.queue_actions = QueueActions.new(self)
+    self.queue_cycle = QueueCycle.new(self)
     self:setup({})
     return self
 end
@@ -262,6 +269,14 @@ function App:setup(opts)
     self.state_preview:update_config(values)
     self.project_details_store:update_config(values)
     self.execution:update_config(values)
+    if self.execution:uses_prompt_skill() then
+        local ok, err = pcall(function()
+            self.execution:sync_prompt_skill()
+        end)
+        if not ok then
+            notify.warn(("Could not sync global prompt skill: %s"):format(err))
+        end
+    end
     self.exec_runner:update_config(values)
     self.queue_workspace:update_config(values)
     Commands.register()
@@ -701,8 +716,14 @@ function App:projects_for_queue_workspace()
     local projects = self.registry:list()
     local active_root = self:current_tab().active_project_root
     local summaries = {} ---@type table<string, Clodex.ProjectQueueSummary>
+    local project_updates = {} ---@type table<string, integer>
     for _, project in ipairs(projects) do
         summaries[project.root] = self:queue_summary(project)
+        local details = self.project_details_store:get_cached(project)
+        project_updates[project.root] = details and (
+            details.last_file_modified_at
+            or details.last_codex_activity_at
+        ) or 0
     end
 
     table.sort(projects, function(left, right)
@@ -718,10 +739,10 @@ function App:projects_for_queue_workspace()
         if left_running ~= right_running then
             return left_running
         end
-        local left_last_updated_at = left_summary and left_summary.last_updated_at or ""
-        local right_last_updated_at = right_summary and right_summary.last_updated_at or ""
-        if left_last_updated_at ~= right_last_updated_at then
-            return left_last_updated_at > right_last_updated_at
+        local left_updated_at = project_updates[left.root] or 0
+        local right_updated_at = project_updates[right.root] or 0
+        if left_updated_at ~= right_updated_at then
+            return left_updated_at > right_updated_at
         end
         return left.name:lower() < right.name:lower()
     end)

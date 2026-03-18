@@ -3,12 +3,9 @@ local fs = require("clodex.util.fs")
 local util = require("clodex.util")
 
 --- Queue names represent the supported lanes for prompt entries: planned, queued, implemented, and history.
---- They are used by persistence and queue transitions to coordinate scheduling and history visibility.
 ---@alias Clodex.QueueName "planned"|"queued"|"implemented"|"history"
 
 --- Canonical representation of one queued prompt item.
---- Entries are written to and loaded from per-project workspace storage.
---- This type tracks queue position metadata needed by action handlers and UI rendering.
 ---@class Clodex.QueueItem
 ---@field id string
 ---@field kind Clodex.PromptCategory
@@ -22,14 +19,7 @@ local util = require("clodex.util")
 ---@field history_commits string[]
 ---@field history_completed_at? string
 
---- Full persisted queue payload for a single project root.
----@class Clodex.ProjectQueueData
----@field version integer
----@field updated_at string
----@field queues table<Clodex.QueueName, Clodex.QueueItem[]>
-
 --- Human-friendly queue summary assembled for UI and project-level diagnostics.
---- It contains both aggregate counts and full queue contents.
 ---@class Clodex.ProjectQueueSummary
 ---@field project Clodex.Project
 ---@field session_running boolean
@@ -43,285 +33,190 @@ local Queue = {}
 Queue.__index = Queue
 
 local ORDER = { "planned", "queued", "implemented", "history" }
-local NEXT_QUEUE = {
-  planned = "queued",
-  queued = "implemented",
-  implemented = "history",
-}
-local KNOWN_QUEUES = {
-  planned = true,
-  queued = true,
-  implemented = true,
-  history = true,
-}
-local DEFAULT_DATA = {
-  version = 1,
-  updated_at = "",
-  queues = {
-    planned = {},
-    queued = {},
-    implemented = {},
-    history = {},
-  },
-}
 
-local function is_absolute_path(path)
-  path = fs.normalize(path)
-  return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
-end
-
-local function project_storage_dir(root_dir, project_root)
-  local normalized = fs.normalize(root_dir)
-  if is_absolute_path(normalized) then
-    return normalized
-  end
-  return fs.join(project_root, normalized)
-end
-
-local function legacy_global_storage_dir()
-  return fs.join(vim.fn.stdpath("data"), "clodex", "workspaces")
-end
-
-local function workspace_path(root_dir, project_root)
-  root_dir = project_storage_dir(root_dir, project_root)
-  local id = vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
-  return fs.join(root_dir, id .. ".json")
-end
-
----@param root_dir string
----@param project_root string
----@param current_path string
----@return string?
-local function renamed_local_workspace_path(root_dir, project_root, current_path)
-  local storage_dir = project_storage_dir(root_dir, project_root)
-  if not fs.is_dir(storage_dir) then
-    return
-  end
-
-  local matches = {} ---@type string[]
-  for _, entry in ipairs(vim.fn.readdir(storage_dir)) do
-    if entry:sub(-5) == ".json" then
-      local candidate = fs.join(storage_dir, entry)
-      if candidate ~= current_path and fs.is_file(candidate) then
-        matches[#matches + 1] = candidate
-      end
-    end
-  end
-
-  if #matches == 1 then
-    return matches[1]
-  end
-end
-
----@param storage_dir string
----@param current_path string
----@return string?
-local function unique_workspace_file(storage_dir, current_path)
-  if not fs.is_dir(storage_dir) then
-    return
-  end
-
-  local matches = {} ---@type string[]
-  for _, entry in ipairs(vim.fn.readdir(storage_dir)) do
-    if entry:sub(-5) == ".json" then
-      local candidate = fs.join(storage_dir, entry)
-      if candidate ~= current_path and fs.is_file(candidate) then
-        matches[#matches + 1] = candidate
-      end
-    end
-  end
-
-  if #matches == 1 then
-    return matches[1]
-  end
-end
-
-local function load_data(root_dir, project_root)
-  local path = workspace_path(root_dir, project_root)
-  local data = fs.read_json(path, nil)
-  if type(data) ~= "table" then
-    local legacy_path = workspace_path(legacy_global_storage_dir(), project_root)
-    data = fs.read_json(legacy_path, nil)
-    if type(data) == "table" and fs.is_file(legacy_path) then
-      fs.write_json(path, data)
-      fs.remove(legacy_path)
-    end
-  end
-  if type(data) ~= "table" then
-    local renamed_path = renamed_local_workspace_path(root_dir, project_root, path)
-    if renamed_path then
-      data = fs.read_json(renamed_path, nil)
-      if type(data) == "table" then
-        fs.write_json(path, data)
-        fs.remove(renamed_path)
-      end
-    end
-  end
-  if type(data) ~= "table" then
-    data = vim.deepcopy(DEFAULT_DATA)
-  end
-  data.version = data.version or DEFAULT_DATA.version
-  data.updated_at = type(data.updated_at) == "string" and data.updated_at or DEFAULT_DATA.updated_at
-  data.queues = data.queues or {}
-  data.queues.planned = data.queues.planned or {}
-  data.queues.queued = data.queues.queued or {}
-  data.queues.implemented = data.queues.implemented or {}
-  data.queues.history = data.queues.history or {}
-  data = migrate_history_commits(data)
-  return data
-end
-
----@param data Clodex.ProjectQueueData
----@return Clodex.ProjectQueueData
-local function migrate_history_commits(data)
-  for _, queue_name in ipairs(ORDER) do
-    for _, item in ipairs(data.queues[queue_name]) do
-      if item.history_commit and not item.history_commits then
-        item.history_commits = { item.history_commit }
-        item.history_commit = nil
-      elseif not item.history_commits then
-        item.history_commits = {}
-      end
-    end
-  end
-  return data
-end
-
-local function migrate_project_asset(root_dir, project_root, item)
-  local image_path = item.image_path
-  if not image_path or not fs.is_file(image_path) then
-    return false
-  end
-
-  local legacy_assets_dirs = {
-    fs.join(legacy_global_storage_dir(), "prompt-assets"),
-  }
-  local is_legacy_asset = false
-  for _, legacy_assets_dir in ipairs(legacy_assets_dirs) do
-    if fs.is_relative_to(image_path, legacy_assets_dir) then
-      is_legacy_asset = true
-      break
-    end
-  end
-  if not is_legacy_asset then
-    return false
-  end
-
-  local category = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
-  local destination = fs.join(project_storage_dir(root_dir, project_root), "prompt-assets", category, fs.basename(image_path))
-  if destination == image_path then
-    return false
-  end
-
-  fs.copy_file(image_path, destination)
-  local escaped = vim.pesc(image_path)
-  item.image_path = destination
-  if item.details then
-    item.details = item.details:gsub(escaped, destination)
-  end
-  if item.prompt then
-    item.prompt = item.prompt:gsub(escaped, destination)
-  end
-  return true
-end
-
-local function now()
-  return os.date("!%Y-%m-%dT%H:%M:%SZ")
-end
-
-local function save_data(root_dir, project_root, data)
-  data.updated_at = now()
-  fs.write_json(workspace_path(root_dir, project_root), data)
-end
-
----@param data Clodex.ProjectQueueData
----@return string
-local function latest_updated_at(data)
-  local latest = data.updated_at or ""
-  for _, queue_name in ipairs(ORDER) do
-    for _, item in ipairs(data.queues[queue_name]) do
-      if type(item.updated_at) == "string" and item.updated_at > latest then
-        latest = item.updated_at
-      end
-    end
-  end
-  return latest
-end
-
----@param value any
----@return boolean
-local function has_item_id(value)
-  return type(value) == "string" and vim.trim(value) ~= ""
-end
-
----@param title string
----@param details? string
----@return string
-local function render_prompt(title, details)
-  local lines = { title }
-  if details and details ~= "" then
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = details
-  end
-  return table.concat(lines, "\n")
-end
-
----@param root_dir string
+---@param root_dir? string
 ---@return Clodex.Workspace.Queue
 function Queue.new(root_dir)
-  local self = setmetatable({}, Queue)
-  self.root_dir = fs.normalize(root_dir)
-  return self
+    return setmetatable({ root_dir = root_dir or ".clodex" }, Queue)
 end
+local NEXT_QUEUE = {
+    planned = "queued",
+    queued = "implemented",
+    implemented = "history",
+}
+local KNOWN_QUEUES = {
+    planned = true,
+    queued = true,
+    implemented = true,
+    history = true,
+}
 
----@param project Clodex.Project
----@return Clodex.ProjectQueueData
-function Queue:load(project)
-  local data = load_data(self.root_dir, project.root)
-  local changed = false
-  for _, queue_name in ipairs(ORDER) do
-    for _, item in ipairs(data.queues[queue_name]) do
-      if not has_item_id(item.id) then
-        item.id = util.uuid_v4()
-        changed = true
-      end
-      item.kind = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
-      changed = migrate_project_asset(self.root_dir, project.root, item) or changed
-    end
-  end
-  if changed then
-    self:save(project, data)
-  end
-  return data
-end
-
----@param project Clodex.Project
----@param data Clodex.ProjectQueueData
-function Queue:save(project, data)
-  save_data(self.root_dir, project.root, data)
-end
-
+--- Returns the path to a queue file for a project.
 ---@param project_root string
-function Queue:delete_workspace(project_root)
-  fs.remove(workspace_path(self.root_dir, project_root))
+---@param queue_name string
+---@return string
+local function queue_file_path(project_root, queue_name)
+    return fs.join(project_root, ".clodex", queue_name .. ".json")
+end
+
+--- Returns the old (legacy) workspace file path.
+---@param project_root string
+---@return string
+local function legacy_workspace_path(project_root)
+    local id = vim.fn.sha256(fs.normalize(project_root)):sub(1, 16)
+    return fs.join(project_root, ".clodex", "workspaces", id .. ".json")
+end
+
+---@param item any
+---@return boolean
+local function has_item_id(item)
+    return type(item) == "table" and type(item.id) == "string" and vim.trim(item.id) ~= ""
+end
+
+---@param item any
+---@return Clodex.QueueItem
+local function normalize_item(item)
+    item = vim.deepcopy(item)
+    if not has_item_id(item) then
+        item.id = util.uuid_v4()
+    end
+    item.kind = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
+    item.history_commits = item.history_commits or {}
+    if item.history_commit and not item.history_commits then
+        item.history_commits = { item.history_commit }
+        item.history_commit = nil
+    end
+    return item
+end
+
+--- Loads a single queue file, returns empty array if missing.
+---@param project_root string
+---@param queue_name string
+---@return Clodex.QueueItem[]
+local function load_queue_file(project_root, queue_name)
+    local path = queue_file_path(project_root, queue_name)
+    local data = fs.read_json(path, nil)
+    if type(data) ~= "table" then
+        return {}
+    end
+    if type(data[1]) == "table" then
+        local items = {}
+        for _, item in ipairs(data) do
+            items[#items + 1] = normalize_item(item)
+        end
+        return items
+    end
+    return {}
+end
+
+--- Saves a queue file.
+---@param project_root string
+---@param queue_name string
+---@param items Clodex.QueueItem[]
+local function save_queue_file(project_root, queue_name, items)
+    local path = queue_file_path(project_root, queue_name)
+    fs.write_json(path, items)
+end
+
+--- Migrates from old workspace format to new separate files.
+---@param project_root string
+local function migrate_from_legacy(project_root)
+    local legacy_path = legacy_workspace_path(project_root)
+    if not fs.is_file(legacy_path) then
+        return
+    end
+
+    local data = fs.read_json(legacy_path, nil)
+    if type(data) ~= "table" or type(data.queues) ~= "table" then
+        return
+    end
+
+    for _, queue_name in ipairs(ORDER) do
+        local items = data.queues[queue_name]
+        if type(items) == "table" and #items > 0 then
+            local normalized = {}
+            for _, item in ipairs(items) do
+                normalized[#normalized + 1] = normalize_item(item)
+            end
+            save_queue_file(project_root, queue_name, normalized)
+        end
+    end
+
+    fs.remove(legacy_path)
+end
+
+--- Returns a summary of all queues for a project.
+---@param project Clodex.Project
+---@return Clodex.ProjectQueueSummary
+function Queue:summary(project)
+    local queues = self:queues(project)
+    local latest = ""
+    for _, queue_name in ipairs(ORDER) do
+        for _, item in ipairs(queues[queue_name]) do
+            if type(item.updated_at) == "string" and item.updated_at > latest then
+                latest = item.updated_at
+            end
+        end
+    end
+
+    return {
+        project = project,
+        session_running = false,
+        last_updated_at = latest,
+        counts = {
+            planned = #queues.planned,
+            queued = #queues.queued,
+            implemented = #queues.implemented,
+            history = #queues.history,
+        },
+        queues = queues,
+    }
+end
+
+---@param project Clodex.Project
+---@return table<Clodex.QueueName, Clodex.QueueItem[]>
+function Queue:queues(project)
+    migrate_from_legacy(project.root)
+
+    return {
+        planned = load_queue_file(project.root, "planned"),
+        queued = load_queue_file(project.root, "queued"),
+        implemented = load_queue_file(project.root, "implemented"),
+        history = load_queue_file(project.root, "history"),
+    }
+end
+
+---@param project Clodex.Project
+---@param queue_name Clodex.QueueName
+---@return Clodex.QueueItem[]
+function Queue:queue(project, queue_name)
+    if not KNOWN_QUEUES[queue_name] then
+        return {}
+    end
+    migrate_from_legacy(project.root)
+    return load_queue_file(project.root, queue_name)
 end
 
 ---@param project Clodex.Project
 ---@return string
 function Queue:workspace_path(project)
-  return workspace_path(self.root_dir, project.root)
+    return fs.join(project.root, ".clodex")
 end
 
 ---@param project Clodex.Project
 ---@return string?
 function Queue:workspace_revision(project)
-  local stat = fs.stat(self:workspace_path(project))
-  if not stat or not stat.mtime then
-    return nil
-  end
-
-  local mtime = stat.mtime
-  return ("%s:%s:%s"):format(mtime.sec or 0, mtime.nsec or 0, stat.size or 0)
+    local latest ---@type integer?
+    for _, queue_name in ipairs(ORDER) do
+        local path = queue_file_path(project.root, queue_name)
+        local stat = fs.stat(path)
+        if stat and stat.mtime and stat.mtime.sec then
+            if not latest or stat.mtime.sec > latest then
+                latest = stat.mtime.sec
+            end
+        end
+    end
+    return latest and tostring(latest) or nil
 end
 
 ---@param project Clodex.Project
@@ -329,263 +224,172 @@ end
 ---@param expected_queue? Clodex.QueueName
 ---@return Clodex.QueueName?, integer?, Clodex.QueueItem?
 function Queue:find_item(project, item_id, expected_queue)
-  local data = self:load(project)
-  if expected_queue and not KNOWN_QUEUES[expected_queue] then
-    return
-  end
-  local queues = expected_queue and { expected_queue } or ORDER
-  for _, queue_name in ipairs(queues) do
-    for index, item in ipairs(data.queues[queue_name]) do
-      if item.id == item_id then
-        return queue_name, index, item
-      end
+    local queues_to_search = expected_queue and { expected_queue } or ORDER
+    for _, queue_name in ipairs(queues_to_search) do
+        local items = self:queue(project, queue_name)
+        for index, item in ipairs(items) do
+            if item.id == item_id then
+                return queue_name, index, item
+            end
+        end
     end
-  end
 end
 
---- Adds a new workspace queue entry and keeps related state aligned.
---- This function feeds the same workflow used by interactive and scripted callers.
 ---@param project Clodex.Project
 ---@param spec { title: string, details?: string, queue?: Clodex.QueueName, kind?: Clodex.PromptCategory, image_path?: string }
 ---@return Clodex.QueueItem
 function Queue:add_todo(project, spec)
-  local data = self:load(project)
-  local timestamp = now()
-  local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
-  local item = {
-    id = util.uuid_v4(),
-    kind = Prompt.categories.is_valid(spec.kind) and spec.kind or "todo",
-    title = vim.trim(spec.title),
-    details = spec.details and vim.trim(spec.details) or nil,
-    prompt = render_prompt(vim.trim(spec.title), spec.details and vim.trim(spec.details) or nil),
-    image_path = spec.image_path and vim.trim(spec.image_path) or nil,
-    created_at = timestamp,
-    updated_at = timestamp,
-  }
-  table.insert(data.queues[queue_name], 1, item)
-  self:save(project, data)
-  return item
+    local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local title = vim.trim(spec.title)
+    local details = spec.details and vim.trim(spec.details) or nil
+
+    local item = normalize_item({
+        kind = Prompt.categories.is_valid(spec.kind) and spec.kind or "todo",
+        title = title,
+        details = details,
+        prompt = title .. (details and ("\n\n" .. details) or ""),
+        image_path = spec.image_path and vim.trim(spec.image_path) or nil,
+        created_at = timestamp,
+        updated_at = timestamp,
+    })
+
+    local items = self:queue(project, queue_name)
+    table.insert(items, 1, item)
+    save_queue_file(project.root, queue_name, items)
+    return item
 end
 
 ---@param project Clodex.Project
----@param item_id_value string
+---@param item_id string
+---@param expected_queue? Clodex.QueueName
 ---@return Clodex.QueueItem?, Clodex.QueueName?
-function Queue:take_item(project, item_id_value, expected_queue)
-  local data = self:load(project)
-  local queues = expected_queue and { expected_queue } or ORDER
-  for _, queue_name in ipairs(queues) do
-    for index, item in ipairs(data.queues[queue_name]) do
-      if item.id == item_id_value then
-        table.remove(data.queues[queue_name], index)
-        self:save(project, data)
-        return item, queue_name
-      end
+function Queue:take_item(project, item_id, expected_queue)
+    local queues_to_search = expected_queue and { expected_queue } or ORDER
+    for _, queue_name in ipairs(queues_to_search) do
+        local items = self:queue(project, queue_name)
+        for index, item in ipairs(items) do
+            if item.id == item_id then
+                table.remove(items, index)
+                save_queue_file(project.root, queue_name, items)
+                return item, queue_name
+            end
+        end
     end
-  end
 end
 
 ---@param project Clodex.Project
 ---@param queue_name Clodex.QueueName
 ---@param item Clodex.QueueItem
----@param opts? {
----  copy?: boolean,
----  clear_history?: boolean,
----  history_summary?: string|false,
----  history_commits?: string[]|false,
----  history_completed_at?: string|false
----  image_path?: string|false
----}
+---@param opts? { copy?: boolean, clear_history?: boolean }
 ---@return Clodex.QueueItem?
 function Queue:put_item(project, queue_name, item, opts)
-  if not KNOWN_QUEUES[queue_name] then
-    return
-  end
-
-  opts = opts or {}
-  local data = self:load(project)
-  local timestamp = now()
-  local moved = vim.deepcopy(item)
-  if opts.copy then
-    moved.id = util.uuid_v4()
-    moved.created_at = timestamp
-  end
-  moved.updated_at = timestamp
-  if opts.clear_history then
-    moved.history_summary = nil
-    moved.history_commits = {}
-    moved.history_completed_at = nil
-  end
-  if opts.history_summary ~= nil then
-    moved.history_summary = opts.history_summary ~= false and opts.history_summary or nil
-  end
-  if opts.history_commits ~= nil then
-    if opts.history_commits == false then
-      moved.history_commits = {}
-    elseif opts.history_commits then
-      if moved.kind == "notworking" and moved.history_commits then
-        for _, commit in ipairs(opts.history_commits) do
-          if not vim.list_contains(moved.history_commits, commit) then
-            moved.history_commits[#moved.history_commits + 1] = commit
-          end
-        end
-      else
-        moved.history_commits = opts.history_commits
-      end
+    if not KNOWN_QUEUES[queue_name] then
+        return
     end
-  end
-  if opts.history_completed_at ~= nil then
-    moved.history_completed_at = opts.history_completed_at ~= false and opts.history_completed_at or nil
-  end
-  if opts.image_path ~= nil then
-    moved.image_path = opts.image_path ~= false and opts.image_path or nil
-  end
-  table.insert(data.queues[queue_name], 1, moved)
-  self:save(project, data)
-  return moved
+
+    opts = opts or {}
+    local items = self:queue(project, queue_name)
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local moved = vim.deepcopy(item)
+
+    if opts.copy then
+        moved.id = util.uuid_v4()
+        moved.created_at = timestamp
+    end
+    moved.updated_at = timestamp
+
+    if opts.clear_history then
+        moved.history_summary = nil
+        moved.history_commits = {}
+        moved.history_completed_at = nil
+    end
+
+    table.insert(items, 1, moved)
+    save_queue_file(project.root, queue_name, items)
+    return moved
 end
 
 ---@param project Clodex.Project
----@param item_id_value string
----@param attrs {
----  title?: string,
----  details?: string|false,
----  history_summary?: string|false,
----  history_commits?: string[]|false,
----  history_completed_at?: string|false,
----  kind?: Clodex.PromptCategory,
----  image_path?: string|false
----}
+---@param item_id string
+---@param attrs { title?: string, details?: string|false, history_summary?: string|false, history_commits?: string[]|false, history_completed_at?: string|false, kind?: Clodex.PromptCategory }
 ---@return Clodex.QueueItem?
-function Queue:update_item(project, item_id_value, attrs)
-  local data = self:load(project)
-  for _, queue_name in ipairs(ORDER) do
-    for _, item in ipairs(data.queues[queue_name]) do
-      if item.id == item_id_value then
-        if attrs.title ~= nil then
-          item.title = vim.trim(attrs.title)
-        end
-        if attrs.details ~= nil then
-          item.details = attrs.details ~= false and vim.trim(attrs.details) or nil
-        end
-        if attrs.kind ~= nil and Prompt.categories.is_valid(attrs.kind) then
-          item.kind = attrs.kind
-        end
-        if attrs.image_path ~= nil then
-          item.image_path = attrs.image_path ~= false and attrs.image_path or nil
-        end
-        if attrs.title ~= nil or attrs.details ~= nil then
-          item.prompt = render_prompt(item.title, item.details)
-        end
-        if attrs.history_summary ~= nil then
-          item.history_summary = attrs.history_summary ~= false and attrs.history_summary or nil
-        end
-        if attrs.history_commits ~= nil then
-          if attrs.history_commits == false then
-            item.history_commits = {}
-          elseif attrs.history_commits then
-            if item.kind == "notworking" and item.history_commits then
-              for _, commit in ipairs(attrs.history_commits) do
-                if not vim.list_contains(item.history_commits, commit) then
-                  item.history_commits[#item.history_commits + 1] = commit
+function Queue:update_item(project, item_id, attrs)
+    for _, queue_name in ipairs(ORDER) do
+        local items = self:queue(project, queue_name)
+        for _, item in ipairs(items) do
+            if item.id == item_id then
+                if attrs.title ~= nil then
+                    item.title = vim.trim(attrs.title)
                 end
-              end
-            else
-              item.history_commits = attrs.history_commits
+                if attrs.details ~= nil then
+                    item.details = attrs.details ~= false and vim.trim(attrs.details) or nil
+                end
+                if attrs.kind ~= nil and Prompt.categories.is_valid(attrs.kind) then
+                    item.kind = attrs.kind
+                end
+                if attrs.title ~= nil or attrs.details ~= nil then
+                    item.prompt = item.title .. (item.details and ("\n\n" .. item.details) or "")
+                end
+                if attrs.history_summary ~= nil then
+                    item.history_summary = attrs.history_summary ~= false and attrs.history_summary or nil
+                end
+                if attrs.history_commits ~= nil then
+                    if attrs.history_commits == false then
+                        item.history_commits = {}
+                    elseif attrs.history_commits then
+                        if item.kind == "notworking" and item.history_commits then
+                            for _, commit in ipairs(attrs.history_commits) do
+                                if not vim.list_contains(item.history_commits, commit) then
+                                    item.history_commits[#item.history_commits + 1] = commit
+                                end
+                            end
+                        else
+                            item.history_commits = attrs.history_commits
+                        end
+                    end
+                end
+                if attrs.history_completed_at ~= nil then
+                    item.history_completed_at = attrs.history_completed_at ~= false and attrs.history_completed_at or nil
+                end
+                item.updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                save_queue_file(project.root, queue_name, items)
+                return vim.deepcopy(item)
             end
-          end
         end
-        if attrs.history_completed_at ~= nil then
-          item.history_completed_at = attrs.history_completed_at ~= false and attrs.history_completed_at or nil
-        end
-        item.updated_at = now()
-        self:save(project, data)
-        return vim.deepcopy(item)
-      end
     end
-  end
 end
 
 ---@param project Clodex.Project
 ---@param item_id string
 ---@return boolean
 function Queue:delete_item(project, item_id)
-  local data = self:load(project)
-  for _, queue_name in ipairs(ORDER) do
-    for index, item in ipairs(data.queues[queue_name]) do
-      if item.id == item_id then
-        table.remove(data.queues[queue_name], index)
-        self:save(project, data)
-        return true
-      end
+    for _, queue_name in ipairs(ORDER) do
+        local items = self:queue(project, queue_name)
+        for index, item in ipairs(items) do
+            if item.id == item_id then
+                table.remove(items, index)
+                save_queue_file(project.root, queue_name, items)
+                return true
+            end
+        end
     end
-  end
-  return false
+    return false
 end
 
 ---@param project Clodex.Project
 ---@param item_id string
 ---@return Clodex.QueueName?
 function Queue:advance(project, item_id)
-  local queue_name, _, item = self:find_item(project, item_id)
-  local next_queue = queue_name and NEXT_QUEUE[queue_name] or nil
-  if not next_queue or not item then
-    return
-  end
-
-  self:take_item(project, item_id, queue_name)
-  self:put_item(project, next_queue, item, {
-    history_summary = next_queue == "history" and (item.history_summary or "Moved to history") or false,
-  })
-  return next_queue
-end
-
----@param project Clodex.Project
----@param item_id_value string
----@param result { summary?: string|false, commit?: string|false, completed_at?: string|false }
----@return Clodex.QueueItem?
-function Queue:update_implemented_item(project, item_id_value, result)
-  local queue_name, _, item = self:find_item(project, item_id_value)
-  if queue_name ~= "implemented" or not item then
-    return
-  end
-
-  local commits = item.history_commits or {}
-  if result.commit and result.commit ~= "" then
-    if not vim.list_contains(commits, result.commit) then
-      commits[#commits + 1] = result.commit
+    local queue_name, _, item = self:find_item(project, item_id)
+    local next_queue = queue_name and NEXT_QUEUE[queue_name] or nil
+    if not next_queue or not item then
+        return
     end
-  end
 
-  return self:update_item(project, item_id_value, {
-    history_summary = result.summary,
-    history_commits = commits,
-    history_completed_at = result.completed_at,
-  })
-end
-
----@param project Clodex.Project
----@return table<Clodex.QueueName, Clodex.QueueItem[]>
-function Queue:queues(project)
-  return self:load(project).queues
-end
-
----@param project Clodex.Project
----@param session_running boolean
----@return Clodex.ProjectQueueSummary
-function Queue:summary(project, session_running)
-  local data = self:load(project)
-  return {
-    project = project,
-    session_running = session_running,
-    last_updated_at = latest_updated_at(data),
-    counts = {
-      planned = #data.queues.planned,
-      queued = #data.queues.queued,
-      implemented = #data.queues.implemented,
-      history = #data.queues.history,
-    },
-    queues = vim.deepcopy(data.queues),
-  }
+    self:take_item(project, item_id, queue_name)
+    self:put_item(project, next_queue, item, {})
+    return next_queue
 end
 
 return Queue

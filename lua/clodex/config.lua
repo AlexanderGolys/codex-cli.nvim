@@ -38,8 +38,8 @@ local fs = require("clodex.util.fs")
 ---@field fold_preview boolean
 ---@field date_format string # Either "ago" for relative timestamps or an `os.date`-compatible format string.
 
---- Error prompt behavior and optional screenshot directory hints.
----@class Clodex.Config.ErrorPrompt
+--- Bug prompt behavior and optional screenshot directory hints.
+---@class Clodex.Config.BugPrompt
 ---@field screenshot_dir? string
 
 --- Highlight group catalog consumed by setup when applying plugin colors.
@@ -92,7 +92,7 @@ local fs = require("clodex.util.fs")
 ---@field project_detection Clodex.Config.ProjectDetection
 ---@field state_preview Clodex.Config.StatePreview
 ---@field queue_workspace Clodex.Config.QueueWorkspace
----@field error_prompt Clodex.Config.ErrorPrompt
+---@field bug_prompt Clodex.Config.BugPrompt
 ---@field highlights Clodex.Config.Highlights
 ---@field prompt_execution Clodex.Config.PromptExecution
 ---@field session Clodex.Config.Session
@@ -117,7 +117,7 @@ local function defaults()
         opencode_cmd = { "opencode" },
         storage = {
             projects_file = fs.join(storage_root, "projects.json"),
-            workspaces_dir = fs.join(".clodex", "workspaces"),
+            workspaces_dir = ".clodex",
             session_state_dir = fs.join(storage_root, "session-state"),
             history_file = fs.join(storage_root, "history.md"),
         },
@@ -151,7 +151,7 @@ local function defaults()
             date_format = "ago",
         },
 
-        error_prompt = {
+        bug_prompt = {
             screenshot_dir = nil,
         },
 
