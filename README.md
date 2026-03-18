@@ -65,7 +65,7 @@ If the current buffer lives inside a known project, that project is preferred au
 
 ### Queue-driven prompt workflow
 
-Each project has a workspace file on disk containing four queues:
+Each project keeps four queue files on disk under `.clodex/`:
 
 - `planned`: captured ideas, bugs, or tasks that are not ready to run yet
 - `queued`: ready to dispatch to Codex
@@ -80,7 +80,7 @@ Every queue item stores:
 - rendered prompt text
 - timestamps
 - optional image path for visual prompts
-- optional completion summary, commit, and completion time in implemented/history
+- optional completion summary, commits, and completion time in implemented/history
 
 This lets you treat Codex work more like a lightweight implementation backlog than an ad-hoc chat window.
 
@@ -108,7 +108,7 @@ can be turned into prompt-ready text before dispatch. The resulting prompt stays
 The plugin supports several prompt categories out of the box:
 
 - `todo`
-- `error`
+- `bug`
 - `visual`
 - `adjustment`
 - `refactor`
@@ -118,15 +118,15 @@ The plugin supports several prompt categories out of the box:
 
 These categories control default titles, visual highlighting, and some specialized behavior:
 
-- `error` can pull in screenshot context
+- `bug` can pull in screenshot context
 - `visual` can save a clipboard image into prompt assets
 - multiline prompt editors can paste a clipboard image into the prompt body with `Ctrl-V`
-- `error` can prefill the latest Vim notification or traceback when you choose the message-based flow
+- `bug` can prefill the latest Vim notification or traceback when you choose the message-based flow
 - `library` lets you instantiate a saved prompt template
 
-### Workspace-based prompt execution
+### Queue-file prompt execution
 
-Queued prompts are dispatched with a workspace-update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, then update the project-local workspace file in place using the provided implemented-item id. Items in `queues.planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
+Queued prompts are dispatched with a queue-file update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, then update the project-local `.clodex/queued.json`, `.clodex/implemented.json`, and `.clodex/history.json` files as needed. Items in `planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
 
 That gives you:
 
@@ -147,7 +147,7 @@ That gives you:
 - Add prompts from categories or saved prompt templates.
 - Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
 - Dispatch the next queued prompt or all queued prompts for a project.
-- Poll workspace changes and update implemented prompts with completion metadata.
+- Poll queue-file changes and update implemented prompts with completion metadata.
 - Move, copy, rewind, edit, and delete queue items.
 - Preserve session state across Vim sessions.
 - Open a project's `TODO.md` or shared dictionary without leaving the current window.
@@ -189,7 +189,7 @@ Example with `lazy.nvim` using the plugin defaults explicitly:
     opencode_cmd = { "opencode" },
     storage = {
       projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
-      workspaces_dir = ".clodex/workspaces",
+      workspaces_dir = ".clodex",
       session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
       history_file = vim.fn.stdpath("data") .. "/clodex/history.md",
     },
@@ -221,7 +221,7 @@ Example with `lazy.nvim` using the plugin defaults explicitly:
       fold_preview = true,
       date_format = "ago",
     },
-    error_prompt = {
+    bug_prompt = {
       screenshot_dir = nil,
     },
     highlights = {
@@ -265,7 +265,7 @@ require("clodex").setup({
   opencode_cmd = { "opencode" },
   storage = {
     projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
-    workspaces_dir = ".clodex/workspaces",
+    workspaces_dir = ".clodex",
     session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
   },
   terminal = {
@@ -295,7 +295,7 @@ require("clodex").setup({
     fold_preview = true,
     date_format = "%H:%M %d.%m.%Y",
   },
-  error_prompt = {
+  bug_prompt = {
     screenshot_dir = nil,
   },
   highlights = {
@@ -365,7 +365,7 @@ require("clodex").setup({
 `storage.workspaces_dir`
 
 - Queue data and prompt assets are stored under each project's own root here.
-- Relative paths are resolved per project, so the default becomes `<project>/.clodex/workspaces`.
+- Relative paths are resolved per project, so the default becomes `<project>/.clodex`.
 - Older data from the former global storage root is migrated into the project-local location on access.
 
 `storage.session_state_dir`
@@ -385,7 +385,7 @@ require("clodex").setup({
 - For `backend = "codex"`, the default is `~/.codex/skills`, and `setup()` syncs the checked-in skill into `<skills_dir>/<skill_name>/SKILL.md`.
 - For `backend = "opencode"`, the default is `.opencode/skills`, and Clodex syncs the checked-in skill into `<project>/.opencode/skills/<skill_name>/SKILL.md` when dispatching a prompt for that project.
 - Set this to an empty string to disable synced skill mode and fall back to inline `$prompt` instructions.
-- Queued prompt dispatch still ends with `$prompt-nvim-clodex` instead of inlining the full workspace-update instructions every time.
+- Queued prompt dispatch still ends with `$prompt-nvim-clodex` instead of inlining the full queue-file update instructions every time.
 
 `highlights.groups`
 
@@ -463,20 +463,19 @@ Supported workspace actions include:
 When a queued item is dispatched:
 
 1. The plugin ensures the target project session is running.
-2. It moves that item from `queued` to `implemented`.
-3. It renders the queue item into a Codex prompt.
-4. It appends execution instructions describing which queue item id and prompt kind must be used for completion.
-5. If a prompt skill is configured, it appends `$prompt-nvim-clodex`.
-6. Codex performs the work, skips commits for `ask` prompts, creates a focused commit for other kinds when the project is git-backed, and updates the implemented queue item when done.
-7. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
-8. The plugin polls workspace revisions on a timer and refreshes the matching implemented item in Neovim.
+2. It renders the queue item into a Codex prompt.
+3. It appends hidden execution instructions describing which queue item id and prompt kind must be used for completion.
+4. If a prompt skill is configured, it appends `$prompt-nvim-clodex`.
+5. Codex performs the work, skips commits for `ask` prompts, creates a focused commit for other kinds when the project is git-backed, and updates the current item in the project-local queue files when done.
+6. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
+7. The plugin polls queue-file revisions on a timer and refreshes the matching item in Neovim.
 
 ### Implemented Item Metadata
 
-Implemented items are updated in place with:
+Implemented/history items are updated in place with:
 
 - `history_summary`
-- `history_commit`
+- `history_commits`
 - `history_completed_at`
 
 Those values are used to populate the implemented/history views and to make completion status visible inside Neovim.
@@ -589,7 +588,7 @@ Important modules:
 - `app.lua`: top-level orchestration and user-facing behavior
 - `terminal/`: terminal session lifecycle and window management
 - `project/`: registry, detection, metadata, and project picking
-- `workspace/`: queued prompts, storage, and execution receipts
+- `workspace/`: queued prompts, queue-file storage, and execution receipts
 - `ui/`: floating windows, prompt workspace rendering, and selection helpers
 - `config.lua`: defaults, merging, and highlight application
 
@@ -711,7 +710,7 @@ Manual validation:
 2. Add prompts and move one into `queued`.
 3. Dispatch it with `:ClodexImplement`.
 4. Confirm the prompt is sent to the project session.
-5. Confirm Codex creates a focused commit, updates the implemented item metadata in the workspace file, and shows the commit in the main panel preview.
+5. Confirm Codex creates a focused commit, updates the implemented item metadata in the `.clodex` queue files, and shows the commit in the main panel preview.
 
 ## License
 

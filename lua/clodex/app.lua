@@ -498,7 +498,7 @@ function App:sync_bookmarks_for_buffer(buf)
 end
 
 --- Starts or restarts the periodic prompt-execution sync timer.
---- When syncing is enabled, the timer keeps queue state current as background jobs update workspace files.
+--- When syncing is enabled, the timer keeps queue state current as background jobs update local queue files.
 function App:setup_execution_timer()
     local poll_ms = self.config:get().prompt_execution.poll_ms
     if poll_ms <= 0 then

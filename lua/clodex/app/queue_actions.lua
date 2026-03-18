@@ -229,8 +229,8 @@ function QueueActions:start_queued_item(project, item_id, mode)
     return false
 end
 
---- Checks project-local workspace files for external queue updates.
---- This keeps the editor in sync when queued prompts complete by mutating workspace JSON directly.
+--- Checks project-local queue files for external updates.
+--- This keeps the editor in sync when queued prompts complete by mutating `.clodex` JSON files directly.
 function QueueActions:poll_workspace_updates()
     local changed = false
     for _, project in ipairs(self.app.registry:list()) do
