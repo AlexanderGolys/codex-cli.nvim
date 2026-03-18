@@ -66,6 +66,64 @@ local EXCLUDED_DIRS = {
   [".clodex"] = true,
 }
 
+local IGNORE_FILES = {
+  ".gitignore",
+  ".codexignore",
+  ".agentignore",
+  ".opencodeignore",
+}
+
+---@param root string
+---@return string[]
+local function load_ignore_patterns(root)
+  local patterns = {}
+  for _, filename in ipairs(IGNORE_FILES) do
+    local path = fs.join(root, filename)
+    local file = io.open(path, "r")
+    if file then
+      for line in file:lines() do
+        line = vim.trim(line)
+        if line ~= "" and not line:match("^#") then
+          patterns[#patterns + 1] = line
+        end
+      end
+      file:close()
+    end
+  end
+  return patterns
+end
+
+---@param path string
+---@param root string
+---@param patterns string[]
+---@return boolean
+local function is_ignored(path, root, patterns)
+  if #patterns == 0 then
+    return false
+  end
+  local rel_path = path:sub(#root + 2)
+  for _, pattern in ipairs(patterns) do
+    if pattern:match("/$") then
+      if rel_path:match("^" .. pattern:sub(1, -2)) or rel_path:match("/" .. pattern:sub(1, -2) .. "/") then
+        return true
+      end
+    elseif pattern:match("^%*") then
+      if rel_path:match(pattern:sub(2) .. "$") or rel_path:match("/" .. pattern:sub(2) .. "$") then
+        return true
+      end
+    elseif pattern:match("^%*%.") then
+      if rel_path:match("%." .. pattern:sub(3) .. "$") then
+        return true
+      end
+    else
+      if rel_path == pattern or rel_path:match("^" .. pattern .. "/") or rel_path:match("/" .. pattern .. "$") or rel_path:match("/" .. pattern .. "/") then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 local function metadata_dir()
   return fs.join(vim.fn.stdpath("data"), "clodex", METADATA_DIRNAME)
 end
@@ -185,25 +243,28 @@ function Details:delete(project_root)
   fs.remove(metadata_path(self.config, project_root))
 end
 
---- Walks the project tree while skipping known heavy/generated directories.
+--- Walks the project tree while skipping known heavy/generated directories and ignored files.
 ---@param root string
 ---@param max_files integer
 ---@return string[]
 local function list_files(root, max_files)
   local files = {} ---@type string[]
   local stack = { root }
+  local ignore_patterns = load_ignore_patterns(root)
   while #stack > 0 do
     local dir = table.remove(stack)
     for name, entry_type in vim.fs.dir(dir) do
       local path = fs.join(dir, name)
       if entry_type == "directory" then
-        if not EXCLUDED_DIRS[name] then
+        if not EXCLUDED_DIRS[name] and not is_ignored(path, root, ignore_patterns) then
           stack[#stack + 1] = path
         end
       elseif entry_type == "file" then
-        files[#files + 1] = path
-        if #files >= max_files then
-          return files
+        if not is_ignored(path, root, ignore_patterns) then
+          files[#files + 1] = path
+          if #files >= max_files then
+            return files
+          end
         end
       end
     end
