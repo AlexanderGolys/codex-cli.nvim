@@ -7,11 +7,6 @@ local ui_win = require("clodex.ui.win")
 local unpack_values = require("clodex.util").unpack_values
 
 local SELECT_ZINDEX = 70
-local CONFIRM_ZINDEX = 80
-local CONFIRM_BACKDROP = 40
-local CONFIRM_MIN_WIDTH = 28
-local CONFIRM_WIDTH_PADDING = 8
-local CONFIRM_HEIGHT = 3
 local PROMPT_EDITOR_MIN_HEIGHT = 8
 local PROMPT_EDITOR_MIN_WIDTH = 72
 local PROMPT_EDITOR_MAX_MARGIN = 12
@@ -961,157 +956,56 @@ end
 ---@param prompt string
 ---@param on_choice fun(confirmed: boolean)
 function M.confirm(prompt, on_choice)
-  local confirm_buf = vim.api.nvim_create_buf(false, true)
-  local ui = vim.api.nvim_list_uis()[1]
-  local editor_width = ui and ui.width or vim.o.columns
-  local editor_height = ui and ui.height or vim.o.lines
-  local choice_index = 1
-  local closed = false
-  local win ---@type { win: integer, valid: fun(self: table): boolean, close: fun(self: table) }
-
-  vim.bo[confirm_buf].buftype = "nofile"
-  vim.bo[confirm_buf].bufhidden = "hide"
-  vim.bo[confirm_buf].swapfile = false
-  vim.bo[confirm_buf].modifiable = false
-
-  local width = math.min(
-    math.max(vim.fn.strdisplaywidth(prompt) + CONFIRM_WIDTH_PADDING, CONFIRM_MIN_WIDTH),
-    math.max(editor_width - 12, 24)
-  )
-
-  local function choice_line()
-    local yes = choice_index == 1 and "[ Yes ]" or "  Yes  "
-    local no = choice_index == 2 and "[ No ]" or "  No  "
-    return ("%s    %s"):format(yes, no)
-  end
-
-  local function render()
-    vim.bo[confirm_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(confirm_buf, 0, -1, false, {
-      prompt,
-      "",
-      choice_line(),
-    })
-    vim.api.nvim_buf_clear_namespace(confirm_buf, -1, 0, -1)
-    vim.api.nvim_buf_add_highlight(
-      confirm_buf,
-      -1,
-      choice_index == 1 and "ClodexConfirmButtonActive" or "ClodexConfirmButton",
-      2,
-      0,
-      7
-    )
-    vim.api.nvim_buf_add_highlight(
-      confirm_buf,
-      -1,
-      choice_index == 2 and "ClodexConfirmButtonActive" or "ClodexConfirmButton",
-      2,
-      11,
-      17
-    )
-    vim.bo[confirm_buf].modifiable = false
-  end
-
-  local function finish(confirmed)
-    if closed then
-      return
-    end
-    closed = true
-    if win and win:valid() then
-      win:close()
-    end
-    vim.schedule(function()
-      on_choice(confirmed)
-    end)
-  end
-
-  local function move_choice(delta)
-    choice_index = choice_index + delta
-    if choice_index < 1 then
-      choice_index = 2
-    elseif choice_index > 2 then
-      choice_index = 1
-    end
-    render()
-  end
-
-  render()
-
-  local win_id = vim.api.nvim_open_win(confirm_buf, true, {
-    relative = "editor",
-    style = "minimal",
-    border = "rounded",
-    title = " Confirm ",
-    title_pos = "center",
-    width = width,
-    height = CONFIRM_HEIGHT,
-    row = math.max(math.floor((editor_height - CONFIRM_HEIGHT) / 2), 1),
-    col = math.max(math.floor((editor_width - width) / 2), 1),
-    zindex = CONFIRM_ZINDEX,
-    noautocmd = true,
-  })
-  win = {
-    win = win_id,
-    valid = function(self)
-      return vim.api.nvim_win_is_valid(self.win)
-    end,
-    close = function(self)
-      if self:valid() then
-        vim.api.nvim_win_close(self.win, true)
-      end
-    end,
+  local items = {
+    {
+      label = "Yes",
+      detail = "Confirm action",
+      value = true,
+      preview = {
+        text = prompt,
+        ft = "markdown",
+        loc = false,
+      },
+      preview_title = "Confirm",
+    },
+    {
+      label = "No",
+      detail = "Cancel action",
+      value = false,
+      preview = {
+        text = prompt,
+        ft = "markdown",
+        loc = false,
+      },
+      preview_title = "Confirm",
+    },
   }
-  style_prompt_editor(win.win)
-  vim.wo[win.win].cursorline = false
 
-  local function map(lhs, rhs)
-    vim.keymap.set("n", lhs, rhs, {
-      buffer = confirm_buf,
-      nowait = true,
-      silent = true,
-    })
-  end
-
-  map("<Left>", function()
-    move_choice(-1)
-  end)
-  map("h", function()
-    move_choice(-1)
-  end)
-  map("<Tab>", function()
-    move_choice(1)
-  end)
-  map("<Right>", function()
-    move_choice(1)
-  end)
-  map("l", function()
-    move_choice(1)
-  end)
-  map("<CR>", function()
-    finish(choice_index == 1)
-  end)
-  map("y", function()
-    finish(true)
-  end)
-  map("n", function()
-    finish(false)
-  end)
-  map("q", function()
-    finish(false)
-  end)
-  map("<Esc>", function()
-    finish(false)
-  end)
-
-  vim.api.nvim_create_autocmd("WinClosed", {
-    once = true,
-    pattern = tostring(win.win),
-    callback = function()
-      finish(false)
+  return M.select(items, {
+    prompt = prompt,
+    format_item = function(item, supports_chunks)
+      if not supports_chunks then
+        return item.label
+      end
+      local hl = item.value and "ClodexConfirmButtonActive" or "ClodexConfirmButton"
+      return {
+        { item.label, hl },
+        { item.detail and ("  " .. item.detail) or "", "ClodexStateCommandHint" },
+      }
     end,
-  })
-
-  return win
+    snacks = {
+      layout = {
+        preset = "select",
+        layout = {
+          width = 0.45,
+          min_width = 36,
+        },
+      },
+      preview = "preview",
+    },
+  }, function(item)
+    on_choice(item and item.value == true or false)
+  end)
 end
 
 return M
