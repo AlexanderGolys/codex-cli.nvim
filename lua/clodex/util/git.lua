@@ -25,31 +25,6 @@ function M.get_root(path)
     end
 end
 
---- Fetches the short commit hash (8 chars) for a given hash.
----@param root string
----@param hash string
----@return string?
-function M.short_commit(root, hash)
-    if not root or root == "" or not hash or hash == "" then
-        return
-    end
-
-    local result = vim.system({
-        "git",
-        "-C",
-        root,
-        "rev-parse",
-        "--short=8",
-        hash,
-    }, { text = true }):wait()
-
-    if result.code ~= 0 then
-        return
-    end
-
-    return vim.trim(result.stdout or "")
-end
-
 --- Parses a Git remote URL into a repository name for display.
 ---@param url string
 ---@return string?

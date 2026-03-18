@@ -36,7 +36,6 @@ This keeps the system composable. The plugin stays focused on being a strong CLI
 The plugin is functional today and already covers the main terminal, project, and queue workflows. Its direction is intentionally conservative: better prompt generation, better editor integration, and better queue/session ergonomics, without turning the plugin into a separate agent platform.
 
 ## What The Plugin Does
-
 ### Persistent Codex terminals
 
 Instead of spawning a fresh shell every time, the plugin reuses Codex terminals:
@@ -176,7 +175,7 @@ Example with `lazy.nvim`:
 }
 ```
 
-Example with `lazy.nvim` using the plugin defaults:
+Example with `lazy.nvim` using the plugin defaults explicitly:
 
 ```lua
 {
@@ -184,7 +183,68 @@ Example with `lazy.nvim` using the plugin defaults:
   dependencies = {
     "folke/snacks.nvim",
   },
-  opts = {},
+  opts = {
+    backend = "codex",
+    codex_cmd = { "codex" },
+    opencode_cmd = { "opencode" },
+    storage = {
+      projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
+      workspaces_dir = ".clodex/workspaces",
+      session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
+      history_file = vim.fn.stdpath("data") .. "/clodex/history.md",
+    },
+    terminal = {
+      win = {
+        position = "right",
+        width = 0.4,
+      },
+      start_insert = true,
+      prefer_native_statusline = true,
+    },
+    project_detection = {
+      auto_suggest_git_root = false,
+    },
+    state_preview = {
+      min_width = 36,
+      max_width = 72,
+      max_height = 0,
+      row = 1,
+      col = 2,
+      winblend = 18,
+    },
+    queue_workspace = {
+      width = 1,
+      height = 1,
+      project_width = 0.3,
+      footer_height = 3,
+      preview_max_lines = 5,
+      fold_preview = true,
+      date_format = "ago",
+    },
+    error_prompt = {
+      screenshot_dir = nil,
+    },
+    highlights = {
+      groups = {},
+    },
+    prompt_execution = {
+      receipts_dir = ".clodex/prompt-executions",
+      poll_ms = 5000,
+      skills_dir = vim.fn.expand("~/.codex/skills"),
+      skill_name = "prompt-nvim-clodex",
+    },
+    session = {
+      persist_current_project = true,
+    },
+    keymaps = {
+      toggle = { lhs = "<leader>pt" },
+      queue_workspace = { lhs = "<leader>pq" },
+      state_preview = { lhs = "<leader>ps" },
+    },
+    manual_history = {
+      model_instructions_file = "",
+    },
+  },
 }
 ```
 

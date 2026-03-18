@@ -1,7 +1,7 @@
 local App = require("clodex.app")
 
 describe("clodex.app", function()
-    it("sorts queue workspace projects by active state, running sessions, and workspace updates", function()
+    it("sorts queue workspace projects by active state, running sessions, and project update timestamps", function()
         local alpha = { name = "Alpha", root = "/tmp/alpha" }
         local beta = { name = "Beta", root = "/tmp/beta" }
         local gamma = { name = "Gamma", root = "/tmp/gamma" }
@@ -9,10 +9,11 @@ describe("clodex.app", function()
         local epsilon = { name = "Epsilon", root = "/tmp/epsilon" }
 
         local timestamps = {
-            [alpha.root] = "2026-03-16T19:00:00Z",
-            [beta.root] = "2026-03-16T19:30:00Z",
-            [gamma.root] = "2026-03-16T18:00:00Z",
-            [delta.root] = "2026-03-16T19:45:00Z",
+            [alpha.root] = { last_file_modified_at = 100 },
+            [beta.root] = { last_file_modified_at = 300 },
+            [gamma.root] = { last_file_modified_at = 50 },
+            [delta.root] = { last_file_modified_at = 450 },
+            [epsilon.root] = { last_codex_activity_at = 75 },
         }
         local running = {
             [beta.root] = true,
@@ -28,6 +29,11 @@ describe("clodex.app", function()
             current_tab = function()
                 return { active_project_root = gamma.root }
             end,
+            project_details_store = {
+                get_cached = function(_, project)
+                    return timestamps[project.root]
+                end,
+            },
             is_project_session_running = function(_, project)
                 return running[project.root] == true
             end,
@@ -36,7 +42,7 @@ describe("clodex.app", function()
                     return {
                         project = project,
                         session_running = session_running,
-                        last_updated_at = timestamps[project.root] or "",
+                        last_updated_at = "",
                         counts = {
                             planned = 0,
                             queued = 0,

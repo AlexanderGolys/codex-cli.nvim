@@ -49,12 +49,32 @@ describe("clodex.workspace.queue", function()
         assert.matches("^[0-9a-f%-]+$", item.id)
     end)
 
+    it("stores ask prompts as a first-class queue kind", function()
+        local item = queue:add_todo(project, {
+            title = "ask about the parser",
+            queue = "queued",
+            kind = "ask",
+        })
+
+        assert.are.equal("ask", item.kind)
+        assert.are.equal("queued", queue:find_item(project, item.id))
+    end)
+
+    it("keeps legacy explain prompts mapped to the ask behavior", function()
+        local item = queue:add_todo(project, {
+            title = "explain the parser",
+            kind = "explain",
+        })
+
+        assert.are.equal("explain", item.kind)
+    end)
+
     it("moves a queued item to implemented", function()
         local item = queue:add_todo(project, {
             title = "queued item",
             details = "run after config fix",
             queue = "queued",
-            kind = "error",
+            kind = "bug",
         })
 
         assert.are.equal("queued", queue:find_item(project, item.id))

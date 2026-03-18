@@ -15,11 +15,12 @@ end
 
 local command_suffix = {
     todo = 'Todo',
-    error = 'Error',
+    bug = 'Bug',
     visual = 'Visual',
     adjustment = 'Adjustment',
     refactor = 'Refactor',
     idea = 'Idea',
+    ask = 'Ask',
     explain = 'Explain',
 }
 
@@ -179,21 +180,21 @@ local BASE_COMMANDS = {
         end,
     },
     {
-        suffix = 'ErrorAdd',
-        desc = 'Add an error-investigation todo prompt',
+        suffix = 'BugAdd',
+        desc = 'Add a bug-investigation todo prompt',
         nargs = '?',
         run = function(command, clodex)
-            clodex.add_error_todo({
+            clodex.add_bug_todo({
                 project_value = command.args ~= '' and command.args or nil,
             })
         end,
     },
     {
-        suffix = 'ErrorAddFor',
-        desc = 'Pick a project and add an error-investigation prompt',
+        suffix = 'BugAddFor',
+        desc = 'Pick a project and add a bug-investigation prompt',
         nargs = '?',
         run = function(command, clodex)
-            clodex.add_error_todo({
+            clodex.add_bug_todo({
                 project_required = true,
                 project_value = command.args ~= '' and command.args or nil,
             })

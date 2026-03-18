@@ -22,7 +22,7 @@
 ---| "implement_all_queued_items"
 ---| "add_prompt"
 ---| "add_prompt_for_project"
----| "add_error_todo"
+---| "add_bug_todo"
 ---| "open_history"
 
 --- Defines the clodex type for this module.
@@ -55,7 +55,7 @@ local PUBLIC_ACTIONS = {
     "implement_all_queued_items",
     "add_prompt",
     "add_prompt_for_project",
-    "add_error_todo",
+    "add_bug_todo",
     "open_history",
 } ---@type Clodex.PublicAction[]
 

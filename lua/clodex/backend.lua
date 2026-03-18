@@ -25,7 +25,7 @@ end
 ---@param name string?
 ---@return boolean
 function Backend.uses_project_local_skills(name)
-    return Backend.normalize(name) == "opencode"
+    return false
 end
 
 ---@param name string?
@@ -54,7 +54,7 @@ end
 ---@return string
 function Backend.default_skills_dir(name)
     if Backend.normalize(name) == "opencode" then
-        return fs.join(".opencode", "skills")
+        return fs.join(vim.fn.expand("~"), ".config", "opencode", "skills")
     end
 
     return fs.join(codex_home(), "skills")

@@ -203,6 +203,7 @@ describe("clodex.ui.queue_workspace", function()
             implement_queue_item = function() end,
             move_queue_item = function() end,
             move_queue_item_back = function() end,
+            mark_queue_item_not_working = function() end,
             move_queue_item_to_project = function() end,
             move_queue_item_to_adjacent_project = function() end,
             delete_queue_item = function() end,
@@ -636,9 +637,9 @@ describe("clodex.ui.queue_workspace", function()
         local lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
         assert.are.same({
             "Implemented (1)",
-            "  Fix parser  [abc1234]",
+            "  Fix parser  [󰜘 abc1234]",
             "    Adjust token handling",
-            "    Commit: abc1234",
+            "    󰜘 abc1234",
             "",
         }, lines)
 
@@ -676,6 +677,336 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(0, col)
         assert.are.equal(120, project_width + queue_width + 5)
         assert.are.equal(40, height + footer_height + 3)
+    end)
+
+    it("renders footer actions only for the focused picker", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+
+        workspace.focus = "projects"
+        workspace:render_footer()
+        local project_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_truthy(vim.startswith(project_lines[1], "s: set current project"))
+        assert.is_nil(project_lines[1]:find("edit prompt", 1, true))
+
+        workspace.focus = "queue"
+        workspace:render_footer()
+        local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_truthy(vim.startswith(queue_lines[1], "a: add prompt"))
+        assert.is_nil(queue_lines[1]:find("start session", 1, true))
+        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+    end)
+
+    it("updates footer actions when window focus moves between pickers", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, true, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 42,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 14,
+            col = 1,
+            width = 81,
+            height = 3,
+            style = "minimal",
+        })
+
+        workspace:render_footer()
+        workspace:attach_focus_tracking()
+
+        local project_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_truthy(vim.startswith(project_lines[1], "s: set current project"))
+
+        vim.api.nvim_set_current_win(workspace.queue_win)
+        vim.wait(100, function()
+            local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+            return vim.startswith(queue_lines[1], "a: add prompt")
+        end)
+
+        local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_nil(queue_lines[1]:find("start session", 1, true))
+        assert.is_truthy(queue_lines[1]:find("edit prompt", 1, true))
+        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+
+        workspace:clear_focus_tracking()
+        vim.api.nvim_win_close(workspace.footer_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.project_win, true)
+    end)
+
+    it("re-renders footer actions when focus changes", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 30,
+            height = 8,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 32,
+            width = 50,
+            height = 8,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 10,
+            col = 1,
+            width = 81,
+            height = 3,
+            style = "minimal",
+            title = " Project Actions ",
+        })
+        workspace:refresh()
+        local initial_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_truthy(vim.startswith(initial_lines[1], "s: set current project"))
+
+        workspace:set_focus("queue")
+        local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
+        assert.is_truthy(vim.startswith(queue_lines[1], "a: add prompt"))
+        assert.is_nil(queue_lines[1]:find("start session", 1, true))
+        assert.is_truthy(queue_lines[1]:find("edit prompt", 1, true))
+        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+
+        vim.api.nvim_win_close(workspace.project_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.footer_win, true)
+    end)
+
+    it("keeps the cursor out of the footer actions window", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 30,
+            height = 8,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 32,
+            width = 50,
+            height = 8,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 10,
+            col = 1,
+            width = 81,
+            height = 3,
+            style = "minimal",
+        })
+
+        workspace:refresh()
+        assert.are.equal(workspace.project_win, vim.api.nvim_get_current_win())
+
+        workspace:set_focus("queue")
+        assert.are.equal(workspace.queue_win, vim.api.nvim_get_current_win())
+
+        vim.api.nvim_win_close(workspace.project_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.footer_win, true)
     end)
 
 end)
