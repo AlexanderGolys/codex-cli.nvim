@@ -49,7 +49,7 @@ local function rewind_item_spec(item, opts, project_root)
     local original_title = vim.trim(moved.title or "")
     local original_details = vim.trim(moved.details or "")
     local note = vim.trim(opts.note or "")
-    local commit_id = vim.trim(moved.history_commit or "")
+    local commits = moved.history_commits or {}
     local commit_summary = vim.trim(moved.history_summary or "")
 
     local header =
@@ -67,11 +67,15 @@ local function rewind_item_spec(item, opts, project_root)
         sections[#sections + 1] = table.concat(original_section, "\n\n")
     end
 
-    if commit_id ~= "" or commit_summary ~= "" then
+    if #commits > 0 or commit_summary ~= "" then
         local impl_section = { "## Implementation Details" }
-        if commit_id ~= "" then
-            local short = commit_id:sub(1, 8)
-            impl_section[#impl_section + 1] = ("`%s%s`"):format(COMMIT_ICON, short)
+        if #commits > 0 then
+            local commit_parts = {}
+            for _, commit_id in ipairs(commits) do
+                local short = commit_id:sub(1, 8)
+                commit_parts[#commit_parts + 1] = ("`%s%s`"):format(COMMIT_ICON, short)
+            end
+            impl_section[#impl_section + 1] = ("**Commits:** %s"):format(table.concat(commit_parts, " "))
         end
         if commit_summary ~= "" then
             impl_section[#impl_section + 1] = ("**Summary:** %s"):format(commit_summary)
@@ -91,7 +95,7 @@ local function rewind_item_spec(item, opts, project_root)
     moved.prompt = ("%s\n\n%s"):format(moved.title, moved.details)
     moved.kind = "notworking"
     moved.history_summary = nil
-    moved.history_commit = nil
+    moved.history_commits = vim.deepcopy(commits)
     moved.history_completed_at = nil
     return moved
 end

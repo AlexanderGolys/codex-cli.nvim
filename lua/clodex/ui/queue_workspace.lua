@@ -347,15 +347,31 @@ end
 ---@return { text: string, marks: Clodex.Extmark[] }[]
 local function item_metadata_preview_lines(item, project_root)
     local preview = {} ---@type { text: string, marks: Clodex.Extmark[] }[]
-    if item.history_commit and item.history_commit ~= "" then
-        local short = item.history_commit:sub(1, 8)
-        local text = ("    %s%s"):format(COMMIT_ICON, short)
-        local icon_end = 4 + #COMMIT_ICON
+    local commits = item.history_commits or {}
+    if #commits > 0 then
+        local commit_parts = {}
+        local marks_list = {}
+        for _, commit_id in ipairs(commits) do
+            local short = commit_id:sub(1, 8)
+            commit_parts[#commit_parts + 1] = ("%s%s"):format(COMMIT_ICON, short)
+        end
+        local text = "    " .. table.concat(commit_parts, " ")
         local marks = {
             Extmark.inline(0, 0, 4, "ClodexQueueItemMuted"),
-            Extmark.inline(0, 4, icon_end, "ClodexQueueItemMuted"),
-            Extmark.inline(0, icon_end, #text, "ClodexCommitId"),
         }
+        local pos = 4
+        for _, commit_id in ipairs(commits) do
+            local short = commit_id:sub(1, 8)
+            local icon_len = #COMMIT_ICON
+            marks[#marks + 1] = Extmark.inline(0, pos, pos + icon_len, "ClodexQueueItemMuted")
+            pos = pos + icon_len
+            marks[#marks + 1] = Extmark.inline(0, pos, pos + #short, "ClodexCommitId")
+            pos = pos + #short
+            if _ < #commits then
+                marks[#marks + 1] = Extmark.inline(0, pos, pos + 1, "ClodexQueueItemMuted")
+                pos = pos + 1
+            end
+        end
         preview[#preview + 1] = { text = text, marks = marks }
     end
     return preview
@@ -451,8 +467,9 @@ local function history_suffix(item, project_root)
     if item.history_summary and item.history_summary ~= "" then
         parts[#parts + 1] = item.history_summary
     end
-    if item.history_commit and item.history_commit ~= "" then
-        local short = item.history_commit:sub(1, 8)
+    local commits = item.history_commits or {}
+    for _, commit_id in ipairs(commits) do
+        local short = commit_id:sub(1, 8)
         parts[#parts + 1] = COMMIT_ICON .. short
     end
     return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""

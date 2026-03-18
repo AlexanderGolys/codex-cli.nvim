@@ -19,7 +19,7 @@ local util = require("clodex.util")
 ---@field created_at string
 ---@field updated_at string
 ---@field history_summary? string
----@field history_commit? string
+---@field history_commits string[]
 ---@field history_completed_at? string
 
 --- Full persisted queue payload for a single project root.
@@ -167,6 +167,23 @@ local function load_data(root_dir, project_root)
   data.queues.queued = data.queues.queued or {}
   data.queues.implemented = data.queues.implemented or {}
   data.queues.history = data.queues.history or {}
+  data = migrate_history_commits(data)
+  return data
+end
+
+---@param data Clodex.ProjectQueueData
+---@return Clodex.ProjectQueueData
+local function migrate_history_commits(data)
+  for _, queue_name in ipairs(ORDER) do
+    for _, item in ipairs(data.queues[queue_name]) do
+      if item.history_commit and not item.history_commits then
+        item.history_commits = { item.history_commit }
+        item.history_commit = nil
+      elseif not item.history_commits then
+        item.history_commits = {}
+      end
+    end
+  end
   return data
 end
 
@@ -374,7 +391,7 @@ end
 ---  copy?: boolean,
 ---  clear_history?: boolean,
 ---  history_summary?: string|false,
----  history_commit?: string|false,
+---  history_commits?: string[]|false,
 ---  history_completed_at?: string|false
 ---  image_path?: string|false
 ---}
@@ -395,14 +412,26 @@ function Queue:put_item(project, queue_name, item, opts)
   moved.updated_at = timestamp
   if opts.clear_history then
     moved.history_summary = nil
-    moved.history_commit = nil
+    moved.history_commits = {}
     moved.history_completed_at = nil
   end
   if opts.history_summary ~= nil then
     moved.history_summary = opts.history_summary ~= false and opts.history_summary or nil
   end
-  if opts.history_commit ~= nil then
-    moved.history_commit = opts.history_commit ~= false and opts.history_commit or nil
+  if opts.history_commits ~= nil then
+    if opts.history_commits == false then
+      moved.history_commits = {}
+    elseif opts.history_commits then
+      if moved.kind == "notworking" and moved.history_commits then
+        for _, commit in ipairs(opts.history_commits) do
+          if not vim.list_contains(moved.history_commits, commit) then
+            moved.history_commits[#moved.history_commits + 1] = commit
+          end
+        end
+      else
+        moved.history_commits = opts.history_commits
+      end
+    end
   end
   if opts.history_completed_at ~= nil then
     moved.history_completed_at = opts.history_completed_at ~= false and opts.history_completed_at or nil
@@ -421,7 +450,7 @@ end
 ---  title?: string,
 ---  details?: string|false,
 ---  history_summary?: string|false,
----  history_commit?: string|false,
+---  history_commits?: string[]|false,
 ---  history_completed_at?: string|false,
 ---  kind?: Clodex.PromptCategory,
 ---  image_path?: string|false
@@ -450,8 +479,20 @@ function Queue:update_item(project, item_id_value, attrs)
         if attrs.history_summary ~= nil then
           item.history_summary = attrs.history_summary ~= false and attrs.history_summary or nil
         end
-        if attrs.history_commit ~= nil then
-          item.history_commit = attrs.history_commit ~= false and attrs.history_commit or nil
+        if attrs.history_commits ~= nil then
+          if attrs.history_commits == false then
+            item.history_commits = {}
+          elseif attrs.history_commits then
+            if item.kind == "notworking" and item.history_commits then
+              for _, commit in ipairs(attrs.history_commits) do
+                if not vim.list_contains(item.history_commits, commit) then
+                  item.history_commits[#item.history_commits + 1] = commit
+                end
+              end
+            else
+              item.history_commits = attrs.history_commits
+            end
+          end
         end
         if attrs.history_completed_at ~= nil then
           item.history_completed_at = attrs.history_completed_at ~= false and attrs.history_completed_at or nil
@@ -508,9 +549,16 @@ function Queue:update_implemented_item(project, item_id_value, result)
     return
   end
 
+  local commits = item.history_commits or {}
+  if result.commit and result.commit ~= "" then
+    if not vim.list_contains(commits, result.commit) then
+      commits[#commits + 1] = result.commit
+    end
+  end
+
   return self:update_item(project, item_id_value, {
     history_summary = result.summary,
-    history_commit = result.commit,
+    history_commits = commits,
     history_completed_at = result.completed_at,
   })
 end
