@@ -85,6 +85,19 @@ describe("clodex.workspace.queue", function()
         assert.are.equal(0, summary.counts.queued)
     end)
 
+    it("stores internal completion targets for queue items", function()
+        local item = queue:add_todo(project, {
+            title = "runtime traceback",
+            queue = "queued",
+            kind = "bug",
+            completion_target = "history",
+        })
+
+        local _, _, stored = queue:find_item(project, item.id)
+
+        assert.are.equal("history", stored.completion_target)
+    end)
+
     it("updates details, kind, and prompt together", function()
         local item = queue:add_todo(project, {
             title = "old title",

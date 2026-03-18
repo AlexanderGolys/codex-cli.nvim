@@ -272,6 +272,7 @@ function QueueActions:add_project_todo(project, spec, opts)
         details = normalized.details,
         kind = spec.kind,
         image_path = spec.image_path,
+        completion_target = spec.completion_target,
         queue = queue_name,
     })
     if queue_name == "queued" then

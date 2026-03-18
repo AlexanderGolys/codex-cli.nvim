@@ -13,6 +13,7 @@ local util = require("clodex.util")
 ---@field details? string
 ---@field prompt string
 ---@field execution_instructions? string
+---@field completion_target? Clodex.QueueName
 ---@field image_path? string
 ---@field created_at string
 ---@field updated_at string
@@ -89,6 +90,9 @@ local function normalize_item(item)
     end
     if type(item.execution_instructions) ~= "string" or vim.trim(item.execution_instructions) == "" then
         item.execution_instructions = nil
+    end
+    if item.completion_target ~= "history" then
+        item.completion_target = nil
     end
     return item
 end
@@ -240,7 +244,7 @@ function Queue:find_item(project, item_id, expected_queue)
 end
 
 ---@param project Clodex.Project
----@param spec { title: string, details?: string, queue?: Clodex.QueueName, kind?: Clodex.PromptCategory, image_path?: string, execution_instructions?: string }
+---@param spec { title: string, details?: string, queue?: Clodex.QueueName, kind?: Clodex.PromptCategory, image_path?: string, execution_instructions?: string, completion_target?: Clodex.QueueName }
 ---@return Clodex.QueueItem
 function Queue:add_todo(project, spec)
     local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
@@ -254,6 +258,7 @@ function Queue:add_todo(project, spec)
         details = details,
         prompt = title .. (details and ("\n\n" .. details) or ""),
         execution_instructions = spec.execution_instructions,
+        completion_target = spec.completion_target,
         image_path = spec.image_path and vim.trim(spec.image_path) or nil,
         created_at = timestamp,
         updated_at = timestamp,
@@ -332,6 +337,7 @@ end
 ---  history_completed_at?: string|false,
 ---  kind?: Clodex.PromptCategory,
 ---  execution_instructions?: string|false,
+---  completion_target?: Clodex.QueueName|false,
 ---}
 ---@return Clodex.QueueItem?
 function Queue:update_item(project, item_id, attrs)
@@ -374,6 +380,9 @@ function Queue:update_item(project, item_id, attrs)
                 end
                 if attrs.execution_instructions ~= nil then
                     item.execution_instructions = attrs.execution_instructions ~= false and attrs.execution_instructions or nil
+                end
+                if attrs.completion_target ~= nil then
+                    item.completion_target = attrs.completion_target ~= false and attrs.completion_target or nil
                 end
                 item.updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
                 save_queue_file(project.root, queue_name, items)

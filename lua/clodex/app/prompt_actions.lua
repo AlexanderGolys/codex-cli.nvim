@@ -27,6 +27,7 @@ local ui = require("clodex.ui.select")
 ---@field details? string
 ---@field kind? Clodex.PromptCategory
 ---@field image_path? string
+---@field completion_target? Clodex.QueueName
 
 --- Defines the Clodex.AppPromptActions.BugSource type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -365,13 +366,15 @@ end
 ---@param summary? string
 ---@param source_details string
 ---@param image_path? string
-function PromptActions:add_bug_investigation(project, summary, source_details, image_path)
+---@param completion_target? Clodex.QueueName
+function PromptActions:add_bug_investigation(project, summary, source_details, image_path, completion_target)
     summary = summary and vim.trim(summary) or ""
     local title = summary ~= "" and ("Investigate runtime bug: " .. summary) or "Investigate runtime bug"
     self.app.queue_actions:add_project_todo(project, {
         title = title,
         kind = "bug",
         image_path = image_path,
+        completion_target = completion_target,
         details = table.concat({
             "Investigate the runtime failure reported by the user.",
             source_details,
@@ -517,7 +520,8 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
                             project,
                             summary,
                             ("Use the saved clipboard screenshot at `%s` as the main artifact."):format(image_path),
-                            image_path
+                            image_path,
+                            "history"
                         )
                     end)
                 return
@@ -534,7 +538,9 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
                                 :format(
                                 fs.basename(latest_screenshot),
                                 screenshot_dir
-                            )
+                            ),
+                            nil,
+                            "history"
                         )
                         return
                     end
@@ -549,7 +555,13 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
                             if message == "" then
                                 return
                             end
-                            self:add_bug_investigation(project, summary, ("Bug message:\n```\n%s\n```"):format(message))
+                            self:add_bug_investigation(
+                                project,
+                                summary,
+                                ("Bug message:\n```\n%s\n```"):format(message),
+                                nil,
+                                "history"
+                            )
                         end)
                 end)
         end)

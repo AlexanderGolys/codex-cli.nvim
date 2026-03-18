@@ -130,6 +130,9 @@ function Runner:complete_item(project, item, summary)
         commit = git.head_commit(project.root, true),
         completed_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     })
+    if item.completion_target == "history" then
+        self.app.queue:advance(project, item.id)
+    end
     self.app.queue_actions:remember_workspace_revision(project)
     History.append_prompt_resolved(project.name, item.title, fallback_summary)
 end

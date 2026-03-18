@@ -78,6 +78,12 @@ describe("clodex.workspace.execution", function()
             kind = "todo",
             prompt = "Implement the fix",
         })
+        local bug_prompt = execution:dispatch_prompt(project, {
+            id = "bug-1",
+            kind = "bug",
+            prompt = "Fix the traceback",
+            completion_target = "history",
+        })
 
         assert.matches("Current queue item id: `ask%-1`", ask_prompt)
         assert.matches("Current prompt kind: `ask`", ask_prompt)
@@ -87,6 +93,8 @@ describe("clodex.workspace.execution", function()
         assert.matches("Current queue item id: `todo%-1`", todo_prompt)
         assert.matches("Current prompt kind: `todo`", todo_prompt)
         assert.matches("Commit policy for this prompt: `required`", todo_prompt)
+
+        assert.matches("Completion destination for this prompt: `history`", bug_prompt)
 
         fs.remove(root)
     end)

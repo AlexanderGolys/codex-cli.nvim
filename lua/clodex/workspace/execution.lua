@@ -76,11 +76,15 @@ end
 ---@return string[]
 local function completion_instruction_lines(item, _config)
     local commit_policy = Prompt.categories.requires_commit(item.kind) and "required" or "skip"
-    return {
+    local lines = {
         ("Current queue item id: `%s`"):format(item.id),
         ("Current prompt kind: `%s`"):format(Prompt.categories.get(item.kind).id),
         ("Commit policy for this prompt: `%s`"):format(commit_policy),
     }
+    if item.completion_target == "history" then
+        lines[#lines + 1] = "Completion destination for this prompt: `history`"
+    end
+    return lines
 end
 
 ---@param item Clodex.QueueItem
