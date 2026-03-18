@@ -344,12 +344,19 @@ end
 
 ---@param item Clodex.QueueItem
 ---@param project_root? string
----@return string[]
+---@return { text: string, marks: Clodex.Extmark[] }[]
 local function item_metadata_preview_lines(item, project_root)
-    local preview = {} ---@type string[]
+    local preview = {} ---@type { text: string, marks: Clodex.Extmark[] }[]
     if item.history_commit and item.history_commit ~= "" then
         local short = item.history_commit:sub(1, 8)
-        preview[#preview + 1] = ("    %s%s"):format(COMMIT_ICON, short)
+        local text = ("    %s%s"):format(COMMIT_ICON, short)
+        local icon_end = 4 + #COMMIT_ICON
+        local marks = {
+            Extmark.inline(0, 0, 4, "ClodexQueueItemMuted"),
+            Extmark.inline(0, 4, icon_end, "ClodexQueueItemMuted"),
+            Extmark.inline(0, icon_end, #text, "ClodexCommitId"),
+        }
+        preview[#preview + 1] = { text = text, marks = marks }
     end
     return preview
 end
@@ -1473,13 +1480,11 @@ function Workspace:render_queue()
                     for _, preview in ipairs(item_metadata_preview_lines(item, project and project.root)) do
                         self.queue_rows[#self.queue_rows + 1] = {
                             kind = "preview",
-                            text = preview,
+                            text = preview.text,
                             queue = queue_name,
                             item = item,
                         }
-                        block:append_line(preview, {
-                            Extmark.inline(0, 0, #preview, "ClodexQueueItemMuted"),
-                        })
+                        block:append_line(preview.text, preview.marks)
                     end
                 end
 

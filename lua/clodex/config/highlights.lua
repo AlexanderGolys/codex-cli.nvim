@@ -262,6 +262,10 @@ local M = {
     ClodexStateCommandHint = {
       fg = { from = "Comment" },
     },
+    ClodexCommitId = {
+      fg = "#e0af68",
+      bold = true,
+    },
   },
 }
 
