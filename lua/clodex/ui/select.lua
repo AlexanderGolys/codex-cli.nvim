@@ -381,6 +381,7 @@ local function style_prompt_editor(win, normal_group)
     ("NormalFloat:%s"):format(normal_group),
     "FloatBorder:ClodexPromptEditorBorder",
     "FloatTitle:ClodexPromptEditorTitle",
+    "FloatFooter:ClodexPromptEditorSubtitle",
   }, ",")
   vim.wo[win].winblend = 0
 end
@@ -628,7 +629,7 @@ function M.multiline_input(opts, on_confirm)
     buf = hint_buf,
     enter = false,
     backdrop = PROMPT_EDITOR_BACKDROP,
-    border = "none",
+    border = "rounded",
     width = width,
     height = PROMPT_EDITOR_HINT_HEIGHT,
     row = function()
@@ -652,7 +653,7 @@ function M.multiline_input(opts, on_confirm)
       buftype = "nofile",
       modifiable = false,
     },
-    zindex = PROMPT_EDITOR_ZINDEX,
+    zindex = PROMPT_EDITOR_ZINDEX - 1,
   })
 
   --- Updates floating window dimensions after every content change.
@@ -730,7 +731,7 @@ function M.multiline_input(opts, on_confirm)
   render_hint_lines(hint_buf, hint_lines)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
-  style_prompt_editor(hint_win.win, "ClodexPromptEditorHint")
+  style_prompt_editor(hint_win.win, "ClodexPromptEditorFooter")
   vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
   configure_prompt_context_completeopt(body_buf)
   prompt_context_completion[body_buf] = prompt_context()

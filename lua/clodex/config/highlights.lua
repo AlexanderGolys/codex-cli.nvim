@@ -163,6 +163,10 @@ local M = {
       fg = { from = { "Comment", "Normal" } },
       italic = true,
     },
+    ClodexPromptEditorFooter = {
+      fg = { from = { "Comment", "LineNr" } },
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+    },
     ClodexPromptEditorHint = {
       fg = { from = { "Comment", "LineNr" } },
       bg = { from = { "ColorColumn", "Visual", "Pmenu" }, attr = "bg" },
