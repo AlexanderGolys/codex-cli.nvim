@@ -141,10 +141,12 @@ local M = {
     },
     ClodexQueueActiveBorder = {
       fg = { from = { "Identifier", "FloatBorder" } },
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg", adjust = -0.28 },
       bold = true,
     },
     ClodexQueueInactiveBorder = {
       fg = { from = { "Comment", "FloatBorder" } },
+      bg = { from = { "NormalFloat", "Normal" }, attr = "bg" },
     },
     ClodexPromptEditorNormal = {
       fg = { from = { "NormalFloat", "Normal" } },

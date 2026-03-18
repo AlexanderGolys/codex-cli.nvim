@@ -52,10 +52,10 @@ function M.set_focus_border(win, active)
   local normal = active and ACTIVE_NORMAL or INACTIVE_NORMAL
   local selection = active and ACTIVE_SELECTION or INACTIVE_SELECTION
   vim.wo[win].winhl = (
-    "Normal:%s,NormalNC:%s,NormalFloat:%s,FloatBorder:%s,"
+    "Normal:%s,NormalNC:%s,NormalFloat:%s,FloatBorder:%s,FloatTitle:%s,"
         .. "CursorLine:%s,EndOfBuffer:%s,Cursor:%s,lCursor:%s,"
         .. "CursorIM:%s,TermCursor:%s,TermCursorNC:%s"
-  ):format(normal, normal, normal, border, selection, normal, normal, normal, normal, normal, normal)
+  ):format(normal, normal, normal, border, border, selection, normal, normal, normal, normal, normal, normal)
   vim.wo[win].winblend = 0
 end
 
