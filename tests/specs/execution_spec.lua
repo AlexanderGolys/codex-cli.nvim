@@ -36,7 +36,7 @@ describe("clodex.workspace.execution", function()
 
         assert.matches("prompt kind is `ask`, do not create a commit", content)
         assert.matches("create a focused git commit", content)
-        assert.matches("queues%.implemented", content)
+        assert.matches("%.clodex/implemented%.json", content)
         assert.matches("%$prompt%-nvim%-clodex", content)
 
         fs.remove(root)
@@ -54,7 +54,7 @@ describe("clodex.workspace.execution", function()
         file:close()
 
         assert.are_not.equal("stale", content)
-        assert.matches("Repeat until `queues%.queued` is empty", content)
+        assert.matches("Repeat until `%.clodex/queued%.json` is empty", content)
 
         fs.remove(root)
     end)
@@ -107,7 +107,10 @@ describe("clodex.workspace.execution", function()
         local content = file:read("*a")
         file:close()
 
-        assert.matches("%.opencode/skills/prompt%-nvim%-clodex/SKILL%.md$", skill_file)
+        assert.are.equal(
+            fs.normalize(vim.fn.expand("~/.config/opencode/skills/prompt-nvim-clodex/SKILL.md")),
+            skill_file
+        )
         assert.matches("Manual History", content)
         assert.matches("%$prompt%-nvim%-clodex", content)
 

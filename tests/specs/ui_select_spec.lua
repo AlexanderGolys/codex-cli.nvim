@@ -199,12 +199,19 @@ describe("clodex.ui.select", function()
         }, picker.focused[1])
     end)
 
-    it("focuses the confirmation popup window when it opens", function()
-        local confirm_window = select.confirm("Delete prompt?", function() end)
+    it("focuses the confirmation picker list when it opens", function()
+        local confirm_picker = select.confirm("Delete prompt?", function() end)
 
         wait_for(function()
-            return confirm_window and confirm_window:valid() and vim.api.nvim_get_current_win() == confirm_window.win
+            return confirm_picker and #confirm_picker.focused > 0
         end)
+
+        assert.are.same({
+            target = "list",
+            opts = {
+                show = true,
+            },
+        }, confirm_picker.focused[1])
     end)
 
     it("uses built-in completion items for prompt context insertion", function()

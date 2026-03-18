@@ -72,7 +72,7 @@ describe("clodex.config", function()
 
             assert.are.equal("opencode", values.backend)
             assert.are.same({ "opencode" }, values.opencode_cmd)
-            assert.are.equal(".opencode/skills", values.prompt_execution.skills_dir)
+            assert.are.equal(vim.fn.expand("~/.config/opencode/skills"), values.prompt_execution.skills_dir)
         end)
 
         it("darkens adjusted highlight colors relative to their source background", function()
