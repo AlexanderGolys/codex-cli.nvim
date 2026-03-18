@@ -58,11 +58,7 @@ end
 ---@param path string
 ---@return string
 function M.dirname(path)
-    path = M.normalize(path)
-    if M.is_dir(path) then
-        return path
-    end
-    return vim.fs.dirname(path)
+    return vim.fs.dirname(M.normalize(path))
 end
 
 --- Returns the file name component of a path.
@@ -124,6 +120,58 @@ function M.ensure_dir(path)
     vim.fn.mkdir(path, "p")
 end
 
+--- Adds entry to gitignore if gitignore exists and entry not already present.
+---@param dir_path string
+---@param entry string
+local function add_to_gitignore(dir_path, entry)
+    local gitignore_path = M.join(dir_path, ".gitignore")
+    if not M.is_file(gitignore_path) then
+        return
+    end
+
+    local file = io.open(gitignore_path, "r")
+    if not file then
+        return
+    end
+
+    local content = file:read("*a")
+    file:close()
+
+    if content:find(entry, 1, true) then
+        return
+    end
+
+    file = io.open(gitignore_path, "a")
+    if file then
+        if content:sub(-1) ~= "\n" then
+            file:write("\n")
+        end
+        file:write(entry .. "\n")
+        file:close()
+    end
+end
+
+--- Ensures a directory exists and adds it to .gitignore if applicable.
+--- Checks if the path contains a .clodex directory at the project root level.
+---@param path string
+function M.ensure_dir_with_gitignore(path)
+    M.ensure_dir(path)
+
+    local normalized = M.normalize(path)
+    if not vim.startswith(normalized, "/") then
+        normalized = M.join(M.cwd(), normalized)
+    end
+
+    local clodex_idx = normalized:find("/.clodex/", 1, true)
+    if clodex_idx then
+        local project_root = normalized:sub(1, clodex_idx)
+        local gitignore_path = M.join(project_root, ".gitignore")
+        if M.is_file(gitignore_path) then
+            add_to_gitignore(project_root, ".clodex/")
+        end
+    end
+end
+
 --- Reads JSON from disk and returns a default value on any failure.
 ---@param path string
 ---@param default any
@@ -152,7 +200,7 @@ end
 ---@param path string
 ---@param value any
 function M.write_json(path, value)
-    M.ensure_dir(M.dirname(path))
+    M.ensure_dir_with_gitignore(M.dirname(path))
 
     local file = assert(io.open(path, "w"))
     file:write(vim.json.encode(value))
@@ -163,7 +211,7 @@ end
 ---@param path string
 ---@param content string
 function M.write_file(path, content)
-    M.ensure_dir(M.dirname(path))
+    M.ensure_dir_with_gitignore(M.dirname(path))
     local file = assert(io.open(path, "wb"))
     file:write(content)
     file:close()
@@ -173,7 +221,7 @@ end
 ---@param path string
 ---@param content string
 function M.append_file(path, content)
-    M.ensure_dir(M.dirname(path))
+    M.ensure_dir_with_gitignore(M.dirname(path))
     local file = assert(io.open(path, "ab"))
     file:write(content)
     file:close()
