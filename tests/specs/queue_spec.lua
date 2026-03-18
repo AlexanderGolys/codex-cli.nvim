@@ -121,7 +121,7 @@ describe("clodex.workspace.queue", function()
 
         assert.are.equal(item.id, completed.id)
         assert.are.equal("implemented", completed.history_summary)
-        assert.are.equal("abc123", completed.history_commit)
+        assert.are.same({ "abc123" }, completed.history_commits)
         assert.are.equal("2026-01-01T00:00:00Z", completed.history_completed_at)
 
         local summary = queue:summary(project, false)

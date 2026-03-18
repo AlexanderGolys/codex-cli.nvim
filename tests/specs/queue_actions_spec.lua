@@ -33,6 +33,14 @@ describe("clodex.app.queue_actions", function()
         refresh_count = 0
         actions = QueueActions.new({
             queue = queue,
+            execution = {
+                queue_item_instructions = function(_, item)
+                    return ("Current queue item id: `%s`\n$prompt-nvim-clodex"):format(item.id)
+                end,
+            },
+            project_details_store = {
+                touch_activity = function() end,
+            },
             refresh_views = function()
                 refresh_count = refresh_count + 1
             end,
@@ -128,7 +136,7 @@ describe("clodex.app.queue_actions", function()
         assert.is_true(moved.details:find("## Implementation Details") ~= nil)
         assert.is_true(moved.details:find("implementation complete") ~= nil)
         assert.are.equal(nil, moved.history_summary)
-        assert.are.equal(nil, moved.history_commit)
+        assert.are.same({}, moved.history_commits)
     end)
 
     it("moves a history item to another project when the source queue is specified", function()
@@ -277,6 +285,7 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal("queued", queue_name)
         assert.are.equal(item.id, current_item.id)
         assert.are.equal(nil, current_item.history_summary)
+        assert.is_truthy(type(current_item.execution_instructions) == "string")
         assert.are.equal(0, refresh_count)
     end)
 
@@ -298,6 +307,7 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal("queued", queue_name)
         assert.are.equal(item.id, current_item.id)
         assert.are.equal(nil, current_item.history_summary)
+        assert.are.equal(nil, current_item.execution_instructions)
         assert.are.equal(0, refresh_count)
     end)
 end)

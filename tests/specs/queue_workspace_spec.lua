@@ -607,7 +607,7 @@ describe("clodex.ui.queue_workspace", function()
                                 details = "Adjust token handling",
                                 prompt = "Fix parser\n\nAdjust token handling",
                                 kind = "todo",
-                                history_commit = "abc1234",
+                                history_commits = { "abc1234" },
                             },
                         },
                         history = {},
