@@ -58,6 +58,7 @@ local function start_with_snacks(cmd, opts, buf)
         interactive = true,
         win = {
             buf = buf,
+            enter = false,
             bo = {
                 filetype = "clodex_terminal"
             }
