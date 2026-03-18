@@ -111,6 +111,18 @@ function Runner:update_config(config)
     self.config = config
 end
 
+---@param project_root string
+---@return boolean
+function Runner:is_project_active(project_root)
+    local prefix = ("%s::"):format(project_root)
+    for key in pairs(self.active) do
+        if vim.startswith(key, prefix) then
+            return true
+        end
+    end
+    return false
+end
+
 ---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@param summary string?

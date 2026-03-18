@@ -99,6 +99,10 @@ local M = {
       fg = { from = "Directory" },
       bold = true,
     },
+    ClodexQueueProjectWorking = {
+      fg = { from = { "DiagnosticWarn", "Directory" } },
+      bold = true,
+    },
     ClodexQueueProjectCurrent = {
       fg = { from = { "DiagnosticOk", "Directory" } },
       bold = true,

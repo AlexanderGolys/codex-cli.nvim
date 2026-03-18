@@ -49,4 +49,60 @@ describe("clodex.terminal.session", function()
 
         vim.api.nvim_win_close(inactive_win, true)
     end)
+
+    it("treats a ready prompt as not working", function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            "older output",
+            "Codex ready",
+        })
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = buf
+        session.job_id = 123
+        session.awaiting_response = true
+
+        local original_jobwait = vim.fn.jobwait
+        vim.fn.jobwait = function()
+            return { -1 }
+        end
+
+        assert.is_false(session:is_working())
+        assert.is_false(session.awaiting_response)
+
+        vim.fn.jobwait = original_jobwait
+    end)
+
+    it("treats non-ready output after dispatch as working", function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            "Thinking...",
+        })
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = buf
+        session.job_id = 123
+        session.awaiting_response = true
+
+        local original_jobwait = vim.fn.jobwait
+        vim.fn.jobwait = function()
+            return { -1 }
+        end
+
+        assert.is_true(session:is_working())
+
+        vim.fn.jobwait = original_jobwait
+    end)
 end)

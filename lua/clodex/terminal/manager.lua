@@ -87,6 +87,13 @@ local function session_running_for_project(session, project_root)
   return fs.is_relative_to(session.cwd, normalized_root)
 end
 
+---@param session Clodex.TerminalSession
+---@param project_root string
+---@return boolean
+local function session_working_for_project(session, project_root)
+  return session_running_for_project(session, project_root) and session:is_working()
+end
+
 ---@param config Clodex.Config.Values
 ---@return Clodex.TerminalManager
 function Manager.new(config)
@@ -212,6 +219,28 @@ function Manager:is_project_session_running(root)
   end
 
   return self.free_session and session_running_for_project(self.free_session, normalized_root) or false
+end
+
+---@param root string
+---@return boolean
+function Manager:is_project_session_working(root)
+  if type(root) ~= "string" or root == "" then
+    return false
+  end
+
+  local normalized_root = fs.normalize(root)
+  local session = self:project_session(normalized_root)
+  if session and session_working_for_project(session, normalized_root) then
+    return true
+  end
+
+  for _, candidate in pairs(self.project_sessions) do
+    if session_working_for_project(candidate, normalized_root) then
+      return true
+    end
+  end
+
+  return self.free_session and session_working_for_project(self.free_session, normalized_root) or false
 end
 
 ---@param project Clodex.Project

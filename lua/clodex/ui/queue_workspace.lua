@@ -51,6 +51,8 @@ local notify = require("clodex.util.notify")
 ---@field queue_item_rows integer[]
 ---@field suppress_open_until? integer
 ---@field focus_augroup? integer
+---@field animation_tick integer
+---@field animation_refresh_pending boolean
 local Workspace = {}
 Workspace.__index = Workspace
 
@@ -74,6 +76,10 @@ local PROJECT_DETAIL_LABELS = {
     "Files:",
     "Lang:",
 }
+local PROJECT_WORKING_ICONS = { "⠋ ", "⠙ ", "⠹ ", "⠸ ", "⠼ ", "⠴ ", "⠦ ", "⠧ ", "⠇ ", "⠏ " }
+local PROJECT_RUNNING_ICON = "󰚩 "
+local PROJECT_STOPPED_ICON = "󱙻 "
+local PROJECT_WORKING_ANIMATION_MS = 120
 local GITHUB_ICON = ""
 local COMMIT_ICON = "󰜘 "
 local ELLIPSIS = "..."
@@ -224,12 +230,24 @@ local function project_count_suffix(summary)
 end
 
 -- @@@clodex.panel.project.title
+---@param summary Clodex.ProjectQueueSummary
+---@param animation_tick integer
+---@return string
+local function project_title_prefix(summary, animation_tick)
+    if summary.session_working then
+        local frame = ((animation_tick - 1) % #PROJECT_WORKING_ICONS) + 1
+        return PROJECT_WORKING_ICONS[frame]
+    end
+    return summary.session_running and PROJECT_RUNNING_ICON or PROJECT_STOPPED_ICON
+end
+
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
+---@param animation_tick integer
 ---@param max_width integer
 ---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
-local function project_title_text(project, summary, max_width)
-    local prefix = summary.session_running and "󰚩 " or "󱙻 "
+local function project_title_text(project, summary, animation_tick, max_width)
+    local prefix = project_title_prefix(summary, animation_tick)
     local suffix, spans = project_count_suffix(summary)
     local name_width = math.max(max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(suffix), 1)
     return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width), spans
@@ -271,9 +289,10 @@ end
 
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
+---@param animation_tick integer
 ---@return integer
-local function project_title_width(project, summary)
-    local prefix = summary.session_running and "󰚩 " or "󱙻 "
+local function project_title_width(project, summary, animation_tick)
+    local prefix = project_title_prefix(summary, animation_tick)
     local suffix = project_count_suffix(summary)
     return vim.fn.strdisplaywidth(prefix) + vim.fn.strdisplaywidth(project.name) + vim.fn.strdisplaywidth(suffix)
 end
@@ -296,7 +315,7 @@ local function project_target_width(self)
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
         local details = self.app.project_details_store:get_cached(project)
-        width = math.max(width, project_title_width(project, summary) + PROJECT_LAYOUT_PADDING)
+        width = math.max(width, project_title_width(project, summary, self.animation_tick) + PROJECT_LAYOUT_PADDING)
 
         for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
             width = math.max(width, vim.fn.strdisplaywidth(detail) + PROJECT_LAYOUT_PADDING)
@@ -714,7 +733,34 @@ function Workspace.new(app, config)
     self.project_item_rows = {}
     self.queue_rows = {}
     self.queue_item_rows = {}
+    self.animation_tick = 1
+    self.animation_refresh_pending = false
     return self
+end
+
+function Workspace:has_working_projects()
+    for _, project in ipairs(self.projects) do
+        if self.app.is_project_working and self.app:is_project_working(project) then
+            return true
+        end
+    end
+    return false
+end
+
+function Workspace:queue_animation_refresh()
+    if self.animation_refresh_pending or not self:is_open() or not self:has_working_projects() then
+        return
+    end
+
+    self.animation_refresh_pending = true
+    vim.defer_fn(function()
+        self.animation_refresh_pending = false
+        if not self:is_open() or not self:has_working_projects() then
+            return
+        end
+        self.animation_tick = (self.animation_tick % #PROJECT_WORKING_ICONS) + 1
+        self:refresh()
+    end, PROJECT_WORKING_ANIMATION_MS)
 end
 
 ---@param config Clodex.Config.Values
@@ -892,6 +938,7 @@ end
 function Workspace:close()
     require("clodex.ui.select").close_active_input()
     self:clear_focus_tracking()
+    self.animation_refresh_pending = false
     local wins = {
         self.project_win,
         self.queue_win,
@@ -1388,6 +1435,7 @@ function Workspace:refresh(initial)
         })
     end
     self:apply_focus()
+    self:queue_animation_refresh()
 end
 
 function Workspace:render_projects()
@@ -1420,7 +1468,7 @@ function Workspace:render_projects()
         local summary = self.app:queue_summary(project)
         local details = project.root == selected_root and self.app.project_details_store:get(project)
             or self.app.project_details_store:get_cached(project)
-        local title, count_spans = project_title_text(project, summary, max_width)
+        local title, count_spans = project_title_text(project, summary, self.animation_tick, max_width)
         local count_suffix = project_count_suffix(summary)
         self.project_rows[#self.project_rows + 1] = {
             kind = "item",
@@ -1430,6 +1478,7 @@ function Workspace:render_projects()
         self.project_item_rows[#self.project_item_rows + 1] = #self.project_rows
         local is_active_project = active_root ~= nil and project.root == active_root
         local item_hl = is_active_project and "ClodexQueueProjectCurrent"
+            or summary.session_working and "ClodexQueueProjectWorking"
             or summary.session_running and "ClodexQueueProjectActive"
             or "ClodexQueueProjectInactive"
         local item_extmarks = {
@@ -1798,7 +1847,14 @@ function Workspace:implement_queue_item()
         return
     end
 
-    if not self.app.queue_actions:implement_queue_item(project, item.id) then
+    local ok, action = self.app.queue_actions:implement_queue_item(project, item.id)
+    if not ok then
+        self:refresh()
+        return
+    end
+
+    if action ~= "started" then
+        self.queue_index = 1
         self:refresh()
         return
     end

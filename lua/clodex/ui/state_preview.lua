@@ -22,6 +22,7 @@ local Preview = {}
 Preview.__index = Preview
 
 local status_hl = {
+  ["session working"] = "ClodexStateStatusActive",
   ["session alive"] = "ClodexStateStatusActive",
   ["session stopped"] = "ClodexStateStatusStopped",
   ["offline"] = "ClodexStateStatusOffline",

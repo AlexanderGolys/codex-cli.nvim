@@ -33,6 +33,9 @@ describe("clodex.app.queue_actions", function()
         refresh_count = 0
         actions = QueueActions.new({
             queue = queue,
+            is_project_working = function()
+                return false
+            end,
             execution = {
                 queue_item_instructions = function(_, item)
                     return ("Current queue item id: `%s`\n$prompt-nvim-clodex"):format(item.id)
@@ -227,6 +230,45 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(item.id, current_item.id)
         assert.is_truthy(type(current_item.execution_instructions) == "string")
         assert.are.same(project, remembered_project)
+        assert.are.equal(1, refresh_count)
+    end)
+
+    it("blocks implementing a queued item while the project is already working", function()
+        local item = queue:add_todo(project, {
+            title = "queued while busy",
+            queue = "queued",
+            kind = "todo",
+        })
+        actions.app.is_project_working = function()
+            return true
+        end
+
+        local ok, status = actions:implement_queue_item(project, item.id)
+
+        assert.is_false(ok)
+        assert.are.equal("blocked", status)
+        assert.are.equal("queued", queue:find_item(project, item.id))
+        assert.are.equal(0, refresh_count)
+    end)
+
+    it("moves a planned item forward instead of dispatching while the project is already working", function()
+        local item = queue:add_todo(project, {
+            title = "planned while busy",
+            queue = "planned",
+            kind = "todo",
+        })
+        actions.app.is_project_working = function()
+            return true
+        end
+
+        local ok, status = actions:implement_queue_item(project, item.id)
+        local queue_name, _, current_item = queue:find_item(project, item.id)
+
+        assert.is_true(ok)
+        assert.are.equal("queued", status)
+        assert.are.equal("queued", queue_name)
+        assert.are.equal(item.id, current_item.id)
+        assert.is_truthy(type(current_item.execution_instructions) == "string")
         assert.are.equal(1, refresh_count)
     end)
 

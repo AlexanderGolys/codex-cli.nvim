@@ -159,6 +159,50 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(1, close_count)
     end)
 
+    it("keeps the workspace open when a planned item only moves forward because the project is busy", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Move forward from planned",
+        }
+        local close_count = 0
+        local refresh_count = 0
+
+        local workspace = {
+            app = {
+                queue_actions = {
+                    implement_queue_item = function(_, queued_project, item_id)
+                        assert.are.same(project, queued_project)
+                        assert.are.equal(item.id, item_id)
+                        return true, "queued"
+                    end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "planned"
+            end,
+            close = function()
+                close_count = close_count + 1
+            end,
+            refresh = function()
+                refresh_count = refresh_count + 1
+            end,
+            queue_index = 3,
+        }
+
+        Workspace.implement_queue_item(workspace)
+
+        assert.are.equal(0, close_count)
+        assert.are.equal(1, refresh_count)
+        assert.are.equal(1, workspace.queue_index)
+    end)
+
     it("keeps delete bound to queue-side buffers and still deletes the selected prompt", function()
         local project = {
             name = "Test Project",
@@ -796,6 +840,64 @@ describe("clodex.ui.queue_workspace", function()
         assert.is_true(project_width > 24)
         assert.is_true(queue_width >= 32)
         assert.is_true(project_width >= vim.fn.strdisplaywidth(project.name))
+    end)
+
+    it("renders a spinner prefix for actively working projects", function()
+        local project = {
+            name = "Busy Project",
+            root = "/tmp/busy-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            queue_summary = function()
+                return {
+                    project = project,
+                    session_running = true,
+                    session_working = true,
+                    counts = {
+                        planned = 0,
+                        queued = 1,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+        }, {
+            queue_workspace = {
+                width = 1,
+                height = 1,
+                project_width = 0.3,
+                footer_height = 3,
+                preview_max_lines = 3,
+                fold_preview = true,
+                date_format = "ago",
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.animation_tick = 1
+
+        workspace:render_projects()
+
+        local first_line = vim.api.nvim_buf_get_lines(workspace.project_buf, 0, 1, false)[1]
+        assert.are.equal("⠋ ", first_line:sub(1, #"⠋ "))
     end)
 
     it("reflows the open workspace when the project content width changes", function()

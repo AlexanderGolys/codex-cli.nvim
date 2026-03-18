@@ -25,6 +25,7 @@ local util = require("clodex.util")
 ---@class Clodex.ProjectQueueSummary
 ---@field project Clodex.Project
 ---@field session_running boolean
+---@field session_working boolean
 ---@field last_updated_at string
 ---@field counts table<Clodex.QueueName, integer>
 ---@field queues table<Clodex.QueueName, Clodex.QueueItem[]>
@@ -155,8 +156,10 @@ end
 
 --- Returns a summary of all queues for a project.
 ---@param project Clodex.Project
+---@param session_running? boolean
+---@param session_working? boolean
 ---@return Clodex.ProjectQueueSummary
-function Queue:summary(project)
+function Queue:summary(project, session_running, session_working)
     local queues = self:queues(project)
     local latest = ""
     for _, queue_name in ipairs(ORDER) do
@@ -169,7 +172,8 @@ function Queue:summary(project)
 
     return {
         project = project,
-        session_running = false,
+        session_running = session_running == true,
+        session_working = session_working == true,
         last_updated_at = latest,
         counts = {
             planned = #queues.planned,

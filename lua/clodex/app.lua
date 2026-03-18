@@ -653,12 +653,17 @@ function App:state_snapshot()
     local project_states = {} ---@type Clodex.App.ProjectState[]
     for _, project in ipairs(projects) do
         local session = session_by_key[project.root]
+        local project_working = self:is_project_working(project)
+        local session_running = self:is_project_session_running(project)
         project_states[#project_states + 1] = {
             project = project,
             session_active = session ~= nil and session.buffer_valid or false,
             window_open_in_active_tab = current_tab.has_visible_window and current_tab.session_key == project.root,
             usage_events = "not tracked yet",
-            working = session and (session.running and "session alive" or "session stopped") or "offline",
+            working = project_working and "session working"
+                or session_running and "session alive"
+                or session and "session stopped"
+                or "offline",
             model = "not tracked yet",
             context = "not tracked yet",
             bookmark_count = self.project_bookmarks:count(project),
@@ -708,6 +713,15 @@ function App:is_project_session_running(project)
     return self.terminals:is_project_session_running(project.root)
 end
 
+---@param project Clodex.Project
+---@return boolean
+function App:is_project_working(project)
+    if self.exec_runner and self.exec_runner:is_project_active(project.root) then
+        return true
+    end
+    return self.terminals:is_project_session_working(project.root)
+end
+
 ---@return Clodex.Project[]
 function App:projects_for_queue_workspace()
     local projects = self.registry:list()
@@ -749,7 +763,8 @@ end
 ---@param project Clodex.Project
 ---@return Clodex.ProjectQueueSummary
 function App:queue_summary(project)
-    return self.queue:summary(project, self:is_project_session_running(project))
+    local session_running = self:is_project_session_running(project)
+    return self.queue:summary(project, session_running, self:is_project_working(project))
 end
 
 function App:add_todo(opts)

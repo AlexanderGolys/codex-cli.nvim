@@ -27,6 +27,7 @@ local notify = require("clodex.util.notify")
 ---@field job_id? integer
 ---@field suppress_exit_warning boolean
 ---@field archived_line_count integer
+---@field awaiting_response boolean
 
 --- Defines the Clodex.TerminalSession.Snapshot type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -85,6 +86,7 @@ local function attach_termclose_handler(self)
         buffer = self.buf,
         callback = function()
             self.job_id = nil
+            self.awaiting_response = false
             local suppress_warning = self.suppress_exit_warning
             self.suppress_exit_warning = false
             local code = type(vim.v.event) == "table" and vim.v.event.status or 0
@@ -110,7 +112,48 @@ function Session.new(spec)
     end
     spec.suppress_exit_warning = false
     spec.archived_line_count = 0
+    spec.awaiting_response = false
     return setmetatable(spec, Session)
+end
+
+---@param line string
+---@return boolean
+local function is_idle_line(line)
+    line = vim.trim((line or ""):lower())
+    if line == "" then
+        return false
+    end
+
+    if line:find("ready", 1, true) then
+        return true
+    end
+
+    if line:match("^[>%$#:]%s*$") then
+        return true
+    end
+
+    if line:match("[%>%$#:]%s*$") and not line:find("error", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+---@return string
+local function last_nonempty_line(buf)
+    if buf == nil or not vim.api.nvim_buf_is_valid(buf) then
+        return ""
+    end
+
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    for index = line_count - 1, 0, -1 do
+        local line = vim.api.nvim_buf_get_lines(buf, index, index + 1, false)[1] or ""
+        if vim.trim(line) ~= "" then
+            return line
+        end
+    end
+
+    return ""
 end
 
 ---@return string
@@ -196,12 +239,7 @@ function Session:last_cli_line()
     if not self:buf_valid() then
         return ""
     end
-    local line_count = vim.api.nvim_buf_line_count(self.buf)
-    if line_count <= 0 then
-        return ""
-    end
-    local line = vim.api.nvim_buf_get_lines(self.buf, line_count - 1, line_count, false)[1] or ""
-    return vim.trim(line)
+    return vim.trim(last_nonempty_line(self.buf))
 end
 
 ---@param win integer
@@ -253,6 +291,22 @@ function Session:is_running()
         return false
     end
     return vim.fn.jobwait({ self.job_id }, 0)[1] == -1
+end
+
+---@return boolean
+function Session:is_working()
+    if not self:is_running() then
+        self.awaiting_response = false
+        return false
+    end
+
+    local line = self:last_cli_line()
+    if is_idle_line(line) then
+        self.awaiting_response = false
+        return false
+    end
+
+    return self.awaiting_response or line ~= ""
 end
 
 ---@param opts? { sync_header?: boolean }
@@ -406,6 +460,8 @@ function Session:dispatch_prompt(text)
         notify.error(("Failed to send prompt to session at %s"):format(self.cwd))
         return false
     end
+
+    self.awaiting_response = true
 
     vim.defer_fn(function()
         if self.job_id then

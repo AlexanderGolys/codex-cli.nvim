@@ -336,11 +336,22 @@ end
 function QueueActions:implement_queue_item(project, item_id)
     local queue_name, _, item = self.app.queue:find_item(project, item_id)
     local moved_from_planned = false
+    local project_working = self.app.is_project_working and self.app:is_project_working(project) or false
+
+    if project_working and queue_name == "queued" then
+        notify.warn(("%s is already working on another prompt"):format(project.name))
+        return false, "blocked"
+    end
+
+    if project_working and queue_name == "planned" then
+        self:advance_queue_item(project, item_id)
+        return true, "queued"
+    end
 
     if queue_name == "planned" then
         if not self.app.queue:advance(project, item_id) then
             notify.warn("Could not move the planned item to queued")
-            return false
+            return false, "blocked"
         end
         self:refresh_queue_item_instructions(project, item_id)
         queue_name, _, item = self.app.queue:find_item(project, item_id, "queued")
@@ -349,7 +360,7 @@ function QueueActions:implement_queue_item(project, item_id)
 
     if queue_name ~= "queued" or not item then
         notify.warn("Only planned or queued items can be implemented")
-        return false
+        return false, "blocked"
     end
 
     if self:start_queued_item(project, item_id, "interactive") then
@@ -361,7 +372,7 @@ function QueueActions:implement_queue_item(project, item_id)
         self:remember_workspace_revision(project)
         self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
-        return true
+        return true, "started"
     end
 
     if moved_from_planned then
@@ -370,7 +381,7 @@ function QueueActions:implement_queue_item(project, item_id)
         self.app:refresh_views()
     end
 
-    return false
+    return false, "blocked"
 end
 
 ---@param project Clodex.Project
