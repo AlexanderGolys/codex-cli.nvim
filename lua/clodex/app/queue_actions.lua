@@ -1,5 +1,4 @@
 local History = require("clodex.history")
-local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
 
 local COMMIT_ICON = "󰜘 "
@@ -71,8 +70,8 @@ local function rewind_item_spec(item, opts, project_root)
     if commit_id ~= "" or commit_summary ~= "" then
         local impl_section = { "## Implementation Details" }
         if commit_id ~= "" then
-            local short = project_root and git.short_commit(project_root, commit_id) or commit_id
-            impl_section[#impl_section + 1] = ("**Commit:** %s`%s`"):format(COMMIT_ICON, short or commit_id)
+            local short = commit_id:sub(1, 8)
+            impl_section[#impl_section + 1] = ("`%s%s`"):format(COMMIT_ICON, short)
         end
         if commit_summary ~= "" then
             impl_section[#impl_section + 1] = ("**Summary:** %s"):format(commit_summary)
