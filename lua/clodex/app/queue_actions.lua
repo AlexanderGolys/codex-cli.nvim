@@ -255,6 +255,7 @@ function QueueActions:add_project_todo(project, spec, opts)
         queue = queue_name,
     })
     History.append_prompt_added(project.name, normalized.title, normalized.details, spec.kind)
+    self.app.project_details_store:touch_activity(project)
     local started = false
     if queue_name == "queued" and opts.implement then
         started = self:start_queued_item(project, item.id, opts.run_mode == "exec" and "exec" or "interactive")
@@ -359,6 +360,7 @@ function QueueActions:move_all_planned_items_to_queued(project)
     if moved > 0 then
         notify.notify(("Moved %d planned prompt(s) to queued for %s"):format(moved, project.name))
         self:remember_workspace_revision(project)
+        self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
     end
 end
@@ -390,6 +392,7 @@ function QueueActions:advance_queue_item(project, item_id)
         return
     end
     self:remember_workspace_revision(project)
+    self.app.project_details_store:touch_activity(project)
     self.app:refresh_views()
 end
 
@@ -429,6 +432,7 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
     end
 
     self:remember_workspace_revision(project)
+    self.app.project_details_store:touch_activity(project)
     self.app:refresh_views()
 end
 
@@ -468,6 +472,8 @@ function QueueActions:move_queue_item_to_project(project, item_id, target_projec
     notify.notify(("Moved '%s' to %s"):format(item.title, target_project.name))
     self:remember_workspace_revision(project)
     self:remember_workspace_revision(target_project)
+    self.app.project_details_store:touch_activity(project)
+    self.app.project_details_store:touch_activity(target_project)
     self.app:refresh_views()
 end
 
