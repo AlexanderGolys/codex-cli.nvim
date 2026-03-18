@@ -679,6 +679,179 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(40, height + footer_height + 3)
     end)
 
+    it("sizes the project list to fit the rendered project content", function()
+        local original_list_uis = vim.api.nvim_list_uis
+        vim.api.nvim_list_uis = function()
+            return {
+                {
+                    width = 140,
+                    height = 40,
+                },
+            }
+        end
+
+        local project = {
+            name = "Project with a much longer display name than usual",
+            root = "/tmp/project-with-a-much-longer-display-name-than-usual",
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    session_running = false,
+                    counts = {
+                        planned = 12,
+                        queued = 3,
+                        implemented = 5,
+                        history = 7,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get_cached = function()
+                    return {
+                        file_count = 182,
+                        remote_name = "origin",
+                        languages = {
+                            { name = "lua" },
+                        },
+                        last_file_modified_at = os.time(),
+                    }
+                end,
+            },
+        }, {
+            queue_workspace = {
+                width = 1,
+                height = 1,
+                project_width = 0.3,
+                footer_height = 3,
+                preview_max_lines = 3,
+                fold_preview = true,
+                date_format = "ago",
+            },
+        })
+        workspace.projects = { project }
+
+        local _, _, project_width, queue_width = workspace:layout()
+
+        vim.api.nvim_list_uis = original_list_uis
+
+        assert.is_true(project_width > 24)
+        assert.is_true(queue_width >= 32)
+        assert.is_true(project_width >= vim.fn.strdisplaywidth(project.name))
+    end)
+
+    it("reflows the open workspace when the project content width changes", function()
+        local original_list_uis = vim.api.nvim_list_uis
+        vim.api.nvim_list_uis = function()
+            return {
+                {
+                    width = 140,
+                    height = 40,
+                },
+            }
+        end
+
+        local project = {
+            name = "Short name",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            queue_summary = function()
+                return {
+                    project = project,
+                    session_running = false,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+        }, {
+            queue_workspace = {
+                width = 1,
+                height = 1,
+                project_width = 0.3,
+                footer_height = 3,
+                preview_max_lines = 3,
+                fold_preview = true,
+                date_format = "ago",
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 24,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 26,
+            width = 60,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 14,
+            col = 1,
+            width = 85,
+            height = 3,
+            style = "minimal",
+        })
+        workspace:refresh(true)
+
+        local initial_width = vim.api.nvim_win_get_width(workspace.project_win)
+
+        workspace.project_search = "project filter that should force a wider project pane"
+        workspace:refresh()
+        local widened_width = vim.api.nvim_win_get_width(workspace.project_win)
+
+        vim.api.nvim_list_uis = original_list_uis
+
+        assert.is_true(widened_width > initial_width)
+
+        vim.api.nvim_win_close(workspace.footer_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.project_win, true)
+    end)
+
     it("renders footer actions only for the focused picker", function()
         local project = {
             name = "Test Project",

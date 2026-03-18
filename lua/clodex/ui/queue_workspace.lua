@@ -79,6 +79,12 @@ local COMMIT_ICON = "󰜘 "
 local ELLIPSIS = "..."
 local PANEL_BORDER_COLS = 2
 local PANEL_GAP_COLS = 1
+local WORKSPACE_MIN_WIDTH = 72
+local WORKSPACE_MIN_HEIGHT = 18
+local PROJECT_WINDOW_MIN_WIDTH = 24
+local QUEUE_WINDOW_MIN_WIDTH = 32
+local QUEUE_WORKSPACE_MIN_CONTENT_WIDTH = PROJECT_WINDOW_MIN_WIDTH + QUEUE_WINDOW_MIN_WIDTH
+local PROJECT_LAYOUT_PADDING = 2
 local PROJECT_INSERT_MODE_KEYS = {
     "i",
     "I",
@@ -92,6 +98,7 @@ local QUEUE_INSERT_MODE_KEYS = {
     "O",
     "R",
 }
+local project_detail_lines
 
 local function win_valid(win)
     return win ~= nil and vim.api.nvim_win_is_valid(win)
@@ -99,6 +106,16 @@ end
 
 local function buf_valid(buf)
     return buf ~= nil and vim.api.nvim_buf_is_valid(buf)
+end
+
+---@param win integer
+---@param changes vim.api.keyset.win_config
+local function update_win_config(win, changes)
+    local config = vim.api.nvim_win_get_config(win)
+    for key, value in pairs(changes) do
+        config[key] = value
+    end
+    vim.api.nvim_win_set_config(win, config)
 end
 
 ---@param win? integer
@@ -250,6 +267,43 @@ local function resolve_size(total, value, minimum)
         return math.max(math.floor(total * value), minimum)
     end
     return math.max(math.floor(value), minimum)
+end
+
+---@param project Clodex.Project
+---@param summary Clodex.ProjectQueueSummary
+---@return integer
+local function project_title_width(project, summary)
+    local prefix = summary.session_running and "󰚩 " or "󱙻 "
+    local suffix = project_count_suffix(summary)
+    return vim.fn.strdisplaywidth(prefix) + vim.fn.strdisplaywidth(project.name) + vim.fn.strdisplaywidth(suffix)
+end
+
+---@param self Clodex.QueueWorkspace
+---@return integer
+local function project_target_width(self)
+    local width = PROJECT_WINDOW_MIN_WIDTH
+
+    if self.project_search ~= "" then
+        width = math.max(width, vim.fn.strdisplaywidth(("Filter: %s"):format(self.project_search)) + PROJECT_LAYOUT_PADDING)
+    end
+
+    if #self.projects == 0 then
+        local empty_width = self.project_search ~= "" and vim.fn.strdisplaywidth("No projects match the current filter")
+            or vim.fn.strdisplaywidth("Press a to add the current workspace as a Clodex project")
+        return math.max(width, empty_width + PROJECT_LAYOUT_PADDING, PROJECT_WINDOW_MIN_WIDTH)
+    end
+
+    for _, project in ipairs(self.projects) do
+        local summary = self.app:queue_summary(project)
+        local details = self.app.project_details_store:get_cached(project)
+        width = math.max(width, project_title_width(project, summary) + PROJECT_LAYOUT_PADDING)
+
+        for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
+            width = math.max(width, vim.fn.strdisplaywidth(detail) + PROJECT_LAYOUT_PADDING)
+        end
+    end
+
+    return width
 end
 
 ---@param first_row integer
@@ -626,7 +680,7 @@ end
 ---@param summary Clodex.ProjectQueueSummary
 ---@param details? Clodex.ProjectDetails
 ---@return string[]
-local function project_detail_lines(config, app, summary, details)
+project_detail_lines = function(config, app, summary, details)
     details = details or app.project_details_store:get_cached(summary.project)
     if not details then
         return {
@@ -733,17 +787,18 @@ function Workspace:layout()
     local columns = ui_state and ui_state.width or vim.o.columns
     local lines = ui_state and ui_state.height or vim.o.lines
     local cfg = self.config.queue_workspace
-    local footer_height = math.max(cfg.footer_height, 2)
+    local footer_height = math.max(tonumber(cfg.footer_height) or 3, 2)
     local max_width = math.max(columns, 1)
     local max_height = math.max(lines - footer_height - 3, 1)
-    local width = math.min(resolve_size(max_width, cfg.width, 72), max_width)
-    local height = math.min(resolve_size(max_height, cfg.height, 18), max_height)
+    local width = math.min(resolve_size(max_width, tonumber(cfg.width) or 1, WORKSPACE_MIN_WIDTH), max_width)
+    local height = math.min(resolve_size(max_height, tonumber(cfg.height) or 1, WORKSPACE_MIN_HEIGHT), max_height)
     local chrome_width = PANEL_BORDER_COLS * 2 + PANEL_GAP_COLS
-    local content_width = math.max(width - chrome_width, 56)
+    local content_width = math.max(width - chrome_width, QUEUE_WORKSPACE_MIN_CONTENT_WIDTH)
     local row = math.max(math.floor((lines - height - footer_height - 3) / 2), 0)
     local col = math.max(math.floor((columns - width) / 2), 0)
-    local project_width = math.max(math.floor(content_width * cfg.project_width), 24)
-    local queue_width = math.max(content_width - project_width, 32)
+    local max_project_width = math.max(content_width - QUEUE_WINDOW_MIN_WIDTH, PROJECT_WINDOW_MIN_WIDTH)
+    local project_width = math.min(math.max(project_target_width(self), PROJECT_WINDOW_MIN_WIDTH), max_project_width)
+    local queue_width = content_width - project_width
     return row, col, project_width, queue_width, height, footer_height
 end
 
@@ -1194,7 +1249,7 @@ function Workspace:set_focus(focus)
         self:render_queue()
         self:render_footer()
         if win_valid(self.footer_win) then
-            vim.api.nvim_win_set_config(self.footer_win, {
+            update_win_config(self.footer_win, {
                 title = footer_actions(self.focus).title,
                 title_pos = "center",
             })
@@ -1294,6 +1349,32 @@ function Workspace:refresh(initial)
         self.project_index = preserved_index or clamp(self.project_index, #self.projects)
     end
 
+    local row, col, project_width, queue_width, height, footer_height = self:layout()
+    if win_valid(self.project_win) then
+        update_win_config(self.project_win, {
+            row = row,
+            col = col,
+            width = project_width,
+            height = height,
+        })
+    end
+    if win_valid(self.queue_win) then
+        update_win_config(self.queue_win, {
+            row = row,
+            col = col + project_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
+            width = queue_width,
+            height = height,
+        })
+    end
+    if win_valid(self.footer_win) then
+        update_win_config(self.footer_win, {
+            row = row + height + 1,
+            col = col,
+            width = project_width + queue_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
+            height = footer_height,
+        })
+    end
+
     self:render_projects()
     self:render_queue()
     self:render_footer()
@@ -1301,7 +1382,7 @@ function Workspace:refresh(initial)
         self.focus = "projects"
     end
     if win_valid(self.footer_win) then
-        vim.api.nvim_win_set_config(self.footer_win, {
+        update_win_config(self.footer_win, {
             title = footer_actions(self.focus).title,
             title_pos = "center",
         })
