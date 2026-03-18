@@ -1793,8 +1793,8 @@ function Workspace:implement_queue_item()
         notify.warn("No queue item selected")
         return
     end
-    if queue_name ~= "queued" then
-        notify.warn("Select an item from the queued section")
+    if queue_name ~= "queued" and queue_name ~= "planned" then
+        notify.warn("Select an item from the planned or queued section")
         return
     end
 

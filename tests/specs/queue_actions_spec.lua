@@ -198,6 +198,38 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(1, refresh_count)
     end)
 
+    it("moves a planned item to queued before dispatching interactively", function()
+        local item = queue:add_todo(project, {
+            title = "planned first",
+            queue = "planned",
+            kind = "todo",
+        })
+        local dispatched_project
+        local dispatched_item
+        local remembered_project
+
+        actions.dispatch_item = function(_, queued_project, queued_item)
+            dispatched_project = queued_project
+            dispatched_item = queued_item
+            return true
+        end
+        actions.remember_workspace_revision = function(_, queued_project)
+            remembered_project = queued_project
+        end
+
+        local ok = actions:implement_queue_item(project, item.id)
+        local queue_name, _, current_item = queue:find_item(project, item.id)
+
+        assert.is_true(ok)
+        assert.are.same(project, dispatched_project)
+        assert.are.same(item.id, dispatched_item.id)
+        assert.are.equal("queued", queue_name)
+        assert.are.equal(item.id, current_item.id)
+        assert.is_truthy(type(current_item.execution_instructions) == "string")
+        assert.are.same(project, remembered_project)
+        assert.are.equal(1, refresh_count)
+    end)
+
     it("moves all queued items to dispatched but keeps them in queued for interactive mode", function()
         local first = queue:add_todo(project, {
             title = "first",
@@ -309,5 +341,26 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(nil, current_item.history_summary)
         assert.are.equal(nil, current_item.execution_instructions)
         assert.are.equal(0, refresh_count)
+    end)
+
+    it("keeps a planned item queued when interactive dispatch fails after promotion", function()
+        local item = queue:add_todo(project, {
+            title = "planned fail",
+            queue = "planned",
+            kind = "todo",
+        })
+
+        actions.dispatch_item = function()
+            return false
+        end
+
+        local ok = actions:implement_queue_item(project, item.id)
+        local queue_name, _, current_item = queue:find_item(project, item.id)
+
+        assert.is_false(ok)
+        assert.are.equal("queued", queue_name)
+        assert.are.equal(item.id, current_item.id)
+        assert.is_truthy(type(current_item.execution_instructions) == "string")
+        assert.are.equal(1, refresh_count)
     end)
 end)

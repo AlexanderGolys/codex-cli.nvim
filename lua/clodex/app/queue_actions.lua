@@ -334,12 +334,40 @@ end
 ---@param item_id string
 ---@return boolean
 function QueueActions:implement_queue_item(project, item_id)
-    local _, _, item = self.app.queue:find_item(project, item_id)
+    local queue_name, _, item = self.app.queue:find_item(project, item_id)
+    local moved_from_planned = false
+
+    if queue_name == "planned" then
+        if not self.app.queue:advance(project, item_id) then
+            notify.warn("Could not move the planned item to queued")
+            return false
+        end
+        self:refresh_queue_item_instructions(project, item_id)
+        queue_name, _, item = self.app.queue:find_item(project, item_id, "queued")
+        moved_from_planned = true
+    end
+
+    if queue_name ~= "queued" or not item then
+        notify.warn("Only planned or queued items can be implemented")
+        return false
+    end
+
     if self:start_queued_item(project, item_id, "interactive") then
-        notify.notify(("Started queued prompt for %s: %s"):format(project.name, item.title))
+        notify.notify(("Started %s prompt for %s: %s"):format(
+            moved_from_planned and "planned" or "queued",
+            project.name,
+            item.title
+        ))
         self:remember_workspace_revision(project)
+        self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
         return true
+    end
+
+    if moved_from_planned then
+        self:remember_workspace_revision(project)
+        self.app.project_details_store:touch_activity(project)
+        self.app:refresh_views()
     end
 
     return false

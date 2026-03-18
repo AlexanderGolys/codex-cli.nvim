@@ -110,6 +110,55 @@ describe("clodex.ui.queue_workspace", function()
         }, shown_target)
     end)
 
+    it("allows implementing a planned item through the same action", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Implement from planned",
+        }
+        local implemented_item_id
+        local close_count = 0
+
+        local workspace = {
+            app = {
+                queue_actions = {
+                    implement_queue_item = function(_, queued_project, item_id)
+                        assert.are.same(project, queued_project)
+                        implemented_item_id = item_id
+                        return true
+                    end,
+                },
+                project_actions = {
+                    activate_project = function() end,
+                    show_target = function()
+                        return true
+                    end,
+                },
+                current_tab = function()
+                    return {}
+                end,
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "planned"
+            end,
+            close = function()
+                close_count = close_count + 1
+            end,
+            refresh = function() end,
+        }
+
+        Workspace.implement_queue_item(workspace)
+
+        assert.are.equal(item.id, implemented_item_id)
+        assert.are.equal(1, close_count)
+    end)
+
     it("keeps delete bound to queue-side buffers and still deletes the selected prompt", function()
         local project = {
             name = "Test Project",
