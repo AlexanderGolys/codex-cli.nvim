@@ -12,6 +12,7 @@ local util = require("clodex.util")
 ---@field title string
 ---@field details? string
 ---@field prompt string
+---@field execution_instructions? string
 ---@field image_path? string
 ---@field created_at string
 ---@field updated_at string
@@ -85,6 +86,9 @@ local function normalize_item(item)
     if item.history_commit and not item.history_commits then
         item.history_commits = { item.history_commit }
         item.history_commit = nil
+    end
+    if type(item.execution_instructions) ~= "string" or vim.trim(item.execution_instructions) == "" then
+        item.execution_instructions = nil
     end
     return item
 end
@@ -236,7 +240,7 @@ function Queue:find_item(project, item_id, expected_queue)
 end
 
 ---@param project Clodex.Project
----@param spec { title: string, details?: string, queue?: Clodex.QueueName, kind?: Clodex.PromptCategory, image_path?: string }
+---@param spec { title: string, details?: string, queue?: Clodex.QueueName, kind?: Clodex.PromptCategory, image_path?: string, execution_instructions?: string }
 ---@return Clodex.QueueItem
 function Queue:add_todo(project, spec)
     local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
@@ -249,6 +253,7 @@ function Queue:add_todo(project, spec)
         title = title,
         details = details,
         prompt = title .. (details and ("\n\n" .. details) or ""),
+        execution_instructions = spec.execution_instructions,
         image_path = spec.image_path and vim.trim(spec.image_path) or nil,
         created_at = timestamp,
         updated_at = timestamp,
@@ -281,7 +286,11 @@ end
 ---@param project Clodex.Project
 ---@param queue_name Clodex.QueueName
 ---@param item Clodex.QueueItem
----@param opts? { copy?: boolean, clear_history?: boolean }
+---@param opts? {
+---  copy?: boolean,
+---  clear_history?: boolean,
+---  execution_instructions?: string|false,
+---}
 ---@return Clodex.QueueItem?
 function Queue:put_item(project, queue_name, item, opts)
     if not KNOWN_QUEUES[queue_name] then
@@ -304,6 +313,9 @@ function Queue:put_item(project, queue_name, item, opts)
         moved.history_commits = {}
         moved.history_completed_at = nil
     end
+    if opts.execution_instructions ~= nil then
+        moved.execution_instructions = opts.execution_instructions ~= false and opts.execution_instructions or nil
+    end
 
     table.insert(items, 1, moved)
     save_queue_file(project.root, queue_name, items)
@@ -312,7 +324,15 @@ end
 
 ---@param project Clodex.Project
 ---@param item_id string
----@param attrs { title?: string, details?: string|false, history_summary?: string|false, history_commits?: string[]|false, history_completed_at?: string|false, kind?: Clodex.PromptCategory }
+---@param attrs {
+---  title?: string,
+---  details?: string|false,
+---  history_summary?: string|false,
+---  history_commits?: string[]|false,
+---  history_completed_at?: string|false,
+---  kind?: Clodex.PromptCategory,
+---  execution_instructions?: string|false,
+---}
 ---@return Clodex.QueueItem?
 function Queue:update_item(project, item_id, attrs)
     for _, queue_name in ipairs(ORDER) do
@@ -352,6 +372,9 @@ function Queue:update_item(project, item_id, attrs)
                 if attrs.history_completed_at ~= nil then
                     item.history_completed_at = attrs.history_completed_at ~= false and attrs.history_completed_at or nil
                 end
+                if attrs.execution_instructions ~= nil then
+                    item.execution_instructions = attrs.execution_instructions ~= false and attrs.execution_instructions or nil
+                end
                 item.updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
                 save_queue_file(project.root, queue_name, items)
                 return vim.deepcopy(item)
@@ -390,6 +413,22 @@ function Queue:advance(project, item_id)
     self:take_item(project, item_id, queue_name)
     self:put_item(project, next_queue, item, {})
     return next_queue
+end
+
+---@param project Clodex.Project
+---@param item_id string
+---@param result { summary?: string|false, commit?: string|false, completed_at?: string|false }
+---@return Clodex.QueueItem?
+function Queue:update_implemented_item(project, item_id, result)
+    local commits = nil ---@type string[]|false|nil
+    if result.commit ~= nil then
+        commits = result.commit ~= false and { result.commit } or false
+    end
+    return self:update_item(project, item_id, {
+        history_summary = result.summary,
+        history_commits = commits,
+        history_completed_at = result.completed_at,
+    })
 end
 
 return Queue

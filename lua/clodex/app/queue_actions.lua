@@ -115,6 +115,25 @@ function QueueActions:remember_workspace_revision(project)
 end
 
 ---@param project Clodex.Project
+---@param item_id string
+---@return Clodex.QueueItem?
+function QueueActions:refresh_queue_item_instructions(project, item_id)
+    local queue_name, _, item = self.app.queue:find_item(project, item_id)
+    if not item then
+        return
+    end
+
+    local instructions = false
+    if queue_name == "queued" then
+        instructions = self.app.execution:queue_item_instructions(item)
+    end
+
+    return self.app.queue:update_item(project, item_id, {
+        execution_instructions = instructions,
+    })
+end
+
+---@param project Clodex.Project
 ---@param item Clodex.QueueItem
 ---@return boolean
 function QueueActions:dispatch_item(project, item)
@@ -173,6 +192,7 @@ local function move_item_back_to_queued(app, project, item_id)
     app.queue:take_item(project, item_id, "implemented")
     app.queue:put_item(project, "queued", implemented_item, {
         clear_history = true,
+        execution_instructions = app.execution:queue_item_instructions(implemented_item),
     })
 end
 
@@ -254,6 +274,9 @@ function QueueActions:add_project_todo(project, spec, opts)
         image_path = spec.image_path,
         queue = queue_name,
     })
+    if queue_name == "queued" then
+        item = self:refresh_queue_item_instructions(project, item.id) or item
+    end
     History.append_prompt_added(project.name, normalized.title, normalized.details, spec.kind)
     self.app.project_details_store:touch_activity(project)
     local started = false
@@ -301,6 +324,7 @@ function QueueActions:edit_queue_item(project, item_id, spec)
     end
 
     notify.notify(("Updated prompt for %s: %s"):format(project.name, item.title))
+    self:refresh_queue_item_instructions(project, item_id)
     self:remember_workspace_revision(project)
     self.app:refresh_views()
 end
@@ -353,6 +377,7 @@ function QueueActions:move_all_planned_items_to_queued(project)
     local moved = 0
     for _, item in ipairs(planned_items) do
         if self.app.queue:advance(project, item.id) then
+            self:refresh_queue_item_instructions(project, item.id)
             moved = moved + 1
         end
     end
@@ -393,6 +418,7 @@ function QueueActions:advance_queue_item(project, item_id)
     end
     self:remember_workspace_revision(project)
     self.app.project_details_store:touch_activity(project)
+    self:refresh_queue_item_instructions(project, item_id)
     self.app:refresh_views()
 end
 
@@ -416,8 +442,9 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
     local rewind_item = rewind_item_spec(item, opts, project.root)
     local clear_history = queue_name == "implemented" or queue_name == "history"
 
+    local moved_item
     if opts.copy then
-        self.app.queue:put_item(project, previous_queue, rewind_item, {
+        moved_item = self.app.queue:put_item(project, previous_queue, rewind_item, {
             copy = true,
             clear_history = clear_history,
         })
@@ -426,11 +453,14 @@ function QueueActions:rewind_queue_item(project, item_id, opts)
             notify.warn("Queue item not found")
             return
         end
-        self.app.queue:put_item(project, previous_queue, rewind_item, {
+        moved_item = self.app.queue:put_item(project, previous_queue, rewind_item, {
             clear_history = clear_history,
         })
     end
 
+    if moved_item then
+        self:refresh_queue_item_instructions(project, moved_item.id)
+    end
     self:remember_workspace_revision(project)
     self.app.project_details_store:touch_activity(project)
     self.app:refresh_views()
@@ -470,6 +500,7 @@ function QueueActions:move_queue_item_to_project(project, item_id, target_projec
     end
 
     notify.notify(("Moved '%s' to %s"):format(item.title, target_project.name))
+    self:refresh_queue_item_instructions(target_project, moved.id)
     self:remember_workspace_revision(project)
     self:remember_workspace_revision(target_project)
     self.app.project_details_store:touch_activity(project)

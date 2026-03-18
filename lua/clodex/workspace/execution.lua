@@ -96,41 +96,15 @@ local function prompt_prefix_lines(item)
     return lines
 end
 
---- Generates a guidance block for the queue workflow cycle.
---- This is embedded in prompts so agents always know what to do next,
---- even when handling prompts directly without the Neovim UI.
----@param project Clodex.Project
----@param next_item? Clodex.QueueItem
+---@param item Clodex.QueueItem
 ---@return string
-function Execution:cycle_guidance(project, next_item)
-    local lines = {
-        "",
-        "--- Queue Cycle Guidance ---",
-        "",
-        ("Workspace directory: %s/.clodex/"):format(project.root),
-    }
-
-    if next_item then
-        local requires_commit = Prompt.categories.requires_commit(next_item.kind)
-        lines[#lines + 1] = ("Next queued item: `%s`"):format(next_item.title)
-        lines[#lines + 1] = ("Kind: `%s`"):format(next_item.kind)
-        lines[#lines + 1] = ("Id: `%s`"):format(next_item.id)
-        if requires_commit then
-            lines[#lines + 1] = "Note: This kind requires a commit."
-        end
-        lines[#lines + 1] = ""
-        lines[#lines + 1] = "After completing the current item, use advance_to_history() to move it to history."
+function Execution:queue_item_instructions(item)
+    local lines = completion_instruction_lines(item, self.config)
+    if self:uses_prompt_skill() then
+        lines[#lines + 1] = ("$%s"):format(skill_name(self.config))
     else
-        lines[#lines + 1] = "No more queued items."
+        table.insert(lines, 1, "$prompt")
     end
-
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "Available queue automation tools:"
-    lines[#lines + 1] = "- advance_item(project, item_id): Move item to next queue (planned->queued->implemented)"
-    lines[#lines + 1] = "- advance_to_history(project, item_id, summary?, commits?): Complete item, move to history"
-    lines[#lines + 1] = "- rewind_item(project, item_id, opts?): Move item back to previous queue"
-    lines[#lines + 1] = "- next_item_guidance(project): Get guidance for continuing to next queued item"
-
     return table.concat(lines, "\n")
 end
 
@@ -180,11 +154,10 @@ function Execution:project_execution_dir(project)
     return fs.join(project.root, ".clodex", "prompt-executions")
 end
 
----@param project Clodex.Project
+---@param _project Clodex.Project
 ---@param item Clodex.QueueItem
----@param next_item? Clodex.QueueItem
 ---@return string
-function Execution:dispatch_prompt(project, item, next_item)
+function Execution:dispatch_prompt(_project, item)
     if not item.prompt or vim.trim(item.prompt) == "" then
         return ""
     end
@@ -193,29 +166,16 @@ function Execution:dispatch_prompt(project, item, next_item)
         self:sync_prompt_skill()
     end
 
-    local instruction_lines = completion_instruction_lines(item, self.config)
-
     local prompt_lines = prompt_prefix_lines(item)
     prompt_lines[#prompt_lines + 1] = item.prompt
-
-    if self:uses_prompt_skill() then
-        local lines = vim.deepcopy(prompt_lines)
-        lines[#lines + 1] = ""
-        vim.list_extend(lines, instruction_lines)
-        lines[#lines + 1] = ("$%s"):format(skill_name(self.config))
-        if next_item then
-            vim.list_extend(lines, vim.split(self:cycle_guidance(project, next_item), "\n"))
-        end
-        return table.concat(lines, "\n")
+    local execution_instructions = trim(item.execution_instructions)
+    if execution_instructions == "" then
+        execution_instructions = self:queue_item_instructions(item)
     end
 
     local lines = vim.deepcopy(prompt_lines)
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "$prompt"
-    vim.list_extend(lines, instruction_lines)
-    if next_item then
-        vim.list_extend(lines, vim.split(self:cycle_guidance(project, next_item), "\n"))
-    end
+    vim.list_extend(lines, vim.split(execution_instructions, "\n", { plain = true }))
     return table.concat(lines, "\n")
 end
 

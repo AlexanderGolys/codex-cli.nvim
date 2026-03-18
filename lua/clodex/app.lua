@@ -6,7 +6,6 @@ local History = require("clodex.history")
 local ProjectActions = require("clodex.app.project_actions")
 local PromptActions = require("clodex.app.prompt_actions")
 local QueueActions = require("clodex.app.queue_actions")
-local QueueCycle = require("clodex.app.queue_cycle")
 local ProjectDetails = require("clodex.project.details")
 local ProjectBookmarks = require("clodex.project.bookmarks")
 local ProjectCheatsheet = require("clodex.project.cheatsheet")
@@ -43,7 +42,6 @@ local notify = require("clodex.util.notify")
 ---@field project_actions Clodex.AppProjectActions
 ---@field prompt_actions Clodex.AppPromptActions
 ---@field queue_actions Clodex.AppQueueActions
----@field queue_cycle Clodex.QueueCycle
 ---@field session_persistence Clodex.SessionPersistence
 ---@field group? integer
 ---@field execution_timer? uv.uv_timer_t
@@ -240,7 +238,6 @@ function App.new()
     self.project_actions = ProjectActions.new(self)
     self.prompt_actions = PromptActions.new(self)
     self.queue_actions = QueueActions.new(self)
-    self.queue_cycle = QueueCycle.new(self)
     self:setup({})
     return self
 end
