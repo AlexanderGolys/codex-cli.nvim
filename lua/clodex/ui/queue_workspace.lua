@@ -1621,7 +1621,7 @@ function Workspace:render_queue()
                             item = item,
                         }
                         block:append_line(preview, {
-                            Extmark.inline(0, 0, #preview, Prompt.preview_group()),
+                            Extmark.inline(0, 0, #preview, Prompt.preview_group_for(prompt_item_kind(item))),
                         })
                     end
                     for _, preview in ipairs(item_metadata_preview_lines(item, project and project.root)) do

@@ -69,9 +69,12 @@ local M = {
       fg = { from = "Special" },
       bold = true,
     },
-    ClodexPromptAdjustmentTitle = {
-      fg = { from = "Constant" },
+    ClodexPromptFreeformTitle = {
+      fg = { from = { "Normal", "NormalFloat" } },
       bold = true,
+    },
+    ClodexPromptAdjustmentTitle = {
+      link = "ClodexPromptFreeformTitle",
     },
     ClodexPromptRefactorTitle = {
       fg = { from = "String" },
@@ -87,6 +90,9 @@ local M = {
     },
     ClodexPromptPreviewText = {
       fg = { from = "Directory" },
+    },
+    ClodexPromptFreeformPreviewText = {
+      fg = { from = { "Comment", "LineNr", "Normal" } },
     },
     ClodexBookmarkLine = {
       bg = { from = { "CursorLine", "Visual" }, attr = "bg" },

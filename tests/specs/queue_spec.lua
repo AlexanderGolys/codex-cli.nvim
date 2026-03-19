@@ -108,13 +108,22 @@ describe("clodex.workspace.queue", function()
         local updated = queue:update_item(project, item.id, {
             title = "new title",
             details = "new details",
-            kind = "adjustment",
+            kind = "freeform",
         })
 
         assert.are.equal("new title", updated.title)
         assert.are.equal("new details", updated.details)
-        assert.are.equal("adjustment", updated.kind)
+        assert.are.equal("freeform", updated.kind)
         assert.are.equal("new title\n\nnew details", updated.prompt)
+    end)
+
+    it("keeps legacy adjustment items valid", function()
+        local item = queue:add_todo(project, {
+            title = "legacy adjustment",
+            kind = "adjustment",
+        })
+
+        assert.are.equal("adjustment", item.kind)
     end)
 
     it("updates an implemented item with execution metadata", function()

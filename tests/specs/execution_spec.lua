@@ -84,6 +84,11 @@ describe("clodex.workspace.execution", function()
             prompt = "Fix the traceback",
             completion_target = "history",
         })
+        local freeform_prompt = execution:dispatch_prompt(project, {
+            id = "freeform-1",
+            kind = "freeform",
+            prompt = "Talk to the agent about the current state",
+        })
 
         assert.matches("Current queue item id: `ask%-1`", ask_prompt)
         assert.matches("Current prompt kind: `ask`", ask_prompt)
@@ -95,6 +100,9 @@ describe("clodex.workspace.execution", function()
         assert.matches("Commit policy for this prompt: `required`", todo_prompt)
 
         assert.matches("Completion destination for this prompt: `history`", bug_prompt)
+        assert.matches("Current prompt kind: `freeform`", freeform_prompt)
+        assert.matches("Commit policy for this prompt: `optional`", freeform_prompt)
+        assert.matches("Completion destination for this prompt: `agent_decides`", freeform_prompt)
 
         fs.remove(root)
     end)

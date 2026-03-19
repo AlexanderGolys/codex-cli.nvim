@@ -3,6 +3,7 @@
 ---| "todo"
 ---| "bug"
 ---| "visual"
+---| "freeform"
 ---| "adjustment"
 ---| "refactor"
 ---| "idea"
@@ -17,6 +18,8 @@
 ---@field title_prefix? string
 ---@field highlight string
 ---@field default_title string
+---@field picker_detail? string
+---@field commit_policy? "required"|"skip"|"optional"
 
 ---@class Clodex.PromptComposer.Spec
 ---@field title string
@@ -35,7 +38,7 @@
 ---@field broken boolean
 
 ---@class Clodex.Prompt
----@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean, requires_commit: fun(id?: string): boolean }
+---@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean, requires_commit: fun(id?: string): boolean, commit_policy: fun(id?: string): "required"|"skip"|"optional" }
 ---@field library { list: fun(): Clodex.PromptLibrary.Template[], get: fun(id: string): Clodex.PromptLibrary.Template? }
 local M = {}
 
@@ -45,7 +48,8 @@ local TITLE_GROUP_SUFFIX = {
     todo = "TodoTitle",
     bug = "BugTitle",
     visual = "VisualTitle",
-    adjustment = "AdjustmentTitle",
+    freeform = "FreeformTitle",
+    adjustment = "FreeformTitle",
     refactor = "RefactorTitle",
     idea = "IdeaTitle",
     ask = "ExplainTitle",
@@ -76,10 +80,12 @@ local categories = {
         default_title = "Review image and implement requested changes",
     },
     {
-        id = "adjustment",
-        label = "Adjustment",
-        highlight = "adjustment_title",
-        default_title = "Adjust existing behavior",
+        id = "freeform",
+        label = "Freeform",
+        highlight = "freeform_title",
+        default_title = "",
+        picker_detail = "Send any message to the agent",
+        commit_policy = "optional",
     },
     {
         id = "refactor",
@@ -98,6 +104,7 @@ local categories = {
         label = "Ask",
         highlight = "explain_title",
         default_title = "Ask about the current behavior",
+        commit_policy = "skip",
     },
     {
         id = "library",
@@ -118,6 +125,7 @@ for _, category in ipairs(categories) do
     categories_by_id[category.id] = category
 end
 categories_by_id.explain = categories_by_id.ask
+categories_by_id.adjustment = categories_by_id.freeform
 
 ---@type Clodex.PromptLibrary.Template[]
 local templates = {
@@ -125,7 +133,7 @@ local templates = {
         id = "fix-diagnostics",
         label = "Fix diagnostics",
         title = "Fix diagnostics from the current project",
-        kind = "adjustment",
+        kind = "freeform",
         details = table.concat({
             "Use `&all_diagnostics` as the primary problem list.",
             "Group related issues, fix them in a coherent order, and mention any follow-up validation.",
@@ -203,7 +211,13 @@ end
 ---@param id? string
 ---@return boolean
 function M.categories.requires_commit(id)
-    return M.categories.get(id).id ~= "ask"
+    return (M.categories.get(id).commit_policy or "required") == "required"
+end
+
+---@param id? string
+---@return "required"|"skip"|"optional"
+function M.categories.commit_policy(id)
+    return M.categories.get(id).commit_policy or "required"
 end
 
 M.library = {}
@@ -280,6 +294,15 @@ end
 ---@return string
 function M.preview_group()
     return "ClodexPromptPreviewText"
+end
+
+---@param kind? Clodex.PromptCategory|string
+---@return string
+function M.preview_group_for(kind)
+    if M.categories.get(kind).id == "freeform" then
+        return "ClodexPromptFreeformPreviewText"
+    end
+    return M.preview_group()
 end
 
 ---@param opts { title: string, details?: string, max_width?: integer }

@@ -75,12 +75,16 @@ end
 ---@param _config Clodex.Config.Values
 ---@return string[]
 local function completion_instruction_lines(item, _config)
-    local commit_policy = Prompt.categories.requires_commit(item.kind) and "required" or "skip"
+    local prompt_kind = Prompt.categories.get(item.kind).id
+    local commit_policy = Prompt.categories.commit_policy(item.kind)
     local lines = {
         ("Current queue item id: `%s`"):format(item.id),
-        ("Current prompt kind: `%s`"):format(Prompt.categories.get(item.kind).id),
+        ("Current prompt kind: `%s`"):format(prompt_kind),
         ("Commit policy for this prompt: `%s`"):format(commit_policy),
     }
+    if prompt_kind == "freeform" then
+        lines[#lines + 1] = "Completion destination for this prompt: `agent_decides`"
+    end
     if item.completion_target == "history" then
         lines[#lines + 1] = "Completion destination for this prompt: `history`"
     end

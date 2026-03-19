@@ -101,7 +101,7 @@ function PromptActions:pick_category(project, callback)
         if category.id ~= "notworking" then
             items[#items + 1] = {
                 label = category.label,
-                detail = category.default_title,
+                detail = category.picker_detail or category.default_title,
                 category = category,
             }
         end

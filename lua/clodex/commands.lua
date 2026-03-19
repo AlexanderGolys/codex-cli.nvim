@@ -17,6 +17,7 @@ local command_suffix = {
     todo = 'Todo',
     bug = 'Bug',
     visual = 'Visual',
+    freeform = 'Freeform',
     adjustment = 'Adjustment',
     refactor = 'Refactor',
     idea = 'Idea',

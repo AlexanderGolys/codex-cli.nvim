@@ -57,7 +57,7 @@ local function instructions_content(project, config)
         "4. Normalize obvious typos in the user request before you turn it into a title, prompt, or summary.",
         "5. Keep the original intent, but do not preserve clearly accidental misspellings, duplicated words, or broken punctuation.",
         "6. Use a concise `title` that describes the completed task.",
-        "7. Set `kind` to `bug` for bug fixes or regressions, otherwise use the closest existing queue category such as `todo`, `refactor`, `adjustment`, or `idea`.",
+        "7. Set `kind` to `bug` for bug fixes or regressions, otherwise use the closest existing queue category such as `todo`, `refactor`, `freeform`, or `idea`.",
         "8. Set `details` when extra context from the user request matters later; otherwise leave it unset.",
         "9. Set `prompt` to a clean plain-text version of the request that could have been queued manually.",
         "10. Set `history_summary` to a short summary of what changed or what blocker remains.",
