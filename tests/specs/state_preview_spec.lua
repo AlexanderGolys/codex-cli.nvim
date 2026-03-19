@@ -37,6 +37,7 @@ describe("clodex.ui.state_preview", function()
         }
 
         preview:render_state({
+            backend = "opencode",
             current_tab = {
                 tabpage = 1,
                 has_visible_window = true,
@@ -60,6 +61,7 @@ describe("clodex.ui.state_preview", function()
         })
 
         local lines = vim.api.nvim_buf_get_lines(preview.state_buf, 0, -1, false)
+        assert.is_true(vim.tbl_contains(lines, "backend:             OpenCode"))
         assert.is_true(vim.tbl_contains(lines, "Prompt Skill"))
         assert.is_true(vim.tbl_contains(lines, "status:              synced"))
         assert.is_true(vim.tbl_contains(lines, "  ---"))

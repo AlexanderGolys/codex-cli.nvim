@@ -77,6 +77,7 @@ local fs = require("clodex.util.fs")
 ---@field toggle string|Clodex.Config.KeymapConfig|false
 ---@field queue_workspace string|Clodex.Config.KeymapConfig|false
 ---@field state_preview string|Clodex.Config.KeymapConfig|false
+---@field backend_toggle string|Clodex.Config.KeymapConfig|false
 
 --- Legacy manual-history settings kept for compatibility.
 ---@class Clodex.Config.ManualHistory
@@ -174,6 +175,9 @@ local function defaults()
             },
             state_preview = {
                 lhs = "<leader>ps",
+            },
+            backend_toggle = {
+                lhs = "<leader>pb",
             },
         },
         manual_history = {

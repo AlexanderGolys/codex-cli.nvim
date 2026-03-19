@@ -62,6 +62,7 @@ describe("clodex.config", function()
             assert.are.equal("<leader>pt", values.keymaps.toggle.lhs)
             assert.are.equal("<leader>pq", values.keymaps.queue_workspace.lhs)
             assert.are.equal("<leader>ps", values.keymaps.state_preview.lhs)
+            assert.are.equal("<leader>pb", values.keymaps.backend_toggle.lhs)
         end)
 
         it("switches the default skill root when opencode backend is selected", function()

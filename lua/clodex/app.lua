@@ -60,6 +60,7 @@ local notify = require("clodex.util.notify")
 ---@field sessions Clodex.TerminalSession.Snapshot[]
 ---@field projects Clodex.Project[]
 ---@field project_states Clodex.App.ProjectState[]
+---@field backend Clodex.Backend.Name
 
 --- Defines the Clodex.App.ProjectState type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -91,6 +92,7 @@ local FORWARDED_METHODS = {
     open_project_dictionary_file = { field = "project_actions", method = "open_project_dictionary_file" },
     open_project_cheatsheet_file = { field = "project_actions", method = "open_project_cheatsheet_file" },
     toggle_project_cheatsheet_preview = { field = "project_actions", method = "toggle_project_cheatsheet_preview" },
+    toggle_backend = { field = "project_actions", method = "toggle_backend" },
     add_project_cheatsheet_item = { field = "project_actions", method = "add_project_cheatsheet_item" },
     open_project_notes_picker = { field = "project_actions", method = "open_project_notes_picker" },
     create_project_note = { field = "project_actions", method = "create_project_note" },
@@ -688,6 +690,7 @@ function App:state_snapshot()
         sessions = sessions,
         projects = projects,
         project_states = project_states,
+        backend = Backend.normalize(self.config:get().backend),
     }
 end
 

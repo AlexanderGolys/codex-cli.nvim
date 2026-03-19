@@ -1,4 +1,5 @@
 local fs = require("clodex.util.fs")
+local Backend = require("clodex.backend")
 local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
 local MarkdownPreview = require("clodex.ui.markdown_preview")
@@ -689,6 +690,20 @@ function ProjectActions:clear_active_project()
         end
     end
     self.app:refresh_views()
+end
+
+function ProjectActions:toggle_backend()
+    local values = self.app.config:get()
+    local next_backend = values.backend == "opencode" and "codex" or "opencode"
+    values.backend = Backend.normalize(next_backend)
+    values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
+    self.app.terminals:update_config(values)
+    self.app.state_preview:update_config(values)
+    self.app.execution:update_config(values)
+    self.app.exec_runner:update_config(values)
+    self.app.queue_workspace:update_config(values)
+    self.app:refresh_views()
+    notify.notify(("Switched Clodex backend to %s"):format(Backend.display_name(values.backend)))
 end
 
 --- Sets the current tab's active project and refreshes the resolved terminal target.

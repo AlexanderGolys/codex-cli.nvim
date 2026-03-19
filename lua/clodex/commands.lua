@@ -80,6 +80,13 @@ local BASE_COMMANDS = {
         end,
     },
     {
+        suffix = 'BackendToggle',
+        desc = 'Toggle between Codex and OpenCode backends',
+        run = function(_, clodex)
+            clodex.toggle_backend()
+        end,
+    },
+    {
         suffix = 'ProjectAdd',
         desc = 'Add current directory as a Clodex project',
         nargs = '?',
@@ -264,6 +271,12 @@ local GLOBAL_KEYMAPS = {
         mode = 'n',
         action = 'toggle_state_preview',
         desc = 'Toggle Codex state preview panel',
+    },
+    {
+        field = 'backend_toggle',
+        mode = 'n',
+        action = 'toggle_backend',
+        desc = 'Toggle Clodex backend',
     },
 } ---@type Clodex.GlobalKeymapDefinition[]
 
