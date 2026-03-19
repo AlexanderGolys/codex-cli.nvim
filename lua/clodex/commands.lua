@@ -20,6 +20,7 @@ local command_suffix = {
     adjustment = 'Adjustment',
     refactor = 'Refactor',
     idea = 'Idea',
+    notworking = 'NotWorking',
     ask = 'Ask',
     explain = 'Explain',
 }

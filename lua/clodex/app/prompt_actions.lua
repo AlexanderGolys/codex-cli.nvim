@@ -98,11 +98,13 @@ end
 function PromptActions:pick_category(project, callback)
     local items = {} ---@type { label: string, detail: string, category: Clodex.PromptCategoryDef }[]
     for _, category in ipairs(Prompt.categories.list()) do
-        items[#items + 1] = {
-            label = category.label,
-            detail = category.default_title,
-            category = category,
-        }
+        if category.id ~= "notworking" then
+            items[#items + 1] = {
+                label = category.label,
+                detail = category.default_title,
+                category = category,
+            }
+        end
     end
 
     ui.pick_text(items, {
