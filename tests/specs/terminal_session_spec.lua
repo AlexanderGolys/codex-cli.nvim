@@ -7,6 +7,7 @@ package.loaded["snacks.terminal"] = {
 }
 
 local Session = require("clodex.terminal.session")
+local TerminalUi = require("clodex.terminal.ui")
 
 describe("clodex.terminal.session", function()
     it("keeps the active-window statusline behavior unchanged when the last line is visible", function()
@@ -166,5 +167,52 @@ describe("clodex.terminal.session", function()
         assert.are.equal("permission", session:waiting_state())
 
         vim.fn.jobwait = original_jobwait
+    end)
+
+    it("maps terminal statusline highlights onto terminal windows", function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[buf].filetype = "clodex_terminal"
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "Codex ready" })
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = buf
+
+        local app_module = package.loaded["clodex.app"]
+        package.loaded["clodex.app"] = {
+            instance = function()
+                return {
+                    config = {
+                        get = function()
+                            return { backend = "codex" }
+                        end,
+                    },
+                    terminals = {
+                        session_by_buf = function(_, target_buf)
+                            if target_buf == buf then
+                                return session
+                            end
+                        end,
+                    },
+                }
+            end,
+        }
+
+        local win = vim.api.nvim_get_current_win()
+        local original_buf = vim.api.nvim_win_get_buf(win)
+        vim.api.nvim_win_set_buf(win, buf)
+
+        TerminalUi.apply_window(win)
+
+        assert.matches("StatusLine:ClodexTerminalStatuslineActive", vim.wo[win].winhl)
+        assert.matches("StatusLineNC:ClodexTerminalStatusline", vim.wo[win].winhl)
+
+        vim.api.nvim_win_set_buf(win, original_buf)
+        package.loaded["clodex.app"] = app_module
     end)
 end)

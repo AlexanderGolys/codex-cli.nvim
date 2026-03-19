@@ -46,6 +46,14 @@ local function clodex_terminal_window(win)
         and vim.bo[vim.api.nvim_win_get_buf(win)].filetype == "clodex_terminal"
 end
 
+---@param win integer
+local function apply_terminal_window_highlights(win)
+    vim.wo[win].winhl = table.concat({
+        "StatusLine:ClodexTerminalStatuslineActive",
+        "StatusLineNC:ClodexTerminalStatusline",
+    }, ",")
+end
+
 ---@param win? integer
 function M.apply_window(win)
     local target = win
@@ -57,6 +65,7 @@ function M.apply_window(win)
     end
     vim.wo[target].statusline = STATUSLINE_EXPR
     vim.wo[target].winbar = WINBAR_EXPR
+    apply_terminal_window_highlights(target)
 end
 
 ---@return string

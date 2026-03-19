@@ -195,6 +195,15 @@ local M = {
       fg = "#4aa8d8",
       bold = true,
     },
+    ClodexTerminalStatusline = {
+      fg = { from = { "Comment", "Normal" } },
+      bg = { from = { "Normal", "NormalFloat" }, attr = "bg" },
+    },
+    ClodexTerminalStatuslineActive = {
+      fg = { from = { "Normal", "Title" } },
+      bg = { from = { "Normal", "NormalFloat" }, attr = "bg" },
+      bold = true,
+    },
     ClodexConfirmButton = {
       fg = { from = { "Comment", "Normal" } },
       bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },

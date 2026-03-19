@@ -109,5 +109,19 @@ describe("clodex.config", function()
             assert.are.equal(0xaa2222, bug.fg)
             assert.are_not.equal(bug.fg, notworking.fg)
         end)
+
+        it("maps terminal statusline highlights to the terminal background", function()
+            vim.api.nvim_set_hl(0, "Normal", { fg = "#dddddd", bg = "#1a1b26" })
+
+            Config.apply_highlights({
+                highlights = require("clodex.config.highlights"),
+            })
+
+            local active = vim.api.nvim_get_hl(0, { name = "ClodexTerminalStatuslineActive", link = false })
+            local inactive = vim.api.nvim_get_hl(0, { name = "ClodexTerminalStatusline", link = false })
+
+            assert.are.equal(0x1A1B26, active.bg)
+            assert.are.equal(0x1A1B26, inactive.bg)
+        end)
     end)
 end)
