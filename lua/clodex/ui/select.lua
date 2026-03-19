@@ -456,6 +456,14 @@ local function render_prompt_context_highlights(buf, context)
   end
 end
 
+---@param buf integer
+local function disable_prompt_pair_highlights(buf)
+  vim.bo[buf].syntax = "off"
+  vim.b[buf].matchup_matchparen_enabled = 0
+  vim.b[buf].ts_rainbow = false
+  pcall(vim.treesitter.stop, buf)
+end
+
 ---@param actions Clodex.UiSelect.MultilineAction[]
 ---@return string[]
 local function prompt_editor_hint_lines(actions)
@@ -512,7 +520,6 @@ function M.multiline_input(opts, on_confirm)
   vim.bo[body_buf].buftype = "nofile"
   vim.bo[body_buf].bufhidden = "wipe"
   vim.bo[body_buf].swapfile = false
-  vim.bo[body_buf].filetype = "markdown"
   vim.bo[body_buf].modifiable = true
   vim.bo[hint_buf].buftype = "nofile"
   vim.bo[hint_buf].bufhidden = "wipe"
@@ -724,6 +731,9 @@ function M.multiline_input(opts, on_confirm)
   vim.api.nvim_buf_set_lines(title_buf, 0, -1, false, { title })
   vim.api.nvim_buf_set_lines(body_buf, 0, -1, false, detail_lines)
   render_hint_lines(hint_buf, hint_lines)
+  disable_prompt_pair_highlights(title_buf)
+  disable_prompt_pair_highlights(body_buf)
+  disable_prompt_pair_highlights(hint_buf)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "ClodexPromptEditorFooter")

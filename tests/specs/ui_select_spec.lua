@@ -333,4 +333,23 @@ describe("clodex.ui.select", function()
             }
         end, marks))
     end)
+
+    it("disables bracket-pair highlighting helpers in prompt editors", function()
+        select.multiline_input({
+            prompt = "Test prompt",
+            default = "Title\n\n(body)",
+        }, function() end)
+
+        wait_for(function()
+            return #opened_windows == 3
+        end)
+
+        local title_window = opened_windows[1]
+        local body_window = opened_windows[2]
+
+        assert.are.equal("off", vim.bo[title_window.buf].syntax)
+        assert.are.equal("off", vim.bo[body_window.buf].syntax)
+        assert.are.equal(0, vim.b[title_window.buf].matchup_matchparen_enabled)
+        assert.are.equal(0, vim.b[body_window.buf].matchup_matchparen_enabled)
+    end)
 end)
