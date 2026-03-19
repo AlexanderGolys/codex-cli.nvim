@@ -971,23 +971,11 @@ function M.confirm(prompt, on_choice)
       label = "Yes",
       detail = "Confirm action",
       value = true,
-      preview = {
-        text = prompt,
-        ft = "markdown",
-        loc = false,
-      },
-      preview_title = "Confirm",
     },
     {
       label = "No",
       detail = "Cancel action",
       value = false,
-      preview = {
-        text = prompt,
-        ft = "markdown",
-        loc = false,
-      },
-      preview_title = "Confirm",
     },
   }
 
@@ -1004,14 +992,15 @@ function M.confirm(prompt, on_choice)
       }
     end,
     snacks = {
+      preview = false,
       layout = {
         preset = "select",
+        hidden = { "input", "preview" },
         layout = {
           width = 0.45,
           min_width = 36,
         },
       },
-      preview = "preview",
     },
   }, function(item)
     on_choice(item and item.value == true or false)

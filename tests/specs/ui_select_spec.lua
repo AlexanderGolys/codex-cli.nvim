@@ -10,6 +10,7 @@ describe("clodex.ui.select", function()
     local original_ui_win
     local original_completeopt
     local picker_select_calls
+    local picker_select_opts
 
     before_each(function()
         package.loaded["clodex.ui.select"] = nil
@@ -17,11 +18,12 @@ describe("clodex.ui.select", function()
         original_completeopt = vim.o.completeopt
         opened_windows = {}
         picker_select_calls = {}
+        picker_select_opts = {}
         package.loaded["snacks.input"] = {
             input = function() end,
         }
         package.loaded["snacks.picker.select"] = {
-            select = function(_items, _opts, on_choice)
+            select = function(_items, opts, on_choice)
                 local picker = {
                     closed = false,
                     opts = {
@@ -39,6 +41,7 @@ describe("clodex.ui.select", function()
                 end
 
                 picker_select_calls[#picker_select_calls + 1] = picker
+                picker_select_opts[#picker_select_opts + 1] = vim.deepcopy(opts)
                 on_choice(nil)
                 return picker
             end,
@@ -212,6 +215,8 @@ describe("clodex.ui.select", function()
                 show = true,
             },
         }, confirm_picker.focused[1])
+        assert.is_false(picker_select_opts[1].snacks.preview)
+        assert.are.same({ "input", "preview" }, picker_select_opts[1].snacks.layout.hidden)
     end)
 
     it("uses built-in completion items for prompt context insertion", function()
