@@ -96,33 +96,23 @@ end
 ---@param project Clodex.Project
 ---@param callback fun(project: Clodex.Project, category: Clodex.PromptCategory)
 function PromptActions:pick_category(project, callback)
-    local items = {} ---@type { label: string, detail: string, category: Clodex.PromptCategoryDef, preview: { text: string, ft?: string, loc?: boolean }, preview_title: string }[]
+    local items = {} ---@type { label: string, detail: string, category: Clodex.PromptCategoryDef }[]
     for _, category in ipairs(Prompt.categories.list()) do
         items[#items + 1] = {
             label = category.label,
             detail = category.default_title,
             category = category,
-            preview = {
-                text = table.concat({
-                    ("# %s"):format(category.label),
-                    "",
-                    ("- Default title: `%s`"):format(category.default_title),
-                    "",
-                    "## Example prompt",
-                    "",
-                    "```text",
-                    Prompt.render(category.default_title, nil),
-                    "```",
-                }, "\n"),
-                ft = "markdown",
-                loc = false,
-            },
-            preview_title = category.label,
         }
     end
 
     ui.pick_text(items, {
         prompt = ("Prompt category for %s"):format(project.name),
+        snacks = {
+            preview = "none",
+            layout = {
+                hidden = { "preview" },
+            },
+        },
     }, function(item)
             if item then
                 callback(project, item.category.id)
