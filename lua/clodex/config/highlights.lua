@@ -65,6 +65,10 @@ local M = {
       fg = { from = "DiagnosticError" },
       bold = true,
     },
+    ClodexPromptNotWorkingTitle = {
+      fg = { from = "DiagnosticError", adjust = 0.18 },
+      bold = true,
+    },
     ClodexPromptVisualTitle = {
       fg = { from = "Special" },
       bold = true,

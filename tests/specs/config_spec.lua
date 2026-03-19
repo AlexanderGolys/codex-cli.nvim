@@ -95,5 +95,19 @@ describe("clodex.config", function()
             local adjusted = vim.api.nvim_get_hl(0, { name = "ConfigSpecAdjusted", link = false })
             assert.are.equal(0x606060, adjusted.bg)
         end)
+
+        it("gives notworking prompt titles a distinct red from bug titles", function()
+            vim.api.nvim_set_hl(0, "DiagnosticError", { fg = "#aa2222" })
+
+            Config.apply_highlights({
+                highlights = require("clodex.config.highlights"),
+            })
+
+            local bug = vim.api.nvim_get_hl(0, { name = "ClodexPromptBugTitle", link = false })
+            local notworking = vim.api.nvim_get_hl(0, { name = "ClodexPromptNotWorkingTitle", link = false })
+
+            assert.are.equal(0xaa2222, bug.fg)
+            assert.are_not.equal(bug.fg, notworking.fg)
+        end)
     end)
 end)
