@@ -82,6 +82,7 @@ local PROJECT_STOPPED_ICON = "󱙻 "
 local PROJECT_WORKING_ANIMATION_MS = 120
 local GITHUB_ICON = ""
 local COMMIT_ICON = "󰜘 "
+local COMMIT_HIGHLIGHT = "SnacksPickerGitCommit"
 local ELLIPSIS = "..."
 local PANEL_BORDER_COLS = 2
 local PANEL_GAP_COLS = 0
@@ -423,7 +424,6 @@ local function item_metadata_preview_lines(item, project_root)
     local commits = item.history_commits or {}
     if #commits > 0 then
         local commit_parts = {}
-        local marks_list = {}
         for _, commit_id in ipairs(commits) do
             local short = commit_id:sub(1, 8)
             commit_parts[#commit_parts + 1] = ("%s%s"):format(COMMIT_ICON, short)
@@ -436,12 +436,12 @@ local function item_metadata_preview_lines(item, project_root)
         for _, commit_id in ipairs(commits) do
             local short = commit_id:sub(1, 8)
             local icon_len = #COMMIT_ICON
-            marks[#marks + 1] = Extmark.inline(0, pos, pos + icon_len, "ClodexQueueItemMuted")
+            marks[#marks + 1] = Extmark.inline(0, pos, pos + icon_len, COMMIT_HIGHLIGHT)
             pos = pos + icon_len
-            marks[#marks + 1] = Extmark.inline(0, pos, pos + #short, "ClodexCommitId")
+            marks[#marks + 1] = Extmark.inline(0, pos, pos + #short, COMMIT_HIGHLIGHT)
             pos = pos + #short
             if _ < #commits then
-                marks[#marks + 1] = Extmark.inline(0, pos, pos + 1, "ClodexQueueItemMuted")
+                marks[#marks + 1] = Extmark.inline(0, pos, pos + 1, COMMIT_HIGHLIGHT)
                 pos = pos + 1
             end
         end
