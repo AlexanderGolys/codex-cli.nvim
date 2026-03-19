@@ -1,6 +1,7 @@
 ---@alias Clodex.PublicAction
 ---| "toggle"
 ---| "toggle_state_preview"
+---| "toggle_mini_state_preview"
 ---| "toggle_backend"
 ---| "add_project"
 ---| "rename_project"
@@ -35,6 +36,7 @@ M.lualine = require("clodex.lualine")
 local PUBLIC_ACTIONS = {
     "toggle",
     "toggle_state_preview",
+    "toggle_mini_state_preview",
     "toggle_backend",
     "add_project",
     "rename_project",

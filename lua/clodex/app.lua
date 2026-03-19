@@ -14,6 +14,7 @@ local Registry = require("clodex.project.registry")
 local TabManager = require("clodex.tab.manager")
 local TerminalManager = require("clodex.terminal.manager")
 local StatePreview = require("clodex.ui.state_preview")
+local MiniStatePreview = require("clodex.ui.mini_state")
 local QueueWorkspace = require("clodex.ui.queue_workspace")
 local SessionPersistence = require("clodex.session.persistence")
 local Execution = require("clodex.workspace.execution")
@@ -32,6 +33,7 @@ local notify = require("clodex.util.notify")
 ---@field tabs Clodex.TabManager
 ---@field terminals Clodex.TerminalManager
 ---@field state_preview Clodex.StatePreview
+---@field mini_state_preview Clodex.MiniStatePreview
 ---@field project_bookmarks Clodex.ProjectBookmarks
 ---@field project_notes Clodex.ProjectNotes
 ---@field project_cheatsheet Clodex.ProjectCheatsheet
@@ -259,6 +261,7 @@ function App:setup(opts)
     self.project_cheatsheet = self.project_cheatsheet or ProjectCheatsheet.new()
     self.terminals = self.terminals or TerminalManager.new(values)
     self.state_preview = self.state_preview or StatePreview.new(values)
+    self.mini_state_preview = self.mini_state_preview or MiniStatePreview.new(values)
     self.queue = self.queue or Queue.new(values.storage.workspaces_dir)
     self.execution = self.execution or Execution.new(values)
     self.exec_runner = self.exec_runner or ExecutionRunner.new(self, values)
@@ -267,6 +270,7 @@ function App:setup(opts)
     History.configure(values.storage.history_file)
     self.terminals:update_config(values)
     self.state_preview:update_config(values)
+    self.mini_state_preview:update_config(values)
     self.project_details_store:update_config(values)
     self.execution:update_config(values)
     if self.execution:uses_prompt_skill() then
@@ -696,6 +700,7 @@ end
 
 function App:refresh_state_preview()
     self.state_preview:refresh(self)
+    self.mini_state_preview:refresh(self)
 end
 
 function App:refresh_queue_workspace()
@@ -711,6 +716,10 @@ end
 
 App.toggle_state_preview = function(self)
     self.state_preview:toggle(self)
+end
+
+App.toggle_mini_state_preview = function(self)
+    self.mini_state_preview:toggle(self)
 end
 
 --- Checks a project session running condition for app.

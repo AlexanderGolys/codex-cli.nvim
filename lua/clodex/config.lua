@@ -27,6 +27,7 @@ local fs = require("clodex.util.fs")
 ---@field row integer
 ---@field col integer
 ---@field winblend integer
+---@field mini { width: integer, height: integer, col: integer, winblend: integer }
 
 --- Queue workspace layout and presentation defaults for queue/project panes.
 ---@class Clodex.Config.QueueWorkspace
@@ -57,6 +58,12 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.Session
 ---@field persist_current_project boolean
 
+--- Minimal MCP companion settings used to discover and launch the local helper.
+---@class Clodex.Config.Mcp
+---@field enabled boolean
+---@field cmd string[]
+---@field runtime_dir string
+
 ---@class Clodex.Config.KeymapConfig
 ---@field lhs? string|false
 ---@field enabled? boolean
@@ -77,6 +84,7 @@ local fs = require("clodex.util.fs")
 ---@field toggle string|Clodex.Config.KeymapConfig|false
 ---@field queue_workspace string|Clodex.Config.KeymapConfig|false
 ---@field state_preview string|Clodex.Config.KeymapConfig|false
+---@field mini_state_preview string|Clodex.Config.KeymapConfig|false
 ---@field backend_toggle string|Clodex.Config.KeymapConfig|false
 
 --- Legacy manual-history settings kept for compatibility.
@@ -97,6 +105,7 @@ local fs = require("clodex.util.fs")
 ---@field highlights Clodex.Config.Highlights
 ---@field prompt_execution Clodex.Config.PromptExecution
 ---@field session Clodex.Config.Session
+---@field mcp Clodex.Config.Mcp
 ---@field keymaps Clodex.Config.Keymaps
 ---@field manual_history Clodex.Config.ManualHistory
 
@@ -140,6 +149,12 @@ local function defaults()
             row = 1,
             col = 2,
             winblend = 18,
+            mini = {
+                width = 42,
+                height = 11,
+                col = 2,
+                winblend = 28,
+            },
         },
 
         queue_workspace = {
@@ -166,6 +181,11 @@ local function defaults()
         session = {
             persist_current_project = true,
         },
+        mcp = {
+            enabled = false,
+            cmd = {},
+            runtime_dir = fs.join(".clodex", "mcp"),
+        },
         keymaps = {
             toggle = {
                 lhs = "<leader>pt",
@@ -175,6 +195,9 @@ local function defaults()
             },
             state_preview = {
                 lhs = "<leader>ps",
+            },
+            mini_state_preview = {
+                lhs = "<leader>pS",
             },
             backend_toggle = {
                 lhs = "<leader>pb",

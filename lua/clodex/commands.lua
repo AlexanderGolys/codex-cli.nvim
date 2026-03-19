@@ -80,6 +80,13 @@ local BASE_COMMANDS = {
         end,
     },
     {
+        suffix = 'MiniStateToggle',
+        desc = 'Toggle compact Codex state preview',
+        run = function(_, clodex)
+            clodex.toggle_mini_state_preview()
+        end,
+    },
+    {
         suffix = 'BackendToggle',
         desc = 'Toggle between Codex and OpenCode backends',
         run = function(_, clodex)
@@ -271,6 +278,12 @@ local GLOBAL_KEYMAPS = {
         mode = 'n',
         action = 'toggle_state_preview',
         desc = 'Toggle Codex state preview panel',
+    },
+    {
+        field = 'mini_state_preview',
+        mode = 'n',
+        action = 'toggle_mini_state_preview',
+        desc = 'Toggle compact Codex state preview',
     },
     {
         field = 'backend_toggle',
