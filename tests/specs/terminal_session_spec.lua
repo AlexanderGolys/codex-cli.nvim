@@ -173,6 +173,8 @@ describe("clodex.terminal.session", function()
         local buf = vim.api.nvim_create_buf(false, true)
         vim.bo[buf].filetype = "clodex_terminal"
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "Codex ready" })
+        vim.api.nvim_buf_set_var(buf, "terminal_color_background", "#112233")
+        vim.api.nvim_buf_set_var(buf, "terminal_color_foreground", "#ddeeff")
 
         local session = Session.new({
             key = "project:/tmp/demo",
@@ -209,8 +211,20 @@ describe("clodex.terminal.session", function()
 
         TerminalUi.apply_window(win)
 
-        assert.matches("StatusLine:ClodexTerminalStatuslineActive", vim.wo[win].winhl)
-        assert.matches("StatusLineNC:ClodexTerminalStatusline", vim.wo[win].winhl)
+        local active_name = vim.wo[win].winhl:match("StatusLine:([^,]+)")
+        local inactive_name = vim.wo[win].winhl:match("StatusLineNC:([^,]+)")
+
+        assert.matches("ClodexTerminalStatuslineDynActive_112233_DDEEFF", active_name)
+        assert.matches("ClodexTerminalStatuslineDynInactive_112233_DDEEFF", inactive_name)
+
+        local active = vim.api.nvim_get_hl(0, { name = active_name, link = false })
+        local inactive = vim.api.nvim_get_hl(0, { name = inactive_name, link = false })
+
+        assert.are.equal(0x112233, active.bg)
+        assert.are.equal(0xDDEEFF, active.fg)
+        assert.is_true(active.bold)
+        assert.are.equal(0x112233, inactive.bg)
+        assert.are.equal(0xDDEEFF, inactive.fg)
 
         vim.api.nvim_win_set_buf(win, original_buf)
         package.loaded["clodex.app"] = app_module

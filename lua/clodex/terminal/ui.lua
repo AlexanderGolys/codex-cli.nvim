@@ -4,6 +4,72 @@ local WINBAR_EXPR = "%!v:lua.require('clodex.terminal.ui').winbar()"
 
 local Backend = require("clodex.backend")
 
+local STATUSLINE_HL_PREFIX = "ClodexTerminalStatuslineDyn"
+
+---@param buf integer
+---@param name string
+---@return string?
+local function buffer_color(buf, name)
+    local ok, value = pcall(vim.api.nvim_buf_get_var, buf, name)
+    if not ok or type(value) ~= "string" or value == "" then
+        return nil
+    end
+    if value:match("^#%x%x%x%x%x%x$") then
+        return value:upper()
+    end
+end
+
+---@param group string
+---@param attr "fg"|"bg"
+---@return string?
+local function highlight_hex(group, attr)
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = group, link = false })
+    if not ok or type(hl) ~= "table" or type(hl[attr]) ~= "number" then
+        return nil
+    end
+    return string.format("#%06X", hl[attr])
+end
+
+---@param buf integer
+---@return string?
+local function terminal_statusline_bg(buf)
+    return buffer_color(buf, "terminal_color_background")
+        or buffer_color(buf, "terminal_color_0")
+        or highlight_hex("Normal", "bg")
+end
+
+---@param buf integer
+---@return string?
+local function terminal_statusline_fg(buf)
+    return buffer_color(buf, "terminal_color_foreground")
+        or highlight_hex("ClodexTerminalStatusline", "fg")
+        or highlight_hex("Normal", "fg")
+end
+
+---@param value string
+---@return string
+local function color_key(value)
+    return value:gsub("#", "")
+end
+
+---@param win integer
+---@return string, string
+local function ensure_terminal_statusline_highlights(win)
+    local buf = vim.api.nvim_win_get_buf(win)
+    local bg = terminal_statusline_bg(buf)
+    local fg = terminal_statusline_fg(buf)
+    if not bg or not fg then
+        return "ClodexTerminalStatuslineActive", "ClodexTerminalStatusline"
+    end
+
+    local suffix = color_key(bg) .. "_" .. color_key(fg)
+    local active = STATUSLINE_HL_PREFIX .. "Active_" .. suffix
+    local inactive = STATUSLINE_HL_PREFIX .. "Inactive_" .. suffix
+    vim.api.nvim_set_hl(0, inactive, { fg = fg, bg = bg })
+    vim.api.nvim_set_hl(0, active, { fg = fg, bg = bg, bold = true })
+    return active, inactive
+end
+
 ---@param win? integer
 ---@return Clodex.TerminalSession?
 local function current_session(win)
@@ -48,9 +114,10 @@ end
 
 ---@param win integer
 local function apply_terminal_window_highlights(win)
+    local active, inactive = ensure_terminal_statusline_highlights(win)
     vim.wo[win].winhl = table.concat({
-        "StatusLine:ClodexTerminalStatuslineActive",
-        "StatusLineNC:ClodexTerminalStatusline",
+        "StatusLine:" .. active,
+        "StatusLineNC:" .. inactive,
     }, ",")
 end
 
