@@ -536,8 +536,8 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
                         )
                         return
                     end
-                    ui.multiline_input({
-                        prompt = "Bug message",
+                    ui.multiline_message_input({
+                        prompt = "Bug message or traceback",
                         min_height = 10,
                         context = PromptContext.capture({ project = project }),
                         paste_image = self:paste_image_callback(project, "bug"),

@@ -480,6 +480,20 @@ local function prompt_editor_hint_lines(actions)
   }
 end
 
+---@param actions Clodex.UiSelect.MultilineAction[]
+---@return string[]
+local function single_field_hint_lines(actions)
+  local action_chunks = {}
+  for _, action in ipairs(actions) do
+    action_chunks[#action_chunks + 1] = ("%s %s"):format(action.key, action.label)
+  end
+
+  return {
+    ("  <CR> submit   %s"):format(table.concat(action_chunks, "   ")),
+    "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",
+  }
+end
+
 ---@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string?, submit_actions?: Clodex.UiSelect.MultilineAction[] }
 ---@param on_confirm fun(value?: string, action?: string)
 function M.multiline_input(opts, on_confirm)
@@ -961,6 +975,284 @@ function M.multiline_input(opts, on_confirm)
   })
 
   focus_title()
+end
+
+---@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string?, submit_actions?: Clodex.UiSelect.MultilineAction[] }
+---@param on_confirm fun(value?: string, action?: string)
+function M.multiline_message_input(opts, on_confirm)
+  opts = opts or {}
+  local submit_actions = vim.deepcopy(opts.submit_actions or {
+    { value = "save", label = "save", key = "<C-s>" },
+  })
+  local hint_lines = single_field_hint_lines(submit_actions)
+  local default_lines = vim.split(opts.default or "", "\n", { plain = true })
+  local captured_context = opts.context
+  local ui = vim.api.nvim_list_uis()[1]
+  local editor_width = ui and ui.width or vim.o.columns
+  local editor_height = ui and ui.height or vim.o.lines
+  local min_height = math.max(opts.min_height or PROMPT_EDITOR_MIN_HEIGHT, PROMPT_EDITOR_MIN_HEIGHT)
+  local max_height = math.max(editor_height - PROMPT_EDITOR_HEIGHT_MARGIN, min_height)
+  local width = math.min(
+    math.max(
+      longest_width(vim.tbl_flatten({ unpack_values(default_lines), hint_lines })) + PROMPT_EDITOR_WIDTH_PADDING,
+      PROMPT_EDITOR_MIN_WIDTH
+    ),
+    math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
+  )
+  local body_buf = vim.api.nvim_create_buf(false, true)
+  local hint_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[body_buf].buftype = "nofile"
+  vim.bo[body_buf].bufhidden = "wipe"
+  vim.bo[body_buf].swapfile = false
+  vim.bo[body_buf].modifiable = true
+  vim.bo[hint_buf].buftype = "nofile"
+  vim.bo[hint_buf].bufhidden = "wipe"
+  vim.bo[hint_buf].swapfile = false
+  vim.bo[hint_buf].modifiable = false
+
+  local function calc_height()
+    local count = math.max(#vim.api.nvim_buf_get_lines(body_buf, 0, -1, false), min_height)
+    return math.min(count, max_height)
+  end
+
+  local function total_height()
+    return calc_height() + PROMPT_EDITOR_HINT_HEIGHT + (PROMPT_EDITOR_BORDER_ROWS * 2) + PROMPT_EDITOR_HINT_GAP
+  end
+
+  local function body_row()
+    return math.max(math.floor((editor_height - total_height()) / 2), 1)
+  end
+
+  local function hint_row()
+    return body_row() + calc_height() + PROMPT_EDITOR_BORDER_ROWS + PROMPT_EDITOR_HINT_GAP
+  end
+
+  local function prompt_context()
+    if captured_context == nil then
+      captured_context = PromptContext.capture()
+    end
+    return captured_context
+  end
+
+  local body_win = ui_win.open({
+    buf = body_buf,
+    enter = true,
+    backdrop = PROMPT_EDITOR_BACKDROP,
+    border = "rounded",
+    title = (" %s "):format(opts.prompt),
+    title_pos = "center",
+    width = width,
+    height = function()
+      return calc_height()
+    end,
+    row = body_row,
+    col = function()
+      return math.max(math.floor((editor_width - width) / 2), 1)
+    end,
+    wo = {
+      wrap = true,
+      linebreak = true,
+      breakindent = true,
+      number = false,
+      relativenumber = false,
+      signcolumn = "no",
+      foldcolumn = "0",
+      cursorline = false,
+      spell = false,
+    },
+    bo = {
+      filetype = "markdown",
+      buftype = "nofile",
+      modifiable = true,
+    },
+    zindex = PROMPT_EDITOR_ZINDEX,
+  })
+  local hint_win = ui_win.open({
+    buf = hint_buf,
+    enter = false,
+    backdrop = PROMPT_EDITOR_BACKDROP,
+    border = "rounded",
+    width = width,
+    height = PROMPT_EDITOR_HINT_HEIGHT,
+    row = hint_row,
+    col = function()
+      return math.max(math.floor((editor_width - width) / 2), 1)
+    end,
+    wo = {
+      wrap = false,
+      linebreak = false,
+      breakindent = false,
+      number = false,
+      relativenumber = false,
+      signcolumn = "no",
+      foldcolumn = "0",
+      cursorline = false,
+      spell = false,
+    },
+    bo = {
+      buftype = "nofile",
+      modifiable = false,
+    },
+    zindex = PROMPT_EDITOR_ZINDEX - 1,
+  })
+
+  local function resize()
+    if not body_win:valid() or not hint_win:valid() then
+      return
+    end
+    local next_body_height = calc_height()
+    local next_hint_row = hint_row()
+    if body_win.opts._clodex_height == next_body_height and hint_win.opts._clodex_hint_row == next_hint_row then
+      return
+    end
+    body_win.opts._clodex_height = next_body_height
+    hint_win.opts._clodex_hint_row = next_hint_row
+    body_win:update()
+    hint_win:update()
+  end
+
+  local done = false
+  local function close(value, action)
+    if done then
+      return
+    end
+    done = true
+    if body_win:valid() then
+      body_win:close()
+    end
+    if hint_win:valid() then
+      hint_win:close()
+    end
+    prompt_context_completion[body_buf] = nil
+    vim.schedule(function()
+      on_confirm(value, action or submit_actions[1].value)
+    end)
+  end
+
+  vim.api.nvim_buf_set_lines(body_buf, 0, -1, false, #default_lines > 0 and default_lines or { "" })
+  render_hint_lines(hint_buf, hint_lines)
+  disable_prompt_pair_highlights(body_buf)
+  disable_prompt_pair_highlights(hint_buf)
+  style_prompt_editor(body_win.win)
+  style_prompt_editor(hint_win.win, "ClodexPromptEditorFooter")
+  vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
+  configure_prompt_context_completeopt(body_buf)
+  prompt_context_completion[body_buf] = prompt_context()
+  render_prompt_context_highlights(body_buf, prompt_context_completion[body_buf])
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = body_buf,
+    callback = function()
+      resize()
+      render_prompt_context_highlights(body_buf, prompt_context())
+    end,
+  })
+
+  local function submit(action)
+    local details = vim.trim(join_lines(vim.api.nvim_buf_get_lines(body_buf, 0, -1, false)))
+    if details == "" then
+      close(nil, action)
+      return
+    end
+    close(PromptContext.expand_text(details, prompt_context()), action)
+  end
+
+  local function trigger_context_completion()
+    prompt_context_completion[body_buf] = prompt_context()
+    vim.api.nvim_set_current_win(body_win.win)
+    vim.cmd.startinsert()
+    vim.schedule(function()
+      if not body_win:valid() or vim.api.nvim_get_current_buf() ~= body_buf then
+        return
+      end
+      vim.api.nvim_feedkeys(vim.keycode("&<C-x><C-u>"), "n", false)
+    end)
+  end
+
+  local function insert_quick_prompt()
+    local items = PromptContext.quick_prompts(prompt_context())
+    local picker_items = {}
+    for _, item in ipairs(items) do
+      picker_items[#picker_items + 1] = {
+        text = item.text,
+        label = item.label,
+        detail = item.text,
+        disabled = item.disabled,
+      }
+    end
+
+    M.pick_text(picker_items, {
+      prompt = "Prompt shortcuts",
+      snacks = {
+        preview = false,
+      },
+    }, function(item)
+      if not item or item.disabled then
+        vim.api.nvim_set_current_win(body_win.win)
+        return
+      end
+      insert_text(body_buf, body_win.win, item.text)
+      resize()
+      vim.api.nvim_set_current_win(body_win.win)
+    end)
+  end
+
+  local function paste_image()
+    if type(opts.paste_image) ~= "function" then
+      return
+    end
+    local text = opts.paste_image()
+    if not text or text == "" then
+      return
+    end
+    insert_text(body_buf, body_win.win, text)
+    resize()
+    vim.api.nvim_set_current_win(body_win.win)
+  end
+
+  vim.keymap.set("n", "<CR>", function()
+    submit(submit_actions[1].value)
+  end, { buffer = body_buf, silent = true })
+  for _, action in ipairs(submit_actions) do
+    vim.keymap.set({ "n", "i" }, action.key, function()
+      submit(action.value)
+    end, { buffer = body_buf, silent = true })
+  end
+  vim.keymap.set("n", "&", trigger_context_completion, { buffer = body_buf, silent = true })
+  vim.keymap.set("i", "&", function()
+    prompt_context_completion[body_buf] = prompt_context()
+    return "&" .. vim.keycode("<C-x><C-u>")
+  end, {
+    buffer = body_buf,
+    silent = true,
+    expr = true,
+  })
+  vim.keymap.set("n", "x", insert_quick_prompt, { buffer = body_buf, silent = true })
+  vim.keymap.set("i", "<C-x>", insert_quick_prompt, { buffer = body_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<C-v>", paste_image, { buffer = body_buf, silent = true })
+  vim.keymap.set("n", "q", function()
+    close(nil)
+  end, { buffer = body_buf, silent = true })
+  vim.keymap.set({ "n", "i" }, "<Esc>", function()
+    close(nil)
+  end, { buffer = body_buf, silent = true })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    once = true,
+    pattern = tostring(hint_win.win),
+    callback = function()
+      close(nil)
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    once = true,
+    pattern = tostring(body_win.win),
+    callback = function()
+      close(nil)
+    end,
+  })
+
+  vim.api.nvim_set_current_win(body_win.win)
+  vim.cmd.startinsert()
 end
 
 ---@param prompt string
