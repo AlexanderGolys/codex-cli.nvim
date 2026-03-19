@@ -69,6 +69,7 @@ local notify = require("clodex.util.notify")
 ---@field window_open_in_active_tab boolean
 ---@field usage_events string
 ---@field working string
+---@field waiting_state? "question"|"permission"
 ---@field model string
 ---@field context string
 ---@field bookmark_count integer
@@ -655,15 +656,19 @@ function App:state_snapshot()
         local session = session_by_key[project.root]
         local project_working = self:is_project_working(project)
         local session_running = self:is_project_session_running(project)
+        local waiting_state = session and session.waiting_state or nil
         project_states[#project_states + 1] = {
             project = project,
             session_active = session ~= nil and session.buffer_valid or false,
             window_open_in_active_tab = current_tab.has_visible_window and current_tab.session_key == project.root,
             usage_events = "not tracked yet",
             working = project_working and "session working"
+                or waiting_state == "permission" and "waiting for permission"
+                or waiting_state == "question" and "waiting for input"
                 or session_running and "session alive"
                 or session and "session stopped"
                 or "offline",
+            waiting_state = waiting_state,
             model = "not tracked yet",
             context = "not tracked yet",
             bookmark_count = self.project_bookmarks:count(project),

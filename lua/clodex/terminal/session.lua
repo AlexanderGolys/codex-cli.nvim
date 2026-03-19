@@ -41,6 +41,8 @@ local notify = require("clodex.util.notify")
 ---@field buffer_valid boolean
 ---@field job_id? integer
 ---@field running boolean
+---@field waiting_state? "question"|"permission"
+---@field last_cli_line string
 local Session = {}
 Session.__index = Session
 
@@ -154,6 +156,76 @@ local function last_nonempty_line(buf)
     end
 
     return ""
+end
+
+local USER_WAIT_REASON_PATTERNS = {
+    permission = {
+        "permission",
+        "approve",
+        "approval",
+        "allow",
+        "yes/no",
+        "grant access",
+    },
+    question = {
+        "please provide",
+        "let me know",
+        "which ",
+        "what ",
+        "where ",
+        "when ",
+        "could you",
+        "can you",
+        "do you want",
+        "would you like",
+    },
+}
+
+local WAIT_SCAN_LIMIT = 24
+
+---@param buf integer?
+---@return string[]
+local function recent_nonempty_lines(buf)
+    if buf == nil or not vim.api.nvim_buf_is_valid(buf) then
+        return {}
+    end
+
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    if line_count <= 0 then
+        return {}
+    end
+
+    local start = math.max(line_count - WAIT_SCAN_LIMIT, 0)
+    local lines = vim.api.nvim_buf_get_lines(buf, start, line_count, false)
+    local recent = {}
+    for _, line in ipairs(lines) do
+        local trimmed = vim.trim(line)
+        if trimmed ~= "" then
+            recent[#recent + 1] = trimmed
+        end
+    end
+    return recent
+end
+
+---@param lines string[]
+---@return "question"|"permission"?
+local function detect_waiting_state(lines)
+    for index = #lines, 1, -1 do
+        local line = lines[index]:lower()
+        for _, pattern in ipairs(USER_WAIT_REASON_PATTERNS.permission) do
+            if line:find(pattern, 1, true) then
+                return "permission"
+            end
+        end
+        if line:sub(-1) == "?" then
+            return "question"
+        end
+        for _, pattern in ipairs(USER_WAIT_REASON_PATTERNS.question) do
+            if line:find(pattern, 1, true) then
+                return "question"
+            end
+        end
+    end
 end
 
 ---@return string
@@ -307,6 +379,19 @@ function Session:is_working()
     end
 
     return self.awaiting_response or line ~= ""
+end
+
+---@return "question"|"permission"?
+function Session:waiting_state()
+    if not self:is_running() then
+        return nil
+    end
+    if self.awaiting_response then
+        return nil
+    end
+    if is_idle_line(self:last_cli_line()) then
+        return detect_waiting_state(recent_nonempty_lines(self.buf))
+    end
 end
 
 ---@param opts? { sync_header?: boolean }
@@ -501,6 +586,8 @@ function Session:snapshot()
         buffer_valid = buffer_valid,
         job_id = self.job_id,
         running = self:is_running(),
+        waiting_state = self:waiting_state(),
+        last_cli_line = self:last_cli_line(),
     }
 end
 

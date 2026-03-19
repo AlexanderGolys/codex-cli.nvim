@@ -1,3 +1,11 @@
+package.loaded["snacks.terminal"] = {
+    open = function()
+        return {
+            hide = function() end,
+        }
+    end,
+}
+
 local Session = require("clodex.terminal.session")
 
 describe("clodex.terminal.session", function()
@@ -102,6 +110,60 @@ describe("clodex.terminal.session", function()
         end
 
         assert.is_true(session:is_working())
+
+        vim.fn.jobwait = original_jobwait
+    end)
+
+    it("detects when the session is waiting for user input", function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            "Could you confirm which project root I should use?",
+            "Codex ready",
+        })
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = buf
+        session.job_id = 123
+
+        local original_jobwait = vim.fn.jobwait
+        vim.fn.jobwait = function()
+            return { -1 }
+        end
+
+        assert.are.equal("question", session:waiting_state())
+
+        vim.fn.jobwait = original_jobwait
+    end)
+
+    it("detects when the session is waiting for permission", function()
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+            "I need your permission to edit tracked files before I continue.",
+            "Codex ready",
+        })
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = buf
+        session.job_id = 123
+
+        local original_jobwait = vim.fn.jobwait
+        vim.fn.jobwait = function()
+            return { -1 }
+        end
+
+        assert.are.equal("permission", session:waiting_state())
 
         vim.fn.jobwait = original_jobwait
     end)
