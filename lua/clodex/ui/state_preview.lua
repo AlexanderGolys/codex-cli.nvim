@@ -27,6 +27,12 @@ local status_hl = {
   ["session alive"] = "ClodexStateStatusActive",
   ["session stopped"] = "ClodexStateStatusStopped",
   ["offline"] = "ClodexStateStatusOffline",
+  ["waiting for permission"] = "ClodexStateStatusStopped",
+  ["waiting for input"] = "ClodexStateStatusStopped",
+  ["synced"] = "ClodexStateStatusActive",
+  ["disabled"] = "ClodexStateStatusStopped",
+  ["unresolved"] = "ClodexStateStatusStopped",
+  ["not installed"] = "ClodexStateStatusStopped",
   ["true"] = "ClodexStateBoolean",
   ["false"] = "ClodexStateBoolean",
   ["nil"] = "ClodexStateNil",
@@ -139,6 +145,33 @@ local function project_status(project_state)
   return table.concat(parts, ", ")
 end
 
+---@param session Clodex.TerminalSession.Snapshot
+---@return string
+local function session_status(session)
+  if session.waiting_state == "permission" then
+    return "waiting for permission"
+  end
+  if session.waiting_state == "question" then
+    return "waiting for input"
+  end
+  if session.running then
+    return "session alive"
+  end
+  return session.buffer_valid and "session stopped" or "offline"
+end
+
+---@param counts table<Clodex.QueueName, integer>
+---@return string
+local function queue_counts_text(counts)
+  return string.format(
+    "planned=%d queued=%d implemented=%d history=%d",
+    counts.planned or 0,
+    counts.queued or 0,
+    counts.implemented or 0,
+    counts.history or 0
+  )
+end
+
 ---@param self Clodex.StatePreview
 ---@param block Clodex.TextBlock
 ---@param project_state Clodex.App.ProjectStateSnapshot
@@ -162,6 +195,48 @@ local function append_project_state(self, block, project_state)
       Extmark.inline(0, 0, #"    - ", "ClodexStateFieldLabel"),
     })
   end
+end
+
+---@param self Clodex.StatePreview
+---@param block Clodex.TextBlock
+---@param session Clodex.TerminalSession.Snapshot
+local function append_session(self, block, session)
+  local scope = session.kind == "project" and (session.project_root or session.key) or session.key
+  local text = string.format("> %s  %s  %s", session.kind, scope, session_status(session))
+  push_line(self, block, text, {
+    Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+    Extmark.inline(0, 2, #text, "ClodexStateEntryTitle"),
+  })
+  append_field(self, block, "  title", session.title)
+  append_field(self, block, "  cwd", session.cwd)
+  append_field(self, block, "  buffer", session.buf or "none")
+  append_field(self, block, "  job", session.job_id or "none")
+  append_field(self, block, "  last line", session.last_cli_line ~= "" and session.last_cli_line or "none")
+end
+
+---@param self Clodex.StatePreview
+---@param block Clodex.TextBlock
+---@param project Clodex.Project
+local function append_project_summary(self, block, project)
+  local app = self.app
+  if not app then
+    return
+  end
+
+  local summary = app:queue_summary(project)
+  local session = nil
+  for _, item in ipairs(app.terminals:snapshot()) do
+    if item.project_root == project.root then
+      session = item
+      break
+    end
+  end
+
+  append_field(self, block, "project", project.name)
+  append_field(self, block, "root", project.root)
+  append_field(self, block, "queues", queue_counts_text(summary.counts))
+  append_field(self, block, "session", session and session_status(session) or "offline")
+  append_field(self, block, "last queue update", summary.last_updated_at ~= "" and summary.last_updated_at or "none")
 end
 
 ---@param self Clodex.StatePreview
@@ -582,20 +657,39 @@ end
 ---@param snapshot Clodex.App.StateSnapshot
 function Preview:render_state(snapshot)
   self.max_state_width = 0
-  local active_project_states = {} ---@type Clodex.App.ProjectStateSnapshot[]
-  for _, project_state in ipairs(snapshot.project_states) do
-    if project_state.session_active then
-      active_project_states[#active_project_states + 1] = project_state
+  local session_count = #snapshot.sessions
+  local total_queue_counts = {
+    planned = 0,
+    queued = 0,
+    implemented = 0,
+    history = 0,
+  }
+  if self.app then
+    for _, project in ipairs(snapshot.projects) do
+      local summary = self.app:queue_summary(project)
+      total_queue_counts.planned = total_queue_counts.planned + (summary.counts.planned or 0)
+      total_queue_counts.queued = total_queue_counts.queued + (summary.counts.queued or 0)
+      total_queue_counts.implemented = total_queue_counts.implemented + (summary.counts.implemented or 0)
+      total_queue_counts.history = total_queue_counts.history + (summary.counts.history or 0)
     end
   end
 
   local block = TextBlock.new()
+  push_line(self, block, "Global", {
+    Extmark.inline(0, 0, #"Global", "ClodexStateSection"),
+  })
+  append_field(self, block, "backend", Backend.display_name(snapshot.backend or self.config.backend))
+  append_field(self, block, "projects", #snapshot.projects)
+  append_field(self, block, "tabs", #snapshot.tabs)
+  append_field(self, block, "sessions", session_count)
+  append_field(self, block, "queues", queue_counts_text(total_queue_counts))
+
+  push_line(self, block, "")
   push_line(self, block, "Focus", {
     Extmark.inline(0, 0, #"Focus", "ClodexStateSection"),
   })
   append_field(self, block, "tab", snapshot.current_tab.tabpage)
   append_field(self, block, "path", snapshot.current_path)
-  append_field(self, block, "backend", Backend.display_name(snapshot.backend or self.config.backend))
   append_field(self, block, "active", project_name(snapshot.active_project))
   append_field(self, block, "detected", project_name(snapshot.detected_project))
   append_target(self, block, snapshot.resolved_target)
@@ -609,16 +703,45 @@ function Preview:render_state(snapshot)
   append_field(self, block, "window", snapshot.current_tab.window_id or "none")
 
   push_line(self, block, "")
-  push_line(self, block, "Active Sessions", {
-    Extmark.inline(0, 0, #"Active Sessions", "ClodexStateSection"),
+  push_line(self, block, "Focused Project", {
+    Extmark.inline(0, 0, #"Focused Project", "ClodexStateSection"),
   })
-  if #active_project_states == 0 then
+  local focused_project = snapshot.active_project or snapshot.detected_project
+  if focused_project then
+    append_project_summary(self, block, focused_project)
+  else
+    push_line(self, block, "> none", {
+      Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+      Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
+    })
+  end
+
+  push_line(self, block, "")
+  push_line(self, block, "Sessions", {
+    Extmark.inline(0, 0, #"Sessions", "ClodexStateSection"),
+  })
+  if #snapshot.sessions == 0 then
     push_line(self, block, "> none", {
       Extmark.inline(0, 0, 1, "ClodexStateMarker"),
       Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
     })
   else
-    for _, project_state in ipairs(active_project_states) do
+    for _, session in ipairs(snapshot.sessions) do
+      append_session(self, block, session)
+    end
+  end
+
+  push_line(self, block, "")
+  push_line(self, block, "Projects", {
+    Extmark.inline(0, 0, #"Projects", "ClodexStateSection"),
+  })
+  if #snapshot.project_states == 0 then
+    push_line(self, block, "> none", {
+      Extmark.inline(0, 0, 1, "ClodexStateMarker"),
+      Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
+    })
+  else
+    for _, project_state in ipairs(snapshot.project_states) do
       append_project_state(self, block, project_state)
     end
   end

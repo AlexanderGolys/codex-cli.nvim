@@ -482,6 +482,10 @@ end
 function Manager:snapshot()
   local ret = {} ---@type Clodex.TerminalSession.Snapshot[]
 
+  if self.free_session then
+    ret[#ret + 1] = self.free_session:snapshot()
+  end
+
   local roots = vim.tbl_keys(self.project_sessions)
   table.sort(roots)
   for _, root in ipairs(roots) do

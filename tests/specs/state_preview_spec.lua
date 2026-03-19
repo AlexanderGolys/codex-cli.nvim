@@ -26,6 +26,36 @@ describe("clodex.ui.state_preview", function()
         local preview = Preview.new(Config.new():setup())
         preview:ensure_buffers()
         preview.app = {
+            queue_summary = function()
+                return {
+                    counts = {
+                        planned = 1,
+                        queued = 2,
+                        implemented = 3,
+                        history = 4,
+                    },
+                    last_updated_at = "2026-03-19T04:00:00Z",
+                }
+            end,
+            terminals = {
+                snapshot = function()
+                    return {
+                        {
+                            key = "project:" .. root,
+                            kind = "project",
+                            cwd = root,
+                            title = "Clodex: Demo",
+                            project_root = root,
+                            buf = 11,
+                            buffer_valid = true,
+                            job_id = 22,
+                            running = true,
+                            waiting_state = nil,
+                            last_cli_line = "ready",
+                        },
+                    }
+                end,
+            },
             execution = {
                 uses_prompt_skill = function()
                     return true
@@ -44,6 +74,21 @@ describe("clodex.ui.state_preview", function()
                 session_key = "project:" .. root,
                 window_id = 1,
             },
+            sessions = {
+                {
+                    key = "free:" .. root,
+                    kind = "free",
+                    cwd = root,
+                    title = "OpenCode",
+                    project_root = nil,
+                    buf = 7,
+                    buffer_valid = true,
+                    job_id = 33,
+                    running = true,
+                    waiting_state = "question",
+                    last_cli_line = "Which file should I open?",
+                },
+            },
             current_path = root,
             active_project = {
                 name = "Demo",
@@ -56,12 +101,37 @@ describe("clodex.ui.state_preview", function()
                     name = "Demo",
                 },
             },
-            project_states = {},
+            projects = {
+                {
+                    name = "Demo",
+                    root = root,
+                },
+            },
+            project_states = {
+                {
+                    project = {
+                        name = "Demo",
+                        root = root,
+                    },
+                    session_active = true,
+                    window_open_in_active_tab = true,
+                    usage_events = "not tracked yet",
+                    working = "session alive",
+                    bookmark_count = 0,
+                    notes_count = 0,
+                    cheatsheet_count = 0,
+                    cheatsheet_items = {},
+                },
+            },
             tabs = {},
         })
 
         local lines = vim.api.nvim_buf_get_lines(preview.state_buf, 0, -1, false)
         assert.is_true(vim.tbl_contains(lines, "backend:             OpenCode"))
+        assert.is_true(vim.tbl_contains(lines, "projects:            1"))
+        assert.is_true(vim.tbl_contains(lines, "queues:              planned=1 queued=2 implemented=3 history=4"))
+        assert.is_true(vim.tbl_contains(lines, "session:             waiting for input"))
+        assert.is_true(vim.tbl_contains(lines, "  last line:         Which file should I open?"))
         assert.is_true(vim.tbl_contains(lines, "Prompt Skill"))
         assert.is_true(vim.tbl_contains(lines, "status:              synced"))
         assert.is_true(vim.tbl_contains(lines, "  ---"))
