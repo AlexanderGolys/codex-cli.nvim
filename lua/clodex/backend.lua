@@ -1,4 +1,5 @@
 local fs = require("clodex.util.fs")
+local Mcp = require("clodex.mcp")
 
 ---@alias Clodex.Backend.Name "codex"|"opencode"
 
@@ -64,10 +65,18 @@ end
 ---@return string[]
 function Backend.cli_cmd(config)
     local name = Backend.normalize(config.backend)
+    local cmd = nil ---@type string[]
     if name == "opencode" then
-        return vim.deepcopy(config.opencode_cmd)
+        cmd = vim.deepcopy(config.opencode_cmd)
+    else
+        cmd = vim.deepcopy(config.codex_cmd)
     end
-    return vim.deepcopy(config.codex_cmd)
+
+    if name == "codex" then
+        vim.list_extend(cmd, Mcp.codex_config_args(config))
+    end
+
+    return cmd
 end
 
 return Backend
