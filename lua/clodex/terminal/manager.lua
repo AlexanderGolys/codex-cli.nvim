@@ -151,24 +151,44 @@ end
 ---@param project Clodex.Project
 ---@return Clodex.TerminalSession?
 function Manager:promote_free_session(project)
+  local project_root = fs.normalize(project.root)
+  local session = self.project_sessions[project_root]
+
   if not self:free_session_matches_project(project) then
-    return self.project_sessions[project.root]
+    return session
   end
 
-  local session = self.free_session
+  local free_session = self.free_session
   local spec = self:session_spec({ kind = "project", project = project })
-  spec.cwd = session.cwd
-  if session_requires_restart(session, spec) then
+  spec.cwd = free_session.cwd
+  self.free_session = nil
+
+  if session and session ~= free_session then
+    if not session_requires_restart(session, spec) then
+      if session:ensure_started() then
+        free_session:destroy()
+        return session
+      end
+    end
+
     session:destroy()
   end
-  session:update_identity(spec)
-  self.project_sessions[project.root] = session
-  self.free_session = nil
-  return self.project_sessions[project.root]
+
+  if session_requires_restart(free_session, spec) then
+    free_session:destroy()
+  end
+
+  free_session:update_identity(spec)
+  self.project_sessions[project_root] = free_session
+  return free_session
 end
 
 ---@param root string
 function Manager:destroy_project_session(root)
+  if type(root) ~= "string" then
+    return
+  end
+  root = fs.normalize(root)
   local session = self.project_sessions[root]
   if not session then
     return
@@ -179,7 +199,7 @@ end
 
 ---@param project Clodex.Project
 function Manager:update_project_identity(project)
-  local session = self.project_sessions[project.root]
+  local session = self.project_sessions[fs.normalize(project.root)]
   if not session then
     return
   end
@@ -194,6 +214,10 @@ end
 ---@param root string
 ---@return Clodex.TerminalSession?
 function Manager:project_session(root)
+  if type(root) ~= "string" or root == "" then
+    return nil
+  end
+  root = fs.normalize(root)
   return self.project_sessions[root]
 end
 
@@ -289,12 +313,13 @@ function Manager:get_session(target)
       return promoted
     end
 
-    self.project_sessions[target.project.root] = self.project_sessions[target.project.root]
+    local project_root = fs.normalize(target.project.root)
+    self.project_sessions[project_root] = self.project_sessions[project_root]
       or Session.new(self:session_spec(target))
-    if not self.project_sessions[target.project.root]:ensure_started() then
+    if not self.project_sessions[project_root]:ensure_started() then
       return nil
     end
-    return self.project_sessions[target.project.root]
+    return self.project_sessions[project_root]
   end
 
   local replaced_key ---@type string?
@@ -324,11 +349,21 @@ function Manager:open_window(session, parent_win)
       winbar = "%!v:lua.require('clodex.terminal.ui').winbar()",
     }
   end
+  local terminal_fixbuf = true
+  if self.config and type(self.config.terminal) == "table" and type(self.config.terminal.win) == "table" then
+    local configured = self.config.terminal.win.fixbuf
+    if type(configured) == "boolean" then
+      terminal_fixbuf = configured
+    end
+  end
+  if is_opencode then
+    terminal_fixbuf = false
+  end
   local opts = Snacks.win.resolve("terminal", self.config.terminal.win, {
     buf = session.buf,
     enter = true,
     show = true,
-    fixbuf = true,
+    fixbuf = terminal_fixbuf,
     bo = {
       filetype = "clodex_terminal",
     },
