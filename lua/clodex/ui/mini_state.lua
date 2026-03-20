@@ -39,29 +39,38 @@ local function format_value(value)
 end
 
 ---@param snapshot Clodex.App.StateSnapshot
----@return string
-local function local_session_status(snapshot)
+---@return Clodex.TerminalSession.Snapshot?
+local function local_session(snapshot)
     local tab = snapshot.current_tab
     if not tab.session_key then
-        return "hidden"
+        return nil
     end
 
     for _, session in ipairs(snapshot.sessions) do
         if session.key == tab.session_key then
-            if session.waiting_state == "permission" then
-                return "perm"
-            end
-            if session.waiting_state == "question" then
-                return "input"
-            end
-            if session.running then
-                return "alive"
-            end
-            return session.buffer_valid and "stopped" or "offline"
+            return session
         end
     end
 
-    return "unknown"
+    return nil
+end
+
+---@param session Clodex.TerminalSession.Snapshot?
+---@return string
+local function local_session_status(session)
+    if not session then
+        return "hidden"
+    end
+    if session.waiting_state == "permission" then
+        return "perm"
+    end
+    if session.waiting_state == "question" then
+        return "input"
+    end
+    if session.running then
+        return "alive"
+    end
+    return session.buffer_valid and "stopped" or "offline"
 end
 
 ---@param title string
@@ -140,15 +149,19 @@ function Preview:render(snapshot)
     self:ensure_buffer()
 
     local project = snapshot.active_project or snapshot.detected_project
+    local session = local_session(snapshot)
     local block = TextBlock.new()
     block:append_line("Mini State", section_marks("Mini State"))
     append_field(block, "backend", Backend.display_name(snapshot.backend or self.config.backend))
     append_field(block, "project", project and project.name or "none")
     append_field(block, "target", snapshot.resolved_target.kind)
     append_field(block, "tab", snapshot.current_tab.tabpage)
-    append_field(block, "session", local_session_status(snapshot))
+    append_field(block, "session", local_session_status(session))
+    append_field(block, "provider", session and session.terminal_provider or "none")
+    append_field(block, "item", session and (session.active_queue_item_title or session.active_queue_item_id) or "none")
     append_field(block, "visible", snapshot.current_tab.has_visible_window)
     append_field(block, "window", snapshot.current_tab.window_id)
+    append_field(block, "prompted", snapshot.current_tab.prompted_project == true)
     append_field(block, "buffer", vim.api.nvim_get_current_buf())
     append_field(block, "path", snapshot.current_path)
     block:render(self.buf, self.ns)

@@ -172,6 +172,24 @@ local function queue_counts_text(counts)
   )
 end
 
+---@param values string[]
+---@return string
+local function joined_or_none(values)
+  if type(values) ~= "table" or vim.tbl_isempty(values) then
+    return "none"
+  end
+  return table.concat(values, ", ")
+end
+
+---@param session Clodex.TerminalSession.Snapshot
+---@return string
+local function session_env_summary(session)
+  if type(session.env_keys) ~= "table" or vim.tbl_isempty(session.env_keys) then
+    return "none"
+  end
+  return table.concat(session.env_keys, ", ")
+end
+
 ---@param self Clodex.StatePreview
 ---@param block Clodex.TextBlock
 ---@param project_state Clodex.App.ProjectStateSnapshot
@@ -187,6 +205,7 @@ local function append_project_state(self, block, project_state)
   append_field(self, block, "  bookmarks", project_state.bookmark_count)
   append_field(self, block, "  notes", project_state.notes_count)
   append_field(self, block, "  cheatsheet", project_state.cheatsheet_count)
+  append_field(self, block, "  sources", joined_or_none(project_state.runtime_sources))
   for index, item in ipairs(project_state.cheatsheet_items or {}) do
     if index > 3 then
       break
@@ -211,6 +230,10 @@ local function append_session(self, block, session)
   append_field(self, block, "  cwd", session.cwd)
   append_field(self, block, "  buffer", session.buf or "none")
   append_field(self, block, "  job", session.job_id or "none")
+  append_field(self, block, "  provider", session.terminal_provider or "snacks")
+  append_field(self, block, "  env", session_env_summary(session))
+  append_field(self, block, "  active item", session.active_queue_item_title or session.active_queue_item_id or "none")
+  append_field(self, block, "  queue loop", session.queue_loop_enabled and "armed" or "idle")
   append_field(self, block, "  last line", session.last_cli_line ~= "" and session.last_cli_line or "none")
 end
 
@@ -248,6 +271,11 @@ end
 --- This keeps the selected project/session context obvious to the user.
 local function append_target(self, block, target)
   append_field(self, block, "target", target_label(target))
+  if target.kind == "project" then
+    append_field(self, block, "target root", target.project.root)
+  else
+    append_field(self, block, "target cwd", target.cwd)
+  end
 end
 
 ---@param self Clodex.StatePreview
@@ -266,6 +294,7 @@ local function append_tab(self, block, tab)
   if tab.window_id ~= nil then
     append_field(self, block, "  window", tab.window_id)
   end
+  append_field(self, block, "  prompted", tab.prompted_project == true)
 end
 
 ---@param command Clodex.CommandSpec
@@ -663,31 +692,15 @@ end
 function Preview:render_state(snapshot)
   self.max_state_width = 0
   local session_count = #snapshot.sessions
-  local total_queue_counts = {
-    planned = 0,
-    queued = 0,
-    implemented = 0,
-    history = 0,
-  }
-  if self.app then
-    for _, project in ipairs(snapshot.projects) do
-      local summary = self.app:queue_summary(project)
-      total_queue_counts.planned = total_queue_counts.planned + (summary.counts.planned or 0)
-      total_queue_counts.queued = total_queue_counts.queued + (summary.counts.queued or 0)
-      total_queue_counts.implemented = total_queue_counts.implemented + (summary.counts.implemented or 0)
-      total_queue_counts.history = total_queue_counts.history + (summary.counts.history or 0)
-    end
-  end
 
   local block = TextBlock.new()
   push_line(self, block, "Global", {
     Extmark.inline(0, 0, #"Global", "ClodexStateSection"),
   })
   append_field(self, block, "backend", Backend.display_name(snapshot.backend or self.config.backend))
-  append_field(self, block, "projects", #snapshot.projects)
+  append_field(self, block, "runtime projects", #snapshot.runtime_projects)
   append_field(self, block, "tabs", #snapshot.tabs)
   append_field(self, block, "sessions", session_count)
-  append_field(self, block, "queues", queue_counts_text(total_queue_counts))
 
   push_line(self, block, "")
   push_line(self, block, "Focus", {
@@ -737,16 +750,16 @@ function Preview:render_state(snapshot)
   end
 
   push_line(self, block, "")
-  push_line(self, block, "Projects", {
-    Extmark.inline(0, 0, #"Projects", "ClodexStateSection"),
+  push_line(self, block, "Runtime Projects", {
+    Extmark.inline(0, 0, #"Runtime Projects", "ClodexStateSection"),
   })
-  if #snapshot.project_states == 0 then
+  if #snapshot.runtime_project_states == 0 then
     push_line(self, block, "> none", {
       Extmark.inline(0, 0, 1, "ClodexStateMarker"),
       Extmark.inline(0, 2, #"> none", "ClodexStateEntryTitle"),
     })
   else
-    for _, project_state in ipairs(snapshot.project_states) do
+    for _, project_state in ipairs(snapshot.runtime_project_states) do
       append_project_state(self, block, project_state)
     end
   end

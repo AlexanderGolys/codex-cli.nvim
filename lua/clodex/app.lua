@@ -60,8 +60,8 @@ local notify = require("clodex.util.notify")
 ---@field current_tab Clodex.TabState.Snapshot
 ---@field tabs Clodex.TabState.Snapshot[]
 ---@field sessions Clodex.TerminalSession.Snapshot[]
----@field projects Clodex.Project[]
----@field project_states Clodex.App.ProjectState[]
+---@field runtime_projects Clodex.Project[]
+---@field runtime_project_states Clodex.App.ProjectState[]
 ---@field backend Clodex.Backend.Name
 
 --- Defines the Clodex.App.ProjectState type for this module.
@@ -75,6 +75,7 @@ local notify = require("clodex.util.notify")
 ---@field waiting_state? "question"|"permission"
 ---@field model string
 ---@field context string
+---@field runtime_sources string[]
 ---@field bookmark_count integer
 ---@field notes_count integer
 ---@field cheatsheet_count integer
@@ -222,6 +223,29 @@ local function active_project_for_root(registry, root)
     end
 
     return project
+end
+
+---@param runtime_projects table<string, Clodex.Project>
+---@param runtime_sources table<string, string[]>
+---@param root string?
+---@param project? Clodex.Project
+---@param source string
+local function add_runtime_project(runtime_projects, runtime_sources, root, project, source)
+    root = type(root) == "string" and vim.trim(root) or ""
+    if root == "" then
+        return
+    end
+
+    root = fs.normalize(root)
+    runtime_projects[root] = project or runtime_projects[root]
+    local sources = runtime_sources[root]
+    if not sources then
+        sources = {}
+        runtime_sources[root] = sources
+    end
+    if not vim.tbl_contains(sources, source) then
+        sources[#sources + 1] = source
+    end
 end
 
 ---@return Clodex.App
@@ -651,19 +675,51 @@ function App:state_snapshot()
     local state = self:current_tab()
     local current_tab = state:snapshot()
     local sessions = self.terminals:snapshot()
+    local tabs = self.tabs:snapshot()
     local session_by_key = {} ---@type table<string, Clodex.TerminalSession.Snapshot>
     for _, session in ipairs(sessions) do
         session_by_key[session.key] = session
     end
 
-    local projects = self.registry:list()
-    local project_states = {} ---@type Clodex.App.ProjectState[]
-    for _, project in ipairs(projects) do
+    local active_project = active_project_for_root(self.registry, state.active_project_root)
+    local detected_project = self.registry:find_for_path(path)
+    local resolved_target = self:resolve_target_from_path(state, path, false)
+    local runtime_projects_by_root = {} ---@type table<string, Clodex.Project>
+    local runtime_sources_by_root = {} ---@type table<string, string[]>
+    add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, active_project and active_project.root or nil, active_project, "active")
+    add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, detected_project and detected_project.root or nil, detected_project, "detected")
+    if resolved_target.kind == "project" then
+        add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, resolved_target.project.root, resolved_target.project, "target")
+    end
+    for _, session in ipairs(sessions) do
+        if session.project_root then
+            add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, session.project_root, self.registry:get(session.project_root), "session")
+        end
+    end
+    for _, tab in ipairs(tabs) do
+        if tab.active_project_root then
+            add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, tab.active_project_root, self.registry:get(tab.active_project_root), "tab")
+        end
+    end
+
+    local runtime_projects = {} ---@type Clodex.Project[]
+    for root, project in pairs(runtime_projects_by_root) do
+        runtime_projects[#runtime_projects + 1] = project or {
+            name = self.registry:suggest_name(root),
+            root = root,
+        }
+    end
+    table.sort(runtime_projects, function(left, right)
+        return left.name:lower() < right.name:lower()
+    end)
+
+    local runtime_project_states = {} ---@type Clodex.App.ProjectState[]
+    for _, project in ipairs(runtime_projects) do
         local session = session_by_key[project.root]
         local project_working = self:is_project_working(project)
         local session_running = self:is_project_session_running(project)
         local waiting_state = session and session.waiting_state or nil
-        project_states[#project_states + 1] = {
+        runtime_project_states[#runtime_project_states + 1] = {
             project = project,
             session_active = session ~= nil and session.buffer_valid or false,
             window_open_in_active_tab = current_tab.has_visible_window and current_tab.session_key == project.root,
@@ -677,6 +733,7 @@ function App:state_snapshot()
             waiting_state = waiting_state,
             model = "not tracked yet",
             context = "not tracked yet",
+            runtime_sources = runtime_sources_by_root[project.root] or {},
             bookmark_count = self.project_bookmarks:count(project),
             notes_count = self.project_notes:count(project),
             cheatsheet_count = self.project_cheatsheet:count(project),
@@ -686,14 +743,14 @@ function App:state_snapshot()
 
     return {
         current_path = path,
-        active_project = active_project_for_root(self.registry, state.active_project_root),
-        detected_project = self.registry:find_for_path(path),
-        resolved_target = self:resolve_target_from_path(state, path, false),
+        active_project = active_project,
+        detected_project = detected_project,
+        resolved_target = resolved_target,
         current_tab = current_tab,
-        tabs = self.tabs:snapshot(),
+        tabs = tabs,
         sessions = sessions,
-        projects = projects,
-        project_states = project_states,
+        runtime_projects = runtime_projects,
+        runtime_project_states = runtime_project_states,
         backend = Backend.normalize(self.config:get().backend),
     }
 end

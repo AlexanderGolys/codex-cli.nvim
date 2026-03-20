@@ -144,7 +144,7 @@ That gives you:
 - Keep one persistent session per project root.
 - Keep one free non-project session outside registered projects.
 - Track active projects per tabpage.
-- Show a floating state preview of current Codex/project state.
+- Show a floating runtime-state preview of live session/tab/target state without turning offline registry data into fake in-memory state.
 - Open a queue workspace with project summaries and prompt history.
 - Add prompts from categories or saved prompt templates.
 - Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.

@@ -34,6 +34,8 @@ describe("clodex.ui.state_preview", function()
                         implemented = 3,
                         history = 4,
                     },
+                    active_item_title = "Implement parser retry flow",
+                    queue_loop_enabled = true,
                     last_updated_at = "2026-03-19T04:00:00Z",
                 }
             end,
@@ -52,6 +54,11 @@ describe("clodex.ui.state_preview", function()
                             running = true,
                             waiting_state = nil,
                             last_cli_line = "ready",
+                            terminal_provider = "term",
+                            env_keys = { "OPENCODE_CONFIG" },
+                            active_queue_item_id = "item-1",
+                            active_queue_item_title = "Implement parser retry flow",
+                            queue_loop_enabled = true,
                         },
                     }
                 end,
@@ -87,6 +94,11 @@ describe("clodex.ui.state_preview", function()
                     running = true,
                     waiting_state = "question",
                     last_cli_line = "Which file should I open?",
+                    terminal_provider = "snacks",
+                    env_keys = {},
+                    active_queue_item_id = nil,
+                    active_queue_item_title = nil,
+                    queue_loop_enabled = false,
                 },
             },
             current_path = root,
@@ -99,15 +111,16 @@ describe("clodex.ui.state_preview", function()
                 kind = "project",
                 project = {
                     name = "Demo",
+                    root = root,
                 },
             },
-            projects = {
+            runtime_projects = {
                 {
                     name = "Demo",
                     root = root,
                 },
             },
-            project_states = {
+            runtime_project_states = {
                 {
                     project = {
                         name = "Demo",
@@ -117,6 +130,7 @@ describe("clodex.ui.state_preview", function()
                     window_open_in_active_tab = true,
                     usage_events = "not tracked yet",
                     working = "session alive",
+                    runtime_sources = { "active", "target", "session" },
                     bookmark_count = 0,
                     notes_count = 0,
                     cheatsheet_count = 0,

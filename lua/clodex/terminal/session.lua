@@ -47,6 +47,11 @@ local notify = require("clodex.util.notify")
 ---@field running boolean
 ---@field waiting_state? "question"|"permission"
 ---@field last_cli_line string
+---@field terminal_provider "snacks"|"term"
+---@field env_keys string[]
+---@field active_queue_item_id? string
+---@field active_queue_item_title? string
+---@field queue_loop_enabled boolean
 local Session = {}
 Session.__index = Session
 
@@ -622,6 +627,11 @@ end
 ---@return Clodex.TerminalSession.Snapshot
 function Session:snapshot()
     local buffer_valid = self:buf_valid()
+    local env_keys = {} ---@type string[]
+    for key in pairs(self.env or {}) do
+        env_keys[#env_keys + 1] = key
+    end
+    table.sort(env_keys)
     return {
         key = self.key,
         kind = self.kind,
@@ -634,6 +644,11 @@ function Session:snapshot()
         running = self:is_running(),
         waiting_state = self:waiting_state(),
         last_cli_line = self:last_cli_line(),
+        terminal_provider = self.terminal_provider,
+        env_keys = env_keys,
+        active_queue_item_id = self.active_queue_item_id,
+        active_queue_item_title = self.active_queue_item_title,
+        queue_loop_enabled = self.queue_loop_enabled == true,
     }
 end
 
