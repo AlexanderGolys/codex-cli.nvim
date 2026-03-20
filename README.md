@@ -126,7 +126,7 @@ These categories control default titles, visual highlighting, and some specializ
 
 ### Queue-file prompt execution
 
-Queued prompts are dispatched with a queue-file update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, then update the project-local `.clodex/queued.json`, `.clodex/implemented.json`, and `.clodex/history.json` files as needed. Items in `planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent fills in execution metadata directly on that implemented item. You can later move verified items from `implemented` into `history`, or send them back to `queued` if they need more work.
+Queued prompts are dispatched with a queue-state update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, and prefer the local `clodex` MCP queue tools for completion metadata updates when they are available. If the MCP server is unavailable, the same instructions fall back to updating the project-local `.clodex/queued.json`, `.clodex/implemented.json`, and `.clodex/history.json` files directly. Items in `planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent records execution metadata on that implemented item before optionally moving it to `history`.
 
 That gives you:
 

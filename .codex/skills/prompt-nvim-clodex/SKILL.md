@@ -14,20 +14,23 @@ When the prompt provides a queue item id and prompt kind before the skill call:
 2. If the prompt kind is `ask`, do not create a commit for this queue item.
 3. If the prompt kind is `freeform`, decide whether a commit is warranted based on the work you actually did. Create a focused git commit only when the result meaningfully changed project files and would be useful to preserve in git history. If the project root is not a git repository, skip the commit step and leave `history_commits` unset.
 4. For any other prompt kind, create a focused git commit before you update the queue item when the project root is git-backed. If the project root is not a git repository, skip the commit step and leave `history_commits` unset.
-5. Resolve the project-local queue files directly from the current repository root under `.clodex/`:
+5. When the `clodex` MCP server is available in the session, use its queue tools instead of ad-hoc JSON editing or one-off Python scripts:
+   - use `queue_complete_current` to record `summary`, `commit`/`commits`, and optional `completion_target`
+   - use `queue_fail_current` if the active item must return to `queued`
+6. If the MCP server is unavailable, fall back to updating the project-local queue files directly from the current repository root under `.clodex/`:
    - `.clodex/planned.json`
    - `.clodex/queued.json`
    - `.clodex/implemented.json`
    - `.clodex/history.json`
-6. Update those queue files only after the implementation work is complete.
-7. If the prompt also says `Completion destination for this prompt: history`, skip the implemented-review stop and move the completed item directly into `.clodex/history.json` after recording its completion metadata.
-8. If the prompt also says `Completion destination for this prompt: agent_decides` and the prompt kind is `freeform`, decide whether the finished result belongs in `.clodex/implemented.json` or `.clodex/history.json`. Use `history` when the prompt is fully resolved by the conversation itself, and `implemented` when it produced an intermediate or reviewable outcome that should remain in the implemented lane first.
-9. Find the queue item with the provided id in `.clodex/queued.json`, `.clodex/implemented.json`, or `.clodex/history.json`.
-10. If it is still in `.clodex/queued.json`, remove it from there and add the same item to the front of `.clodex/implemented.json` without changing its `id`, unless the prompt explicitly requires direct completion to history or you decided to move a `freeform` prompt directly to history.
-11. If it is already in `.clodex/implemented.json`, update it in place.
-12. If it is already in `.clodex/history.json`, update it in place instead of duplicating it.
-13. Set `history_summary`, `history_commits` (array of commit ids) when commits exist, `history_completed_at`, and refresh `updated_at`.
-14. Preserve `execution_instructions` on queued items. Do not show or rewrite that hidden field unless the task explicitly requires it.
+7. Update queue state only after the implementation work is complete.
+8. If the prompt also says `Completion destination for this prompt: history`, skip the implemented-review stop and move the completed item directly into `.clodex/history.json` after recording its completion metadata.
+9. If the prompt also says `Completion destination for this prompt: agent_decides` and the prompt kind is `freeform`, decide whether the finished result belongs in `.clodex/implemented.json` or `.clodex/history.json`. Use `history` when the prompt is fully resolved by the conversation itself, and `implemented` when it produced an intermediate or reviewable outcome that should remain in the implemented lane first.
+10. Find the queue item with the provided id in `.clodex/queued.json`, `.clodex/implemented.json`, or `.clodex/history.json`.
+11. If it is still in `.clodex/queued.json`, remove it from there and add the same item to the front of `.clodex/implemented.json` without changing its `id`, unless the prompt explicitly requires direct completion to history or you decided to move a `freeform` prompt directly to history.
+12. If it is already in `.clodex/implemented.json`, update it in place.
+13. If it is already in `.clodex/history.json`, update it in place instead of duplicating it.
+14. Set `history_summary`, `history_commits` (array of commit ids) when commits exist, `history_completed_at`, and refresh `updated_at`.
+15. Preserve `execution_instructions` on queued items. Do not show or rewrite that hidden field unless the task explicitly requires it.
 15. After updating the current item, inspect `.clodex/queued.json`. If another queued item remains, continue immediately with the next queued item and repeat this workflow.
 16. Each next queued item already includes the same hidden execution instructions, so rely on the current prompt's instructions again instead of trying to remember the whole loop from earlier in the session.
 17. Repeat until `.clodex/queued.json` is empty. Do not start prompts that are only in `.clodex/planned.json` or `.clodex/implemented.json`.

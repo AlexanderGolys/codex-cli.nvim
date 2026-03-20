@@ -36,6 +36,8 @@ describe("clodex.workspace.execution", function()
 
         assert.matches("prompt kind is `ask`, do not create a commit", content)
         assert.matches("create a focused git commit", content)
+        assert.matches("use its queue tools instead of ad%-hoc JSON editing", content)
+        assert.matches("queue_complete_current", content)
         assert.matches("%.clodex/implemented%.json", content)
         assert.matches("%$prompt%-nvim%-clodex", content)
 
@@ -98,6 +100,7 @@ describe("clodex.workspace.execution", function()
         assert.matches("Current queue item id: `todo%-1`", todo_prompt)
         assert.matches("Current prompt kind: `todo`", todo_prompt)
         assert.matches("Commit policy for this prompt: `required`", todo_prompt)
+        assert.matches("%$prompt%-nvim%-clodex", todo_prompt)
 
         assert.matches("Completion destination for this prompt: `history`", bug_prompt)
         assert.matches("Current prompt kind: `freeform`", freeform_prompt)
