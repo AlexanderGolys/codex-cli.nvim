@@ -457,6 +457,7 @@ require("clodex").setup({
 
 - Defaults to `true`.
 - Clodex automatically writes persistent plugin-managed MCP config under its runtime directory and launches both Codex and OpenCode against that shared config.
+- The bundled `clodex-mcp` helper now speaks both header-framed stdio MCP and newline-delimited stdio MCP so OpenCode can attach cleanly without the startup timeout shown in its MCP status panel.
 - If a running session still uses an older backend or MCP environment, Clodex restarts that session on the next access so the generated MCP config is actually applied.
 - This avoids manual user config edits while keeping MCP setup stable across reopened TUIs.
 - Set this to `false` only to opt out explicitly.
