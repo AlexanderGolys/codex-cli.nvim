@@ -413,11 +413,11 @@ function Session:update_buffer_state(opts)
     -- Keep Neovim's terminal title metadata aligned with the Clodex session identity.
     -- Snacks and user statusline/winbar setups may read `b:term_title` for inactive terminals.
     vim.b[self.buf].term_title = self.title
-    vim.keymap.set("n", "<localleader>h", "<Cmd>ClodexTerminalHeaderToggle<CR>", {
+    vim.keymap.set("n", "<localleader>h", "<Cmd>Clodex header<CR>", {
         buffer = self.buf,
         silent = true,
     })
-    vim.keymap.set("t", "<localleader>h", "<C-\\><C-n><Cmd>ClodexTerminalHeaderToggle<CR>i", {
+    vim.keymap.set("t", "<localleader>h", "<C-\\><C-n><Cmd>Clodex header<CR>i", {
         buffer = self.buf,
         silent = true,
     })

@@ -138,7 +138,7 @@ That gives you:
 
 ## Main Features
 
-- Toggle a Clodex terminal with `:ClodexToggle`.
+- Toggle a Clodex terminal with `:Clodex cli`.
 - Keep one persistent session per project root.
 - Keep one free non-project session outside registered projects.
 - Track active projects per tabpage.
@@ -360,7 +360,7 @@ require("clodex").setup({
 
 - Defaults to `false`.
 - Clodex does not add or suggest projects automatically during normal terminal toggles.
-- Projects should only be registered through explicit user actions such as `:ClodexProjectAdd`.
+- Projects should only be registered through explicit user actions such as `:ClodexProject add`.
 
 `storage.workspaces_dir`
 
@@ -395,38 +395,35 @@ require("clodex").setup({
 
 Core commands:
 
-- `:ClodexToggle`
-- `:ClodexStateToggle`
-- `:ClodexProjectAdd`
-- `:ClodexProjectReadme`
-- `:ClodexProjectDictionary`
-- `:ClodexTerminalHeaderToggle`
-- `:ClodexQueueWorkspace`
-- `:ClodexDebugReload`
+- `:Clodex` or `:Clodex panel`
+- `:Clodex cli`
+- `:Clodex history`
+- `:Clodex backend`
+- `:Clodex header`
+- `:ClodexDebug panel`
+- `:ClodexDebug mini`
+- `:ClodexDebug reload`
+- `:ClodexProject add [name]?`
+- `:ClodexProject readme`
+- `:ClodexProject dictionary`
+- `:ClodexProject cheatsheet`
+- `:ClodexProject cheatsheet-panel`
+- `:ClodexProject cheatsheet-add`
+- `:ClodexProject notes`
+- `:ClodexProject note-add`
+- `:ClodexProject bookmarks`
+- `:ClodexProject bookmark-add`
 
 Queue and prompt commands:
 
-- `:ClodexTodoAdd`
-- `:ClodexErrorAdd`
-- `:ClodexErrorAddFor`
-- `:ClodexImplement`
-- `:ClodexTodoImplementAll`
-- `:ClodexPromptAdd`
-- `:ClodexPromptAddFor`
-- `:ClodexPromptTodo`
-- `:ClodexPromptError`
-- `:ClodexPromptVisual`
-- `:ClodexPromptAdjustment`
-- `:ClodexPromptRefactor`
-- `:ClodexPromptIdea`
-- `:ClodexPromptAsk`
-- `:ClodexPromptTodoFor`
-- `:ClodexPromptErrorFor`
-- `:ClodexPromptVisualFor`
-- `:ClodexPromptAdjustmentFor`
-- `:ClodexPromptRefactorFor`
-- `:ClodexPromptIdeaFor`
-- `:ClodexPromptAskFor`
+- `:ClodexTodo [add]? [for]? [project]?`
+- `:ClodexTodo bug [for]? [project]?`
+- `:ClodexTodo implement [for]? [project]?`
+- `:ClodexTodo all [for]? [project]?`
+- `:ClodexPrompt [kind]? [for]? [project]?`
+- `:ClodexPrompt refactor`
+- `:ClodexPrompt bug for`
+- `:ClodexPrompt ask demo-project`
 
 
 ## Queue Workspace
@@ -706,9 +703,9 @@ Testing guidelines:
 
 Manual validation:
 
-1. Register a project and open `:ClodexQueueWorkspace`.
+1. Register a project and open `:Clodex`.
 2. Add prompts and move one into `queued`.
-3. Dispatch it with `:ClodexImplement`.
+3. Dispatch it with `:ClodexTodo implement`.
 4. Confirm the prompt is sent to the project session.
 5. Confirm Codex creates a focused commit, updates the implemented item metadata in the `.clodex` queue files, and shows the commit in the main panel preview.
 

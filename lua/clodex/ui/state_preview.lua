@@ -282,7 +282,7 @@ end
 ---@param command Clodex.CommandSpec
 ---@return string
 local function command_text(command)
-  return ("%s%s"):format(command.name, command_hint(command))
+  return ("%s%s"):format(command.invoke or command.name, command_hint(command))
 end
 
 ---@param self Clodex.StatePreview
@@ -798,14 +798,14 @@ function Preview:execute_selected_command()
     return
   end
 
-  if command.name == "ClodexStateToggle" then
+  if command.keep_open then
     self:hide()
     return
   end
 
   self:hide()
   vim.schedule(function()
-    vim.cmd(command.name)
+    vim.cmd(command.invoke or command.name)
   end)
 end
 

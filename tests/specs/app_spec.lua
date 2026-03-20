@@ -150,7 +150,7 @@ describe("clodex.app", function()
             },
         })
 
-        assert.is_true(vim.tbl_contains(command_names, "ClodexBackendToggle"))
+        assert.is_true(vim.tbl_contains(command_names, "Clodex backend"))
         assert.is_true(vim.tbl_contains(vim.tbl_map(function(item)
             return item.lhs
         end, keymaps), "<leader>pb"))
