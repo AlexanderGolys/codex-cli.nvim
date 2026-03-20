@@ -21,6 +21,21 @@ local function ensure_project(value)
     notify.warn("No active project selected")
 end
 
+---@param path string
+---@return boolean
+local function edit_if_safe(path)
+    local current_buf = vim.api.nvim_get_current_buf()
+    local current_path = vim.api.nvim_buf_get_name(current_buf)
+    local same_path = current_path ~= "" and fs.normalize(current_path) == fs.normalize(path)
+    if vim.bo[current_buf].modified and not same_path then
+        notify.warn("Current buffer has unsaved changes; keeping it open instead of replacing it.")
+        return false
+    end
+
+    vim.cmd.edit(vim.fn.fnameescape(path))
+    return true
+end
+
 ---@param self Clodex.AppProjectActions
 ---@param project Clodex.Project?
 ---@param path string
@@ -36,7 +51,7 @@ local function open_project_file(self, project, path, default_lines)
     end
 
     self:activate_project(project.root)
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    edit_if_safe(path)
     self.app.project_details_store:touch_activity(project)
     self.app:refresh_views()
 end
@@ -234,7 +249,7 @@ function ProjectActions:open_project_workspace_target(project)
 
     local readme = fs.find_readme(project.root)
     if readme then
-        vim.cmd.edit(vim.fn.fnameescape(readme))
+        edit_if_safe(readme)
     end
 
     local state = self.app:current_tab()

@@ -63,6 +63,8 @@ The plugin uses those records to:
 
 If the current buffer lives inside a known project, that project is preferred automatically. Tabs can also pin an active project explicitly, so different tabs can stay focused on different repositories.
 
+When opening a project README or workspace target, Clodex keeps the current buffer in place if it has unsaved changes instead of forcing an `:edit` that would fail with `E37`.
+
 ### Queue-driven prompt workflow
 
 Each project keeps four queue files on disk under `.clodex/`:
