@@ -53,6 +53,7 @@ describe("clodex.config", function()
             })
 
             assert.are.equal(false, values.terminal.start_insert)
+            assert.are.equal("snacks", values.terminal.provider)
             assert.are.equal("right", values.terminal.win.position)
             assert.are.equal(true, values.project_detection.auto_suggest_git_root)
             assert.are.equal("codex", values.backend)
@@ -77,6 +78,25 @@ describe("clodex.config", function()
             assert.are.equal("opencode", values.backend)
             assert.are.same({ "opencode" }, values.opencode_cmd)
             assert.are.equal(vim.fn.expand("~/.config/opencode/skills"), values.prompt_execution.skills_dir)
+        end)
+
+
+        it("normalizes the terminal provider and allows the native terminal option", function()
+            local cfg = Config.new()
+
+            local term_values = cfg:setup({
+                terminal = {
+                    provider = "term",
+                },
+            })
+            local default_values = cfg:setup({
+                terminal = {
+                    provider = "invalid",
+                },
+            })
+
+            assert.are.equal("term", term_values.terminal.provider)
+            assert.are.equal("snacks", default_values.terminal.provider)
         end)
 
         it("darkens adjusted highlight colors relative to their source background", function()

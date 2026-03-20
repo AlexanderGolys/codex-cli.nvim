@@ -11,6 +11,7 @@ local fs = require("clodex.util.fs")
 
 --- Terminal UI/runtime options for interactive backend subprocess windows.
 ---@class Clodex.Config.Terminal
+---@field provider "snacks"|"term"
 ---@field win snacks.win.Config|{}
 ---@field start_insert boolean
 ---@field prefer_native_statusline boolean
@@ -132,6 +133,7 @@ local function defaults()
             history_file = fs.join(storage_root, "history.md"),
         },
         terminal = {
+            provider = "snacks",
             win = {
                 position = "right",
                 width = 0.4,
@@ -227,10 +229,20 @@ local function option_provided(values, opts, ...)
     return true
 end
 
+---@param provider string?
+---@return "snacks"|"term"
+local function normalize_terminal_provider(provider)
+    if provider == "term" then
+        return "term"
+    end
+    return "snacks"
+end
+
 ---@param values Clodex.Config.Values
 ---@param opts table
 local function apply_backend_defaults(values, opts)
     values.backend = Backend.normalize(values.backend)
+    values.terminal.provider = normalize_terminal_provider(values.terminal.provider)
 
     if not option_provided(values, opts, "prompt_execution", "skills_dir") then
         values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)

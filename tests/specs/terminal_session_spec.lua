@@ -169,6 +169,43 @@ describe("clodex.terminal.session", function()
         vim.fn.jobwait = original_jobwait
     end)
 
+
+    it("can start sessions with the native Neovim terminal provider", function()
+        local root = vim.fn.tempname()
+        vim.fn.mkdir(root, "p")
+
+        local termopen_calls = {}
+        local original_termopen = vim.fn.termopen
+        vim.fn.termopen = function(cmd, opts)
+            termopen_calls[#termopen_calls + 1] = {
+                cmd = vim.deepcopy(cmd),
+                opts = vim.deepcopy(opts),
+            }
+            return 456
+        end
+
+        local session = Session.new({
+            key = root,
+            kind = "project",
+            cwd = root,
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+            env = { DEMO = "1" },
+            terminal_provider = "term",
+        })
+
+        assert.is_true(session:ensure_started())
+        assert.are.equal(456, session.job_id)
+        assert.are.equal("clodex_terminal", vim.bo[session.buf].filetype)
+        assert.are.same({ "codex" }, termopen_calls[1].cmd)
+        assert.are.equal(root, termopen_calls[1].opts.cwd)
+        assert.are.same({ DEMO = "1" }, termopen_calls[1].opts.env)
+
+        vim.fn.termopen = original_termopen
+        session:destroy()
+        vim.fn.delete(root, "rf")
+    end)
+
     it("maps terminal statusline highlights onto terminal windows", function()
         local buf = vim.api.nvim_create_buf(false, true)
         vim.bo[buf].filetype = "clodex_terminal"

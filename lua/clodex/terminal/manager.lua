@@ -39,6 +39,7 @@ local function session_requires_restart(session, spec)
   return session:is_running() and (
     not vim.deep_equal(session.cmd, spec.cmd)
     or not vim.deep_equal(session.env or {}, spec.env or {})
+    or session.terminal_provider ~= spec.terminal_provider
   )
 end
 
@@ -141,6 +142,7 @@ function Manager:session_spec(target)
       title = string.format("Clodex: %s", target.project.name),
       cmd = cmd,
       env = Backend.cli_env(self.config, target),
+      terminal_provider = self.config.terminal.provider,
       project_root = target.project.root,
       header_enabled = false,
     }
@@ -153,6 +155,7 @@ function Manager:session_spec(target)
     title = string.format("Clodex: %s", target.cwd),
     cmd = Backend.cli_cmd(self.config),
     env = Backend.cli_env(self.config, target),
+    terminal_provider = self.config.terminal.provider,
     header_enabled = true,
   }
 end

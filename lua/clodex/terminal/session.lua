@@ -10,6 +10,8 @@ local notify = require("clodex.util.notify")
 ---@field cwd string
 ---@field title string
 ---@field cmd string[]
+---@field env? table<string, string>
+---@field terminal_provider? "snacks"|"term"
 ---@field project_root? string
 ---@field header_enabled? boolean
 
@@ -21,6 +23,8 @@ local notify = require("clodex.util.notify")
 ---@field cwd string
 ---@field title string
 ---@field cmd string[]
+---@field env? table<string, string>
+---@field terminal_provider "snacks"|"term"
 ---@field project_root? string
 ---@field header_enabled boolean
 ---@field buf? number
@@ -51,13 +55,23 @@ local Snacks = {
     terminal = require("snacks.terminal"),
 }
 
+---@param provider string?
+---@return "snacks"|"term"
+local function normalize_terminal_provider(provider)
+    if provider == "term" then
+        return "term"
+    end
+    return "snacks"
+end
+
 ---@param cmd string[]
----@param opts { cwd?: string }
+---@param opts { cwd?: string, env?: table<string, string> }
 ---@param buf number
 ---@return snacks.win
 local function start_with_snacks(cmd, opts, buf)
     local terminal = Snacks.terminal.open(cmd, {
         cwd = opts.cwd,
+        env = opts.env,
         interactive = true,
         win = {
             buf = buf,
@@ -71,6 +85,24 @@ local function start_with_snacks(cmd, opts, buf)
         terminal:hide()
     end
     return terminal
+end
+
+---@param cmd string[]
+---@param opts { cwd?: string, env?: table<string, string> }
+---@param buf number
+---@return boolean, integer?
+local function start_with_term(cmd, opts, buf)
+    local job_id
+    local ok = pcall(vim.api.nvim_buf_call, buf, function()
+        job_id = vim.fn.termopen(cmd, {
+            cwd = opts.cwd,
+            env = opts.env,
+        })
+    end)
+    if not ok or type(job_id) ~= "number" or job_id <= 0 then
+        return false, nil
+    end
+    return true, job_id
 end
 
 ---@param buf integer
@@ -112,6 +144,7 @@ function Session.new(spec)
     if spec.header_enabled == nil then
         spec.header_enabled = spec.kind == "free"
     end
+    spec.terminal_provider = normalize_terminal_provider(spec.terminal_provider)
     spec.suppress_exit_warning = false
     spec.archived_line_count = 0
     spec.awaiting_response = false
@@ -453,11 +486,22 @@ function Session:ensure_started()
     self.archived_line_count = 0
     self:update_buffer_state({ sync_header = false })
 
-    local ok, terminal = pcall(start_with_snacks, self.cmd, {
-        cwd = self.cwd,
-    }, self.buf)
-    local job_id = ok and self.buf and terminal_job_id(self.buf) or nil
-    if not ok or not terminal or type(job_id) ~= "number" or job_id <= 0 then
+    local job_id
+    local started
+    if self.terminal_provider == "term" then
+        started, job_id = start_with_term(self.cmd, {
+            cwd = self.cwd,
+            env = self.env,
+        }, self.buf)
+    else
+        local ok, terminal = pcall(start_with_snacks, self.cmd, {
+            cwd = self.cwd,
+            env = self.env,
+        }, self.buf)
+        job_id = ok and self.buf and terminal_job_id(self.buf) or nil
+        started = ok and terminal ~= nil and type(job_id) == "number" and job_id > 0
+    end
+    if not started or type(job_id) ~= "number" or job_id <= 0 then
         self.job_id = nil
         if self:buf_valid() then
             pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
@@ -563,6 +607,8 @@ function Session:update_identity(spec)
     self.cwd = spec.cwd
     self.title = spec.title
     self.cmd = vim.deepcopy(spec.cmd)
+    self.env = spec.env and vim.deepcopy(spec.env) or nil
+    self.terminal_provider = normalize_terminal_provider(spec.terminal_provider)
     self.project_root = spec.project_root
     if spec.header_enabled ~= nil then
         self.header_enabled = spec.header_enabled

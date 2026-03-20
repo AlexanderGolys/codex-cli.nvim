@@ -196,6 +196,7 @@ Example with `lazy.nvim` using the plugin defaults explicitly:
       history_file = vim.fn.stdpath("data") .. "/clodex/history.md",
     },
     terminal = {
+      provider = "snacks",
       win = {
         position = "right",
         width = 0.4,
@@ -271,6 +272,7 @@ require("clodex").setup({
     session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
   },
   terminal = {
+    provider = "snacks",
     win = {
       position = "right",
       width = 0.35,
@@ -357,6 +359,13 @@ require("clodex").setup({
 
 - Command used to start OpenCode terminals when `backend = "opencode"`.
 - Default is `opencode`.
+
+`terminal.provider`
+
+- Chooses how Clodex starts the interactive terminal job.
+- Supported values are `snacks` and `term`.
+- `snacks` uses `snacks.terminal`; `term` uses Neovim's built-in terminal via `termopen()` while keeping the same Clodex session/window workflow.
+- Default is `snacks`.
 
 `storage.projects_file`
 
