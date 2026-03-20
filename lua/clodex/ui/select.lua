@@ -38,6 +38,29 @@ local PROMPT_EDITOR_HINT_KEYS = {
 local active_input
 local prompt_context_completion = {} ---@type table<integer, Clodex.PromptContext.Capture?>
 
+---@param picker? table
+local function focus_picker_list(picker)
+  if not picker or picker.closed then
+    return
+  end
+
+  local picker_opts = picker.opts or {}
+  if picker_opts.focus == false or picker_opts.enter == false then
+    return
+  end
+
+  if picker.focus then
+    picker:focus(picker_opts.focus or "list", {
+      show = true,
+    })
+  end
+
+  local list_win = picker.list and picker.list.win or nil
+  if list_win and vim.api.nvim_win_is_valid(list_win) then
+    vim.api.nvim_set_current_win(list_win)
+  end
+end
+
 ---@class Clodex.UiSelect.MultilineAction
 ---@field value string
 ---@field label string
@@ -177,6 +200,11 @@ function M.select(items, opts, on_choice)
     main = {
       enter = true,
     },
+    win = {
+      list = {
+        enter = true,
+      },
+    },
     layout = {
       layout = {
         zindex = MODAL_ZINDEX,
@@ -186,15 +214,10 @@ function M.select(items, opts, on_choice)
   local picker = SnacksSelect.select(items, opts, on_choice)
 
   vim.schedule(function()
-    if not picker or picker.closed or not picker.focus then
-      return
-    end
-    if picker.opts and (picker.opts.focus == false or picker.opts.enter == false) then
-      return
-    end
-    picker:focus((picker.opts and picker.opts.focus) or "list", {
-      show = true,
-    })
+    focus_picker_list(picker)
+    vim.defer_fn(function()
+      focus_picker_list(picker)
+    end, 20)
   end)
 
   return picker

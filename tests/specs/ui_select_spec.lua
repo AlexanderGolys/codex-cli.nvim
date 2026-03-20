@@ -218,6 +218,7 @@ describe("clodex.ui.select", function()
         assert.is_false(picker_select_opts[1].snacks.preview)
         assert.are.same({ "input", "preview" }, picker_select_opts[1].snacks.layout.hidden)
         assert.are.equal(100, picker_select_opts[1].snacks.layout.layout.zindex)
+        assert.is_true(picker_select_opts[1].snacks.win.list.enter)
     end)
 
     it("uses built-in completion items for prompt context insertion", function()

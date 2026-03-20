@@ -462,6 +462,8 @@ Supported workspace actions include:
 - copy or move prompts between projects
 - delete prompts or whole projects
 
+Confirmation pickers from the workspace open as focused modal overlays above the main panels, so destructive actions stay keyboard-accessible instead of leaving focus behind on the workspace panes.
+
 ## How Prompt Execution Works
 
 When a queued item is dispatched:
