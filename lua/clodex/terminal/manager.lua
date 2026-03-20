@@ -32,7 +32,14 @@ Manager.__index = Manager
 ---@param spec Clodex.TerminalSession.Spec
 ---@return boolean
 local function session_requires_restart(session, spec)
-  return session:is_running() and not vim.deep_equal(session.cmd, spec.cmd)
+  if not session then
+    return false
+  end
+
+  return session:is_running() and (
+    not vim.deep_equal(session.cmd, spec.cmd)
+    or not vim.deep_equal(session.env or {}, spec.env or {})
+  )
 end
 
 ---@param tabpage number
@@ -133,6 +140,7 @@ function Manager:session_spec(target)
       cwd = target.project.root,
       title = string.format("Clodex: %s", target.project.name),
       cmd = cmd,
+      env = Backend.cli_env(self.config, target),
       project_root = target.project.root,
       header_enabled = false,
     }
@@ -144,6 +152,7 @@ function Manager:session_spec(target)
     cwd = target.cwd,
     title = string.format("Clodex: %s", target.cwd),
     cmd = Backend.cli_cmd(self.config),
+    env = Backend.cli_env(self.config, target),
     header_enabled = true,
   }
 end
@@ -304,6 +313,7 @@ end
 ---@param target Clodex.TerminalTarget
 ---@return Clodex.TerminalSession?, string?
 function Manager:get_session(target)
+  local spec = self:session_spec(target)
   if target.kind == "project" then
     local promoted = self:promote_free_session(target.project)
     if promoted then
@@ -314,8 +324,17 @@ function Manager:get_session(target)
     end
 
     local project_root = fs.normalize(target.project.root)
-    self.project_sessions[project_root] = self.project_sessions[project_root]
-      or Session.new(self:session_spec(target))
+    local session = self.project_sessions[project_root]
+    if session_requires_restart(session, spec) then
+      session:destroy()
+      session = nil
+    end
+    if session then
+      session:update_identity(spec)
+    else
+      session = Session.new(spec)
+    end
+    self.project_sessions[project_root] = session
     if not self.project_sessions[project_root]:ensure_started() then
       return nil
     end
@@ -329,7 +348,16 @@ function Manager:get_session(target)
     self.free_session = nil
   end
 
-  self.free_session = self.free_session or Session.new(self:session_spec(target))
+  if session_requires_restart(self.free_session, spec) then
+    self.free_session:destroy()
+    self.free_session = nil
+  end
+
+  if self.free_session then
+    self.free_session:update_identity(spec)
+  else
+    self.free_session = Session.new(spec)
+  end
   if not self.free_session:ensure_started() then
     return nil, replaced_key
   end
