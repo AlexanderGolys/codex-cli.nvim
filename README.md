@@ -322,6 +322,11 @@ require("clodex").setup({
 `keymaps`
 
 - Defaults now accept legacy string values (`"<leader>pt"`) or table-based setters:
+  - `toggle`: runs `:Clodex cli`
+  - `queue_workspace`: runs `:Clodex`
+  - `state_preview`: runs `:ClodexDebug panel`
+  - `mini_state_preview`: runs `:ClodexDebug mini`
+  - `backend_toggle`: runs `:Clodex backend`
   - `lhs` (string): key sequence.
   - `enabled` (boolean): set to `false` to disable.
   - `mode` (string|string[]): keymap mode(s).
