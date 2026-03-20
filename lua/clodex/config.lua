@@ -10,11 +10,17 @@ local fs = require("clodex.util.fs")
 ---@field history_file string
 
 --- Terminal UI/runtime options for interactive backend subprocess windows.
+---@class Clodex.Config.BlockedInput
+---@field enabled boolean
+---@field poll_ms integer
+---@field win snacks.win.Config|{}
+
 ---@class Clodex.Config.Terminal
 ---@field provider "snacks"|"term"
 ---@field win snacks.win.Config|{}
 ---@field start_insert boolean
 ---@field prefer_native_statusline boolean
+---@field blocked_input Clodex.Config.BlockedInput
 
 --- Project autodetection behavior configured by the active buffer resolver.
 ---@class Clodex.Config.ProjectDetection
@@ -52,16 +58,17 @@ local fs = require("clodex.util.fs")
 ---@class Clodex.Config.PromptExecution
 ---@field receipts_dir string # Backward-compatible base directory for project-local execution artifacts.
 ---@field poll_ms integer
----@field skills_dir? string # Backend-specific skill root; codex uses a global dir, opencode uses a project-local dir.
+---@field skills_dir? string # Project-local skill root relative to the project root unless absolute.
 ---@field skill_name string
 
 --- Session integration toggles for tab-scoped Clodex state.
 ---@class Clodex.Config.Session
 ---@field persist_current_project boolean
+---@field free_root string # Root/cwd used by the single shared free terminal target.
 
 --- Minimal MCP companion settings used to discover and launch the local helper.
 ---@class Clodex.Config.Mcp
----@field enabled boolean
+---@field enabled boolean # Default-on when the helper binary exists; set false to opt out explicitly.
 ---@field cmd string[]
 ---@field runtime_dir string
 
@@ -140,6 +147,16 @@ local function defaults()
             },
             start_insert = true,
             prefer_native_statusline = true,
+            blocked_input = {
+                enabled = true,
+                poll_ms = 1000,
+                win = {
+                    position = "float",
+                    width = 0.72,
+                    height = 0.8,
+                    border = "rounded",
+                },
+            },
         },
         project_detection = {
             auto_suggest_git_root = false,
@@ -177,16 +194,17 @@ local function defaults()
         prompt_execution = {
             receipts_dir = fs.join(".clodex", "prompt-executions"),
             poll_ms = 5000,
-            skills_dir = Backend.default_skills_dir("codex"),
+            skills_dir = fs.join(".clodex", "skills"),
             skill_name = "prompt-nvim-clodex",
         },
         session = {
             persist_current_project = true,
+            free_root = vim.fn.expand("~"),
         },
         mcp = {
-            enabled = false,
+            enabled = true,
             cmd = {},
-            runtime_dir = fs.join(".clodex", "mcp"),
+            runtime_dir = fs.join(storage_root, "mcp"),
         },
         keymaps = {
             toggle = {
@@ -243,10 +261,6 @@ end
 local function apply_backend_defaults(values, opts)
     values.backend = Backend.normalize(values.backend)
     values.terminal.provider = normalize_terminal_provider(values.terminal.provider)
-
-    if not option_provided(values, opts, "prompt_execution", "skills_dir") then
-        values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
-    end
 end
 
 --- Checks whether a value is a keyed table compatible with config overwrite paths.
@@ -316,7 +330,6 @@ local function adjusted_color(value, adjust)
         + adjust_channel(blue, adjust)
 end
 
-
 --- Resolves a highlight source into a concrete color based on fallback attributes.
 ---@param value Clodex.Config.HighlightColor?
 ---@param attr "fg"|"bg"|"sp"
@@ -338,7 +351,6 @@ local function resolve_color(value, attr)
         end
     end
 end
-
 
 --- Normalizes one configured highlight description into `vim.api.nvim_set_hl` shape.
 ---@param spec Clodex.Config.HighlightSpec

@@ -21,6 +21,7 @@ local Execution = require("clodex.workspace.execution")
 local Queue = require("clodex.workspace.queue")
 local TerminalUi = require("clodex.terminal.ui")
 local TerminalLualine = require("clodex.terminal.lualine")
+local Mcp = require("clodex.mcp")
 local fs = require("clodex.util.fs")
 local notify = require("clodex.util.notify")
 
@@ -47,6 +48,9 @@ local notify = require("clodex.util.notify")
 ---@field session_persistence Clodex.SessionPersistence
 ---@field group? integer
 ---@field execution_timer? uv.uv_timer_t
+---@field blocked_input_timer? uv.uv_timer_t
+---@field blocked_input_window? snacks.win
+---@field blocked_input_session_key? string
 ---@field current_tab fun(self: Clodex.App): Clodex.TabState
 ---@field resolve_target fun(self: Clodex.App, state: Clodex.TabState): Clodex.TerminalTarget
 
@@ -248,6 +252,63 @@ local function add_runtime_project(runtime_projects, runtime_sources, root, proj
     end
 end
 
+---@param values Clodex.Config.Values
+---@return string
+local function free_root(values)
+    local root = vim.trim(values.session and values.session.free_root or "")
+    if root == "" then
+        root = vim.fn.expand("~")
+    end
+    return fs.normalize(vim.fn.expand(root))
+end
+
+---@param current_state Clodex.TabState
+---@param session Clodex.TerminalSession
+---@return integer
+local function waiting_session_rank(current_state, session)
+    local rank = 0
+    local waiting_state = session:waiting_state()
+    if waiting_state == "permission" then
+        rank = rank + 4
+    elseif waiting_state == "question" then
+        rank = rank + 2
+    end
+    if current_state.active_project_root and session.project_root == current_state.active_project_root then
+        rank = rank + 8
+    end
+    if session.active_queue_item_id then
+        rank = rank + 1
+    end
+    if session.kind == "project" then
+        rank = rank + 1
+    end
+    return rank
+end
+
+---@param app Clodex.App
+---@param current_state Clodex.TabState
+---@return Clodex.TerminalSession?
+local function blocked_input_session(app, current_state)
+    local current_session_key = current_state.session_key
+    local candidates = {} ---@type Clodex.TerminalSession[]
+    for _, session in ipairs(app.terminals:sessions()) do
+        if session:is_running() and session:waiting_state() and session.key ~= current_session_key then
+            candidates[#candidates + 1] = session
+        end
+    end
+
+    table.sort(candidates, function(left, right)
+        local left_rank = waiting_session_rank(current_state, left)
+        local right_rank = waiting_session_rank(current_state, right)
+        if left_rank ~= right_rank then
+            return left_rank > right_rank
+        end
+        return left.title:lower() < right.title:lower()
+    end)
+
+    return candidates[1]
+end
+
 ---@return Clodex.App
 --- Returns the singleton application object, creating it lazily on first access.
 --- This guarantees shared state across modules and prevents duplicate terminal managers.
@@ -297,12 +358,14 @@ function App:setup(opts)
     self.mini_state_preview:update_config(values)
     self.project_details_store:update_config(values)
     self.execution:update_config(values)
-    if self.execution:uses_prompt_skill() then
+    if values.mcp.enabled ~= false and not Mcp.is_available(values) then
+        notify.warn("clodex-mcp binary is unavailable; rebuild the plugin or set `mcp.cmd` explicitly")
+    elseif Mcp.is_enabled(values) then
         local ok, err = pcall(function()
-            self.execution:sync_prompt_skill()
+            Mcp.sync_runtime(values)
         end)
         if not ok then
-            notify.warn(("Could not sync global prompt skill: %s"):format(err))
+            notify.warn(("Could not sync clodex MCP runtime config: %s"):format(err))
         end
     end
     self.exec_runner:update_config(values)
@@ -311,6 +374,7 @@ function App:setup(opts)
     Commands.register_keymaps(values)
     self:setup_autocmds()
     self:setup_execution_timer()
+    self:setup_blocked_input_timer()
     self:refresh_state_preview()
 end
 
@@ -343,14 +407,12 @@ function App:setup_autocmds()
 
     vim.api.nvim_create_autocmd({ "BufEnter", "DirChanged", "FocusGained", "TabEnter" }, {
         group = self.group,
-        --- Refreshes preview state and prompts project detection for the current buffer.
-        --- Helps users who navigate tabs or directories get immediate context updates.
+        --- Refreshes preview state for the current buffer and reconnects tracked terminals.
         callback = function(args)
             local buf = args.buf or vim.api.nvim_get_current_buf()
             self:refresh_changed_project_buffer(buf)
             self:refresh_bookmarks_for_buffer(buf)
             self:refresh_views()
-            self:maybe_prompt_active_project(buf)
             reconnect_terminal_on_enter(self.config:get(), buf)
         end,
     })
@@ -563,6 +625,41 @@ function App:setup_execution_timer()
     )
 end
 
+--- Starts or restarts the blocked-input watcher timer.
+--- This keeps hidden sessions from sitting unanswered when the CLI asks for input.
+function App:setup_blocked_input_timer()
+    local blocked_input = self.config:get().terminal.blocked_input
+    local poll_ms = type(blocked_input) == "table" and blocked_input.poll_ms or 0
+    if not blocked_input or blocked_input == false or blocked_input.enabled == false or poll_ms <= 0 then
+        if self.blocked_input_timer then
+            self.blocked_input_timer:stop()
+        end
+        self:close_blocked_input_window()
+        return
+    end
+
+    if self.blocked_input_timer then
+        self.blocked_input_timer:stop()
+        self.blocked_input_timer:start(
+            poll_ms,
+            poll_ms,
+            vim.schedule_wrap(function()
+                self:sync_blocked_input_window()
+            end)
+        )
+        return
+    end
+
+    self.blocked_input_timer = vim.uv.new_timer()
+    self.blocked_input_timer:start(
+        poll_ms,
+        poll_ms,
+        vim.schedule_wrap(function()
+            self:sync_blocked_input_window()
+        end)
+    )
+end
+
 ---@param session_file string
 function App:save_session_state(session_file)
     if not self.config:get().session.persist_current_project then
@@ -625,7 +722,7 @@ end
 ---@param state Clodex.TabState
 ---@return Clodex.TerminalTarget
 --- Resolves active target by first honoring pinned tab root and then current path.
---- This is the core decision point for free-mode versus project-mode terminal routing.
+--- Tabs without an active project always resolve to the single configured free target.
 function App:resolve_target(state)
     return self:resolve_target_from_path(state, fs.current_path(), true)
 end
@@ -649,20 +746,9 @@ function App:resolve_target_from_path(state, path, mutate)
         end
     end
 
-    local project = self.registry:find_for_path(path)
-    if project then
-        if mutate and state.active_project_root ~= project.root then
-            state:set_active_project(project.root)
-        end
-        return {
-            kind = "project",
-            project = project,
-        }
-    end
-
     return {
         kind = "free",
-        cwd = fs.cwd_for_path(path),
+        cwd = free_root(self.config:get()),
     }
 end
 
@@ -686,28 +772,59 @@ function App:state_snapshot()
     local resolved_target = self:resolve_target_from_path(state, path, false)
     local runtime_projects_by_root = {} ---@type table<string, Clodex.Project>
     local runtime_sources_by_root = {} ---@type table<string, string[]>
-    add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, active_project and active_project.root or nil, active_project, "active")
-    add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, detected_project and detected_project.root or nil, detected_project, "detected")
+    add_runtime_project(
+        runtime_projects_by_root,
+        runtime_sources_by_root,
+        active_project and active_project.root or nil,
+        active_project,
+        "active"
+    )
+    add_runtime_project(
+        runtime_projects_by_root,
+        runtime_sources_by_root,
+        detected_project and detected_project.root or nil,
+        detected_project,
+        "detected"
+    )
     if resolved_target.kind == "project" then
-        add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, resolved_target.project.root, resolved_target.project, "target")
+        add_runtime_project(
+            runtime_projects_by_root,
+            runtime_sources_by_root,
+            resolved_target.project.root,
+            resolved_target.project,
+            "target"
+        )
     end
     for _, session in ipairs(sessions) do
         if session.project_root then
-            add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, session.project_root, self.registry:get(session.project_root), "session")
+            add_runtime_project(
+                runtime_projects_by_root,
+                runtime_sources_by_root,
+                session.project_root,
+                self.registry:get(session.project_root),
+                "session"
+            )
         end
     end
     for _, tab in ipairs(tabs) do
         if tab.active_project_root then
-            add_runtime_project(runtime_projects_by_root, runtime_sources_by_root, tab.active_project_root, self.registry:get(tab.active_project_root), "tab")
+            add_runtime_project(
+                runtime_projects_by_root,
+                runtime_sources_by_root,
+                tab.active_project_root,
+                self.registry:get(tab.active_project_root),
+                "tab"
+            )
         end
     end
 
     local runtime_projects = {} ---@type Clodex.Project[]
     for root, project in pairs(runtime_projects_by_root) do
-        runtime_projects[#runtime_projects + 1] = project or {
-            name = self.registry:suggest_name(root),
-            root = root,
-        }
+        runtime_projects[#runtime_projects + 1] = project
+            or {
+                name = self.registry:suggest_name(root),
+                root = root,
+            }
     end
     table.sort(runtime_projects, function(left, right)
         return left.name:lower() < right.name:lower()
@@ -716,7 +833,7 @@ function App:state_snapshot()
     local runtime_project_states = {} ---@type Clodex.App.ProjectState[]
     for _, project in ipairs(runtime_projects) do
         local session = session_by_key[project.root]
-        local project_working = self:is_project_working(project)
+        local terminal_working = self.terminals:is_project_session_working(project.root)
         local session_running = self:is_project_session_running(project)
         local waiting_state = session and session.waiting_state or nil
         runtime_project_states[#runtime_project_states + 1] = {
@@ -724,7 +841,7 @@ function App:state_snapshot()
             session_active = session ~= nil and session.buffer_valid or false,
             window_open_in_active_tab = current_tab.has_visible_window and current_tab.session_key == project.root,
             usage_events = "not tracked yet",
-            working = project_working and "session working"
+            working = terminal_working and "session working"
                 or waiting_state == "permission" and "waiting for permission"
                 or waiting_state == "question" and "waiting for input"
                 or session_running and "session alive"
@@ -751,7 +868,7 @@ function App:state_snapshot()
         sessions = sessions,
         runtime_projects = runtime_projects,
         runtime_project_states = runtime_project_states,
-        backend = Backend.normalize(self.config:get().backend),
+        backend = Backend.is_valid_name(self.config:get().backend),
     }
 end
 
@@ -769,6 +886,61 @@ end
 function App:refresh_views()
     self:refresh_state_preview()
     self:refresh_queue_workspace()
+    self:sync_blocked_input_window()
+end
+
+function App:close_blocked_input_window()
+    local window = self.blocked_input_window
+    self.blocked_input_window = nil
+    self.blocked_input_session_key = nil
+    if window and window.close then
+        pcall(function()
+            window:close()
+        end)
+    end
+end
+
+function App:sync_blocked_input_window()
+    local blocked_input = self.config:get().terminal.blocked_input
+    if not blocked_input or blocked_input == false or blocked_input.enabled == false then
+        self:close_blocked_input_window()
+        return
+    end
+
+    local current_state = self:current_tab()
+    local session = blocked_input_session(self, current_state)
+    if not session then
+        self:close_blocked_input_window()
+        return
+    end
+
+    local window = self.blocked_input_window
+    if
+        self.blocked_input_session_key == session.key
+        and window
+        and window.win
+        and vim.api.nvim_win_is_valid(window.win)
+        and vim.api.nvim_win_get_tabpage(window.win) == current_state.tabpage
+    then
+        return
+    end
+
+    self:close_blocked_input_window()
+    local popup = self.terminals:open_blocked_input_window(session, current_state.tabpage)
+    if not popup then
+        return
+    end
+
+    self.blocked_input_window = popup
+    self.blocked_input_session_key = session.key
+    if popup.on then
+        popup:on("WinClosed", function()
+            if self.blocked_input_window == popup then
+                self.blocked_input_window = nil
+                self.blocked_input_session_key = nil
+            end
+        end, { win = true })
+    end
 end
 
 App.toggle_state_preview = function(self)
@@ -793,6 +965,9 @@ function App:is_project_working(project)
     if self.exec_runner and self.exec_runner:is_project_active(project.root) then
         return true
     end
+    if self.queue and type(self.queue.active_item) == "function" and self.queue:active_item(project) then
+        return true
+    end
     return self.terminals:is_project_session_working(project.root)
 end
 
@@ -805,10 +980,8 @@ function App:projects_for_queue_workspace()
     for _, project in ipairs(projects) do
         summaries[project.root] = self:queue_summary(project)
         local details = self.project_details_store:get_cached(project)
-        project_updates[project.root] = details and (
-            details.last_file_modified_at
-            or details.last_codex_activity_at
-        ) or 0
+        project_updates[project.root] = details and (details.last_file_modified_at or details.last_codex_activity_at)
+            or 0
     end
 
     table.sort(projects, function(left, right)
@@ -838,7 +1011,14 @@ end
 ---@return Clodex.ProjectQueueSummary
 function App:queue_summary(project)
     local session_running = self:is_project_session_running(project)
-    return self.queue:summary(project, session_running, self:is_project_working(project))
+    local summary = self.queue:summary(project, session_running, self:is_project_working(project))
+    local active_item = type(self.queue.active_item) == "function" and self.queue:active_item(project) or nil
+    local session = type(self.terminals.project_session) == "function" and self.terminals:project_session(project.root)
+        or nil
+    summary.active_item_id = active_item and active_item.id or nil
+    summary.active_item_title = active_item and active_item.title or nil
+    summary.queue_loop_enabled = session ~= nil and session.queue_loop_enabled == true or false
+    return summary
 end
 
 function App:add_todo(opts)
