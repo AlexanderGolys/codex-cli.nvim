@@ -11,53 +11,38 @@ local DOMINANT_LANGUAGE_COVERAGE_PERCENT = 85
 local DOMINANT_LANGUAGE_MIN_PERCENT = 10
 local OTHER_LANGUAGE_NAME = "other"
 
-local PROJECT_LANGUAGE_FILETYPES = {
+local PROJECT_LANGUAGE_EXTENSIONS = {
   c = "c",
+  cc = "cpp",
   cpp = "cpp",
+  cxx = "cpp",
   css = "css",
-  dockerfile = "docker",
   go = "go",
+  h = "c",
+  hpp = "cpp",
+  htm = "html",
   html = "html",
   java = "java",
-  javascript = "js",
-  javascriptreact = "jsx",
-  json = "json",
-  jsonc = "jsonc",
+  js = "js",
+  jsx = "jsx",
   lua = "lua",
-  make = "make",
-  python = "py",
-  ruby = "rb",
-  rust = "rs",
+  php = "php",
+  py = "py",
+  rb = "rb",
+  rs = "rs",
   sh = "sh",
+  bash = "sh",
+  zsh = "sh",
   sql = "sql",
-  toml = "toml",
-  typescript = "ts",
-  typescriptreact = "tsx",
+  ts = "ts",
+  tsx = "tsx",
   vim = "vim",
-  xml = "xml",
-  yaml = "yaml",
+  zig = "zig",
 }
 
-local CORE_LANGUAGE_FILETYPES = {
-  c = true,
-  cpp = true,
-  css = true,
-  dockerfile = true,
-  go = true,
-  html = true,
-  java = true,
-  javascript = true,
-  javascriptreact = true,
-  lua = true,
-  make = true,
-  python = true,
-  ruby = true,
-  rust = true,
-  sh = true,
-  sql = true,
-  typescript = true,
-  typescriptreact = true,
-  vim = true,
+local PROJECT_LANGUAGE_FILENAMES = {
+  ["dockerfile"] = "docker",
+  ["makefile"] = "make",
 }
 
 local LANGUAGE_ICONS = {
@@ -70,20 +55,18 @@ local LANGUAGE_ICONS = {
   java = "",
   js = "",
   jsx = "",
-  json = "",
   lua = "",
   make = "",
+  php = "",
   py = "",
   rb = "",
   rs = "",
   sh = "",
   sql = "",
-  toml = "",
   ts = "",
   tsx = "",
   vim = "",
-  xml = "󰗀",
-  yaml = "",
+  zig = "",
 }
 
 ---@return Clodex.ProjectLanguage
@@ -91,45 +74,31 @@ function LanguageProfile.new()
   return setmetatable({}, LanguageProfile)
 end
 
----@param language_totals table<string, integer>
----@param filtered boolean
----@return table<string, integer>, integer
-local function filter_primary_language_totals(language_totals, filtered)
-  local selected = {} ---@type table<string, integer>
-  local selected_file_count = 0
-
-  for language, count in pairs(language_totals) do
-    if not filtered or CORE_LANGUAGE_FILETYPES[language] then
-      selected[language] = count
-      selected_file_count = selected_file_count + count
-    end
-  end
-
-  if filtered and selected_file_count == 0 then
-    return language_totals, 0
-  end
-
-  return selected, selected_file_count
-end
-
----@param filetype string?
+---@param path string?
 ---@return string?
-function LanguageProfile:normalize_filetype(filetype)
-  if not filetype or filetype == "" then
+function LanguageProfile:language_for_path(path)
+  path = vim.trim(path or "")
+  if path == "" then
     return nil
   end
-  return PROJECT_LANGUAGE_FILETYPES[filetype]
+  local name = vim.fs.basename(path):lower()
+  if PROJECT_LANGUAGE_FILENAMES[name] then
+    return PROJECT_LANGUAGE_FILENAMES[name]
+  end
+  local extension = name:match("%.([^.]+)$")
+  if not extension then
+    return nil
+  end
+  return PROJECT_LANGUAGE_EXTENSIONS[extension]
 end
 
 ---@param language_totals table<string, integer>
 ---@return Clodex.ProjectLanguageStat[]
 function LanguageProfile:dominant_languages(language_totals)
-  local selected_totals = language_totals
   local selected_file_count = 0
-
-  selected_totals, selected_file_count = filter_primary_language_totals(language_totals, true)
-  if selected_file_count == 0 then
-    selected_totals, selected_file_count = filter_primary_language_totals(language_totals, false)
+  local selected_totals = language_totals
+  for _, count in pairs(language_totals) do
+    selected_file_count = selected_file_count + count
   end
   if selected_file_count == 0 then
     return {}

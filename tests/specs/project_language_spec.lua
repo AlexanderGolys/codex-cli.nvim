@@ -7,13 +7,13 @@ describe("clodex.project.language", function()
         profile = LanguageProfile.new()
     end)
 
-    it("normalizes allowed filetypes and skips unsupported types", function()
-        assert.are.equal("lua", profile:normalize_filetype("lua"))
-        assert.are.equal("sh", profile:normalize_filetype("sh"))
-        assert.are.equal("json", profile:normalize_filetype("json"))
-        assert.is_nil(profile:normalize_filetype("markdown"))
-        assert.is_nil(profile:normalize_filetype("text"))
-        assert.is_nil(profile:normalize_filetype(nil))
+    it("detects languages from known code paths and ignores non-code files", function()
+        assert.are.equal("lua", profile:language_for_path("lua/clodex/init.lua"))
+        assert.are.equal("sh", profile:language_for_path("scripts/setup.zsh"))
+        assert.are.equal("docker", profile:language_for_path("Dockerfile"))
+        assert.is_nil(profile:language_for_path("README.md"))
+        assert.is_nil(profile:language_for_path("package.json"))
+        assert.is_nil(profile:language_for_path(nil))
     end)
 
     it("adds an other bucket for omitted low-share languages", function()
@@ -38,54 +38,43 @@ describe("clodex.project.language", function()
         end, languages))
     end)
 
-    it("prefers primary languages and falls back to config filetypes", function()
+    it("keeps all recognized languages instead of dropping smaller code buckets", function()
         local language_totals = {
             sh = 8,
-            yaml = 1,
-            toml = 1,
+            lua = 1,
+            ts = 1,
         }
 
         local languages = profile:dominant_languages(language_totals)
 
         assert.are.same({
             "sh",
+            "lua",
+            "ts",
         }, vim.tbl_map(function(language)
             return language.name
         end, languages))
         assert.are.same({
-            100,
+            80,
+            10,
+            10,
         }, vim.tbl_map(function(language)
             return language.percent
         end, languages))
     end)
 
-    it("falls back to non-code filetypes for config-only repos", function()
+    it("returns no languages for config-only repos", function()
         local language_totals = {
-            yaml = 2,
-            json = 1,
-            toml = 1,
         }
 
         local languages = profile:dominant_languages(language_totals)
 
-        assert.are.same({
-            "yaml",
-            "json",
-            "toml",
-        }, vim.tbl_map(function(language)
-            return language.name
-        end, languages))
-        assert.are.same({
-            50,
-            25,
-            25,
-        }, vim.tbl_map(function(language)
-            return language.percent
-        end, languages))
+        assert.are.same({}, languages)
     end)
 
     it("formats known language icons and keeps unknown languages as plain text", function()
         assert.are.equal(" sh", profile:format_label("sh"))
-        assert.are.equal("zig", profile:format_label("zig"))
+        assert.are.equal(" zig", profile:format_label("zig"))
+        assert.are.equal("ocaml", profile:format_label("ocaml"))
     end)
 end)

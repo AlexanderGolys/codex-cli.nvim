@@ -74,7 +74,6 @@ local PROJECT_SEARCH_FIELDS = {
 local ITEM_TITLE_PREFIX_WIDTH = 2
 local PROJECT_DETAIL_LABELS = {
     "Files:",
-    "Lang:",
 }
 local PROJECT_WORKING_ICONS = { "⠋ ", "⠙ ", "⠹ ", "⠸ ", "⠼ ", "⠴ ", "⠦ ", "⠧ ", "⠇ ", "⠏ " }
 local PROJECT_RUNNING_ICON = "󰚩 "
@@ -597,19 +596,11 @@ local function format_languages(languages)
     end
 
     local icons = {} ---@type string[]
-    local has_py = false
-    local has_ts_js = false
 
     for _, language in ipairs(languages) do
         local icon = language_profile.ICONS[language.name]
         if icon then
             icons[#icons + 1] = icon
-            if language.name == "py" then
-                has_py = true
-            end
-            if language.name == "ts" or language.name == "js" then
-                has_ts_js = true
-            end
         end
     end
 
@@ -617,11 +608,7 @@ local function format_languages(languages)
         return "-"
     end
 
-    if #icons == 1 or (has_py and has_ts_js) then
-        return table.concat({ icons[1], icons[2] or "" }, " ")
-    end
-
-    return icons[1]
+    return table.concat(icons, " ")
 end
 
 ---@param detail string
@@ -701,6 +688,9 @@ end
 ---@return string[]
 project_detail_lines = function(config, app, summary, details)
     local lines = {} ---@type string[]
+    details = details or app.project_details_store:get_cached(summary.project)
+    lines[#lines + 1] = "    " .. (details and format_languages(details.languages) or "-")
+
     if summary.active_item_title and summary.active_item_title ~= "" then
         lines[#lines + 1] = ("    Active:%s"):format(truncate_display(summary.active_item_title, 24))
     end
@@ -708,17 +698,12 @@ project_detail_lines = function(config, app, summary, details)
         lines[#lines + 1] = "    Loop:armed"
     end
 
-    details = details or app.project_details_store:get_cached(summary.project)
     if not details then
         lines[#lines + 1] = "    Files:-  " .. GITHUB_ICON
-        lines[#lines + 1] = "    Lang:-  -"
         return lines
     end
     lines[#lines + 1] = ("    Files:%d  %s"):format(details.file_count, " " .. GITHUB_ICON)
-    lines[#lines + 1] = ("    Lang:%s  %s"):format(
-        format_languages(details.languages),
-        format_timestamp(details.last_file_modified_at, config)
-    )
+    lines[#lines + 1] = ("    %s"):format(format_timestamp(details.last_file_modified_at, config))
     return lines
 end
 

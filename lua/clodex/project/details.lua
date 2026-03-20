@@ -330,8 +330,7 @@ function Details:compute(project)
         end
       end
 
-      local filetype = vim.filetype.match({ filename = path })
-      local language = language_profile:normalize_filetype(filetype)
+      local language = language_profile:language_for_path(path)
       if language then
         language_totals[language] = (language_totals[language] or 0) + 1
       end
