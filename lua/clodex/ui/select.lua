@@ -6,7 +6,7 @@ local PromptContext = require("clodex.prompt.context")
 local ui_win = require("clodex.ui.win")
 local unpack_values = require("clodex.util").unpack_values
 
-local SELECT_ZINDEX = 70
+local MODAL_ZINDEX = 100
 local PROMPT_EDITOR_MIN_HEIGHT = 8
 local PROMPT_EDITOR_MIN_WIDTH = 72
 local PROMPT_EDITOR_MAX_MARGIN = 12
@@ -17,8 +17,8 @@ local PROMPT_EDITOR_FIELD_GAP = 0
 local PROMPT_EDITOR_HINT_GAP = 1
 local PROMPT_EDITOR_BORDER_ROWS = 2
 local PROMPT_EDITOR_BORDER_COLS = 2
-local PROMPT_EDITOR_ZINDEX = 70
-local PROMPT_EDITOR_BACKDROP = 40
+local PROMPT_EDITOR_ZINDEX = MODAL_ZINDEX
+local PROMPT_EDITOR_BACKDROP = 90
 local PROMPT_EDITOR_HINT_HEIGHT = 2
 local PROMPT_CONTEXT_HIGHLIGHT_NS = vim.api.nvim_create_namespace("clodex_prompt_context_highlight")
 local PROMPT_EDITOR_HINT_KEYS = {
@@ -179,7 +179,7 @@ function M.select(items, opts, on_choice)
     },
     layout = {
       layout = {
-        zindex = SELECT_ZINDEX,
+        zindex = MODAL_ZINDEX,
       },
     },
   }, vim.deepcopy(opts.snacks or {}))
