@@ -121,7 +121,7 @@ These categories control default titles, visual highlighting, and some specializ
 - `bug` can pull in screenshot context
 - `visual` can save a clipboard image into prompt assets
 - multiline prompt editors can paste a clipboard image into the prompt body with `Ctrl-V`
-- `bug` can prefill the latest Vim notification or traceback when you choose the message-based flow
+- `bug` can build a message-based investigation directly from the clipboard/register contents and only asks you for an optional comment
 - `library` lets you instantiate a saved prompt template
 
 ### Queue-file prompt execution

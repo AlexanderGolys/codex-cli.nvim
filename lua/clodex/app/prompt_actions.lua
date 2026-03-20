@@ -445,6 +445,17 @@ local function freeform_message(body)
     return message ~= "" and message or nil
 end
 
+---@return string?
+local function read_bug_message_register()
+    local registers = { "+", '"', "*" }
+    for _, register in ipairs(registers) do
+        local message = vim.trim((vim.fn.getreg(register) or ""):gsub("\r\n", "\n"))
+        if message ~= "" then
+            return message
+        end
+    end
+end
+
 ---@param project Clodex.Project
 ---@param latest_screenshot? string
 ---@param screenshot_dir? string
@@ -513,6 +524,34 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
                             summary,
                             ("Use the saved clipboard screenshot at `%s` as the main artifact."):format(image_path),
                             image_path,
+                            "history"
+                        )
+                    end)
+                return
+            end
+
+            if choice.value == "message" then
+                ui.input({
+                    prompt = "Comment about the error (optional)",
+                }, function(comment)
+                        local message = read_bug_message_register()
+                        if not message then
+                            notify.warn("No error message found in the clipboard registers.")
+                            return
+                        end
+
+                        comment = comment and vim.trim(comment) or ""
+                        local source_details = {
+                            ("Bug message:\n```\n%s\n```"):format(message),
+                        }
+                        if comment ~= "" then
+                            table.insert(source_details, 1, ("User comment: %s"):format(comment))
+                        end
+                        self:add_bug_investigation(
+                            project,
+                            comment,
+                            table.concat(source_details, "\n\n"),
+                            nil,
                             "history"
                         )
                     end)
