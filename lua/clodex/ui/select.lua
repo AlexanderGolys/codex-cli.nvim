@@ -54,8 +54,117 @@ end
 ---@class Clodex.UiSelect.TextChoice
 ---@field label string
 ---@field detail? string
+---@field badge? string
+---@field icon? string
+---@field accent_hl? string
 ---@field preview? { text: string, ft?: string, loc?: boolean }
 ---@field preview_title? string
+
+---@class Clodex.UiSelect.PickerEntry<T>
+---@field value T
+---@field text string
+---@field chunks? snacks.picker.Highlight[]
+---@field preview? { text: string, ft?: string, loc?: boolean }
+---@field preview_title? string
+
+---@class Clodex.UiSelect.MapContext<T>
+---@field index integer
+---@field items T[]
+
+---@param item Clodex.UiSelect.TextChoice
+---@return string|snacks.picker.Highlight[]
+local function text_choice_chunks(item)
+  local accent_hl = item.accent_hl or "ClodexStateCommandName"
+  local chunks = {} ---@type snacks.picker.Highlight[]
+
+  if item.icon and item.icon ~= "" then
+    chunks[#chunks + 1] = { item.icon .. " ", "ClodexPickerRoot" }
+  end
+
+  if item.badge and item.badge ~= "" then
+    chunks[#chunks + 1] = { "[", "ClodexQueueItemMuted" }
+    chunks[#chunks + 1] = { item.badge, accent_hl }
+    chunks[#chunks + 1] = { "] ", "ClodexQueueItemMuted" }
+  end
+
+  chunks[#chunks + 1] = { item.label, accent_hl }
+  if item.detail and item.detail ~= "" then
+    chunks[#chunks + 1] = { "  " }
+    chunks[#chunks + 1] = { item.detail, "ClodexStateCommandHint" }
+  end
+  return chunks
+end
+
+---@param heading string
+---@param lines string[]
+---@return string
+local function markdown_section(heading, lines)
+  local parts = { heading, "" }
+  for _, line in ipairs(lines) do
+    parts[#parts + 1] = line
+  end
+  return table.concat(parts, "\n")
+end
+
+---@param snacks_opts? table
+---@param with_preview boolean
+---@return table
+local function picker_snacks(snacks_opts, with_preview)
+  return vim.tbl_deep_extend("force", {
+    preview = with_preview and "preview" or false,
+    layout = {
+      preset = "select",
+      hidden = with_preview and {} or { "input", "preview" },
+    },
+  }, vim.deepcopy(snacks_opts or {}))
+end
+
+---@param snacks_opts table
+---@param key string
+---@param action_name string
+local function bind_picker_action_key(snacks_opts, key, action_name)
+  snacks_opts.win = snacks_opts.win or {}
+  for _, field in ipairs({ "input", "list" }) do
+    snacks_opts.win[field] = snacks_opts.win[field] or {}
+    snacks_opts.win[field].keys = snacks_opts.win[field].keys or {}
+    snacks_opts.win[field].keys[key] = { action_name, mode = { "n", "i" } }
+  end
+end
+
+---@generic T
+---@param items T[]
+---@param opts { prompt?: string, snacks?: table, with_preview?: boolean, map_item?: fun(item: T, ctx: Clodex.UiSelect.MapContext<T>): Clodex.UiSelect.PickerEntry<T> }
+---@param on_choice fun(value?: T, idx?: number, entry?: Clodex.UiSelect.PickerEntry<T>)
+function M.pick_mapped(items, opts, on_choice)
+  opts = opts or {}
+  local entries = {} ---@type Clodex.UiSelect.PickerEntry<T>[]
+
+  for index, item in ipairs(items) do
+    local entry = opts.map_item and opts.map_item(item, {
+      index = index,
+      items = items,
+    }) or {
+      value = item,
+      text = tostring(item),
+    }
+    entry.value = entry.value ~= nil and entry.value or item
+    entry.text = entry.text or tostring(entry.value)
+    entries[#entries + 1] = entry
+  end
+
+  return M.select(entries, {
+    prompt = opts.prompt,
+    snacks = picker_snacks(opts.snacks, opts.with_preview ~= false),
+    format_item = function(entry, supports_chunks)
+      if supports_chunks and entry.chunks then
+        return entry.chunks
+      end
+      return entry.text
+    end,
+  }, function(entry, idx)
+    on_choice(entry and entry.value or nil, idx, entry)
+  end)
+end
 
 ---@generic T
 ---@param items T[]
@@ -215,43 +324,36 @@ end
 ---@param on_choice fun(item?: Clodex.UiSelect.TextChoice, idx?: number)
 function M.pick_text(items, opts, on_choice)
   opts = opts or {}
-  local snacks_opts = vim.tbl_deep_extend("force", {
-    preview = "preview",
-    layout = {
-      preset = "select",
-      hidden = {},
-    },
-  }, vim.deepcopy(opts.snacks or {}))
-
-  return M.select(items, vim.tbl_deep_extend("force", opts, {
-    snacks = snacks_opts,
-    format_item = function(item, supports_chunks)
-      if not supports_chunks then
-        if item.detail and item.detail ~= "" then
-          return ("%s  %s"):format(item.label, item.detail)
-        end
-        return item.label
-      end
-
-      local chunks = {
-        { item.label, "ClodexStateCommandName" },
+  return M.pick_mapped(items, {
+    prompt = opts.prompt,
+    snacks = opts.snacks,
+    with_preview = true,
+    map_item = function(item)
+      local prefix = item.icon and item.icon ~= "" and (item.icon .. " ") or ""
+      local badge = item.badge and item.badge ~= "" and ("[%s] "):format(item.badge) or ""
+      local detail = item.detail and item.detail ~= "" and ("  " .. item.detail) or ""
+      return {
+        value = item,
+        text = prefix .. badge .. item.label .. detail,
+        chunks = text_choice_chunks(item),
+        preview = item.preview,
+        preview_title = item.preview_title,
       }
-      if item.detail and item.detail ~= "" then
-        chunks[#chunks + 1] = { "  " }
-        chunks[#chunks + 1] = { item.detail, "ClodexStateCommandHint" }
-      end
-      return chunks
     end,
-  }), on_choice)
+  }, function(item, idx)
+    on_choice(item, idx)
+  end)
 end
 
 ---@param projects Clodex.Project[]
----@param opts? { prompt?: string, include_none?: boolean, active_root?: string }
+---@param opts? { prompt?: string, include_none?: boolean, active_root?: string, on_delete?: fun(project: Clodex.Project), on_rename?: fun(project: Clodex.Project), snacks?: table }
 ---@param on_choice fun(project?: Clodex.Project)
 function M.pick_project(projects, opts, on_choice)
   opts = opts or {}
   local items = {} ---@type { project?: Clodex.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }[]
   local name_width = 0
+  local snacks_opts = picker_snacks(opts.snacks, true)
+  local action_hints = {} ---@type string[]
 
   for _, project in ipairs(projects) do
     name_width = math.max(name_width, vim.fn.strdisplaywidth(project.name))
@@ -296,27 +398,64 @@ function M.pick_project(projects, opts, on_choice)
     return
   end
 
-  return M.select(items, {
+  local function add_project_action(key, name, description, callback)
+    snacks_opts.actions = snacks_opts.actions or {}
+    snacks_opts.actions[name] = {
+      desc = description,
+      action = function(picker, entry)
+        entry = entry and entry.item or entry
+        local selected = entry and entry.value or nil
+        if not selected then
+          return
+        end
+        if picker and picker.close then
+          picker:close()
+        end
+        vim.schedule(function()
+          callback(selected)
+        end)
+      end,
+    }
+    bind_picker_action_key(snacks_opts, key, name)
+    action_hints[#action_hints + 1] = ("%s: %s"):format(key, description)
+  end
+
+  if opts.on_delete then
+    add_project_action("d", "clodex_project_delete", "Delete project", function(project)
+      opts.on_delete(project)
+    end)
+  end
+
+  if opts.on_rename then
+    add_project_action("r", "clodex_project_rename", "Rename project", function(project)
+      opts.on_rename(project)
+    end)
+  end
+
+  if #action_hints > 0 then
+    snacks_opts.help = snacks_opts.help or true
+  end
+
+  return M.pick_mapped(items, {
     prompt = opts.prompt or "Select Clodex project",
-    snacks = {
-      preview = "preview",
-      layout = {
-        preset = "select",
-        hidden = {},
-      },
-    },
-    format_item = function(item, supports_chunks)
-      if not item.project or not supports_chunks then
-        return item.label
-      end
+    snacks = snacks_opts,
+    with_preview = true,
+    map_item = function(item)
+      local project = item.project
       return {
-        { item.project.name, "ClodexPickerProject" },
-        { item.spacer or "  " },
-        { item.project.root, "ClodexPickerRoot" },
+        value = project,
+        text = item.label,
+        chunks = project and {
+          { project.name, "ClodexPickerProject" },
+          { item.spacer or "  " },
+          { project.root, "ClodexPickerRoot" },
+        } or nil,
+        preview = item.preview,
+        preview_title = item.preview_title,
       }
     end,
-  }, function(item)
-    on_choice(item and item.project or nil)
+  }, function(project)
+    on_choice(project)
   end)
 end
 
@@ -369,16 +508,9 @@ local function insert_text(buf, win, text)
 end
 
 ---@param win integer
----@param normal_group string?
-local function style_prompt_editor(win, normal_group)
-  normal_group = normal_group or "ClodexPromptEditorNormal"
-  vim.wo[win].winhl = table.concat({
-    ("NormalFloat:%s"):format(normal_group),
-    "FloatBorder:ClodexPromptEditorBorder",
-    "FloatTitle:ClodexPromptEditorTitle",
-    "FloatFooter:ClodexPromptEditorSubtitle",
-  }, ",")
-  vim.wo[win].winblend = 0
+---@param theme? Clodex.UiWin.ThemePreset
+local function style_prompt_editor(win, theme)
+  ui_win.apply_theme(win, theme or "prompt_editor")
 end
 
 ---@param buf integer
@@ -524,20 +656,9 @@ function M.multiline_input(opts, on_confirm)
     ),
     math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
   )
-  local title_buf = vim.api.nvim_create_buf(false, true)
-  local body_buf = vim.api.nvim_create_buf(false, true)
-  local hint_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[title_buf].buftype = "nofile"
-  vim.bo[title_buf].bufhidden = "wipe"
-  vim.bo[title_buf].swapfile = false
-  vim.bo[title_buf].modifiable = true
-  vim.bo[body_buf].buftype = "nofile"
-  vim.bo[body_buf].bufhidden = "wipe"
-  vim.bo[body_buf].swapfile = false
-  vim.bo[body_buf].modifiable = true
-  vim.bo[hint_buf].buftype = "nofile"
-  vim.bo[hint_buf].bufhidden = "wipe"
-  vim.bo[hint_buf].swapfile = false
+  local title_buf = ui_win.create_buffer({ preset = "text" })
+  local body_buf = ui_win.create_buffer({ preset = "markdown" })
+  local hint_buf = ui_win.create_buffer({ preset = "scratch" })
   vim.bo[hint_buf].modifiable = false
 
   --- Calculates current required popup height from buffer content.
@@ -750,7 +871,7 @@ function M.multiline_input(opts, on_confirm)
   disable_prompt_pair_highlights(hint_buf)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
-  style_prompt_editor(hint_win.win, "ClodexPromptEditorFooter")
+  style_prompt_editor(hint_win.win, "prompt_footer")
   vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
   configure_prompt_context_completeopt(body_buf)
   prompt_context_completion[body_buf] = prompt_context()
@@ -818,23 +939,31 @@ function M.multiline_input(opts, on_confirm)
         title = vim.trim(item.text),
         details = nil,
       }
+      local category = item.kind and Prompt.categories.get(item.kind) or nil
+      local preview_lines = {
+        markdown_section(("# %s"):format(item.label), vim.tbl_filter(function(line)
+          return line ~= nil
+        end, {
+          category and ("- Kind: `%s`"):format(category.label) or nil,
+          ("- Shortcut title: `%s`"):format(spec.title),
+          item.disabled and "- Status: unavailable in current context" or "- Status: ready to insert",
+        })),
+        "",
+        markdown_section("## What gets inserted", {
+          "```text",
+          item.text,
+          "```",
+        }),
+      }
       picker_items[#picker_items + 1] = {
         text = item.text,
         label = item.label,
         detail = spec.title,
+        badge = category and category.label or nil,
+        accent_hl = category and Prompt.title_group(category.id) or nil,
         disabled = item.disabled,
         preview = {
-          text = table.concat({
-            ("# %s"):format(item.label),
-            "",
-            ("- Title: `%s`"):format(spec.title),
-            "",
-            "## Inserted prompt",
-            "",
-            "```text",
-            item.text,
-            "```",
-          }, "\n"),
+          text = table.concat(preview_lines, "\n"),
           ft = "markdown",
           loc = false,
         },
@@ -999,15 +1128,8 @@ function M.multiline_message_input(opts, on_confirm)
     ),
     math.max(editor_width - PROMPT_EDITOR_MAX_MARGIN - PROMPT_EDITOR_BORDER_COLS, 24)
   )
-  local body_buf = vim.api.nvim_create_buf(false, true)
-  local hint_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[body_buf].buftype = "nofile"
-  vim.bo[body_buf].bufhidden = "wipe"
-  vim.bo[body_buf].swapfile = false
-  vim.bo[body_buf].modifiable = true
-  vim.bo[hint_buf].buftype = "nofile"
-  vim.bo[hint_buf].bufhidden = "wipe"
-  vim.bo[hint_buf].swapfile = false
+  local body_buf = ui_win.create_buffer({ preset = "markdown" })
+  local hint_buf = ui_win.create_buffer({ preset = "scratch" })
   vim.bo[hint_buf].modifiable = false
 
   local function calc_height()
@@ -1134,7 +1256,7 @@ function M.multiline_message_input(opts, on_confirm)
   disable_prompt_pair_highlights(body_buf)
   disable_prompt_pair_highlights(hint_buf)
   style_prompt_editor(body_win.win)
-  style_prompt_editor(hint_win.win, "ClodexPromptEditorFooter")
+  style_prompt_editor(hint_win.win, "prompt_footer")
   vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
   configure_prompt_context_completeopt(body_buf)
   prompt_context_completion[body_buf] = prompt_context()
@@ -1177,6 +1299,8 @@ function M.multiline_message_input(opts, on_confirm)
         text = item.text,
         label = item.label,
         detail = item.text,
+        badge = item.kind and Prompt.categories.get(item.kind).label or nil,
+        accent_hl = item.kind and Prompt.title_group(item.kind) or nil,
         disabled = item.disabled,
       }
     end

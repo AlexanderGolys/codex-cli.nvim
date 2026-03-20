@@ -54,168 +54,18 @@ function ProjectPicker.new(registry)
     return self
 end
 
----@param project Clodex.Project
----@param active_root? string
----@return string
-local function picker_preview_text(project, active_root)
-    local exists = vim.uv.fs_stat(project.root) ~= nil and "yes" or "no"
-    local active = active_root and active_root == project.root and "yes" or "no"
-    return table.concat({
-        "# Clodex Project",
-        "",
-        ("- Name: `%s`"):format(project.name),
-        ("- Root: `%s`"):format(project.root),
-        ("- Exists on disk: `%s`"):format(exists),
-        ("- Active in this tab: `%s`"):format(active),
-    }, "\n")
-end
-
----@param item { project?: Clodex.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }
----@param supports_chunks? boolean
----@return string|snacks.picker.Highlight[]
-local function picker_format_item(item, supports_chunks)
-    if not item.project then
-        return item.label
-    end
-    if not supports_chunks then
-        return item.label
-    end
-    return {
-        { item.project.name, "ClodexPickerProject" },
-        { item.spacer or "  " },
-        { item.project.root, "ClodexPickerRoot" },
-    }
-end
-
 ---@param self Clodex.AppProjectActions.ProjectPicker
 ---@param opts? { include_none?: boolean, prompt?: string, active_root?: string, on_delete?: fun(project: Clodex.Project), on_rename?: fun(project: Clodex.Project), snacks?: table }
 ---@param on_choice fun(project?: Clodex.Project)
 function ProjectPicker:pick(opts, on_choice)
     opts = opts or {}
     local projects = self.registry:list()
-    local items = {} ---@type { project?: Clodex.Project, label: string, spacer?: string, preview?: { text: string, ft?: string, loc?: boolean }, preview_title?: string }[]
-    local name_width = 0
-    local snacks_opts = vim.tbl_deep_extend("force", {
-        preview = "preview",
-        layout = {
-            preset = "select",
-            hidden = {},
-        },
-    }, vim.deepcopy(opts.snacks or {}))
-    local action_hints = {} ---@type string[]
-
-    if opts.include_none then
-        items[#items + 1] = {
-            label = "No active project",
-            preview = {
-                text = "# Clodex Project\n\n- Active project override is disabled for this tab.",
-                ft = "markdown",
-                loc = false,
-            },
-            preview_title = "No active project",
-        }
-    end
-
-    for _, project in ipairs(projects) do
-        name_width = math.max(name_width, vim.fn.strdisplaywidth(project.name))
-    end
-
-    for _, project in ipairs(projects) do
-        local spacer = (" "):rep(math.max(name_width - vim.fn.strdisplaywidth(project.name), 0) + 2)
-        items[#items + 1] = {
-            project = project,
-            label = project.name .. spacer .. project.root,
-            spacer = spacer,
-            preview = {
-                text = picker_preview_text(project, opts.active_root),
-                ft = "markdown",
-                loc = false,
-            },
-            preview_title = project.name,
-        }
-    end
-
-    if #items == 0 then
+    if #projects == 0 then
         notify.warn("No Clodex projects configured")
         return
     end
 
-    if opts.on_delete then
-        snacks_opts.actions = snacks_opts.actions or {}
-        snacks_opts.actions.codex_project_delete = {
-            desc = "Delete project",
-            action = function(picker, item)
-                item = item and item.item or item
-                if not item or not item.project then
-                    notify.warn("No project selected")
-                    return
-                end
-                local project = item.project
-                if picker and picker.close then
-                    picker:close()
-                end
-                vim.schedule(function()
-                    opts.on_delete(project)
-                end)
-            end,
-        }
-        action_hints[#action_hints + 1] = "d: Delete project"
-
-        snacks_opts.win = snacks_opts.win or {}
-        snacks_opts.win.input = snacks_opts.win.input or {}
-        snacks_opts.win.input.keys = snacks_opts.win.input.keys or {}
-        snacks_opts.win.input.keys["d"] = { "codex_project_delete", mode = { "n", "i" } }
-
-        snacks_opts.win.list = snacks_opts.win.list or {}
-        snacks_opts.win.list.keys = snacks_opts.win.list.keys or {}
-        snacks_opts.win.list.keys["d"] = { "codex_project_delete", mode = { "n", "i" } }
-    end
-
-    if opts.on_rename then
-        snacks_opts.actions = snacks_opts.actions or {}
-        snacks_opts.actions.codex_project_rename = {
-            desc = "Rename project",
-            action = function(picker, item)
-                item = item and item.item or item
-                if not item or not item.project then
-                    notify.warn("No project selected")
-                    return
-                end
-                local project = item.project
-                if picker and picker.close then
-                    picker:close()
-                end
-                vim.schedule(function()
-                    opts.on_rename(project)
-                end)
-            end,
-        }
-        action_hints[#action_hints + 1] = "r: Rename project"
-
-        snacks_opts.win = snacks_opts.win or {}
-        snacks_opts.win.input = snacks_opts.win.input or {}
-        snacks_opts.win.input.keys = snacks_opts.win.input.keys or {}
-        snacks_opts.win.input.keys["r"] = { "codex_project_rename", mode = { "n", "i" } }
-
-        snacks_opts.win.list = snacks_opts.win.list or {}
-        snacks_opts.win.list.keys = snacks_opts.win.list.keys or {}
-        snacks_opts.win.list.keys["r"] = { "codex_project_rename", mode = { "n", "i" } }
-    end
-
-    if #action_hints > 0 then
-        snacks_opts.help = snacks_opts.help or true
-        notify.notify(("Project actions: %s"):format(table.concat(action_hints, ", ")))
-    end
-
-    ui.select(items, {
-        prompt = opts.prompt or "Select Clodex project",
-        format_item = function(item, supports_chunks)
-            return picker_format_item(item, supports_chunks)
-        end,
-        snacks = snacks_opts,
-    }, function(item)
-        on_choice(item and item.project or nil)
-    end)
+    return ui.pick_project(projects, opts, on_choice)
 end
 
 ---@param self Clodex.AppProjectActions.ProjectPicker
@@ -513,39 +363,27 @@ function ProjectActions:open_project_notes_picker(project)
         return
     end
 
-    local items = {} ---@type table[]
-    for _, note in ipairs(notes) do
-        local summary = #note.summary > 0 and table.concat(note.summary, " | ") or "No summary yet"
-        items[#items + 1] = {
-            label = ("%s  %s"):format(note.title, summary),
-            note = note,
-            preview = {
-                text = table.concat(vim.fn.readfile(note.path), "\n"),
-                ft = "markdown",
-                loc = false,
-            },
-            preview_title = note.title,
-        }
-    end
-
-    ui.select(items, {
+    ui.pick_mapped(notes, {
         prompt = ("Project notes: %s"):format(project.name),
-        format_item = function(item)
-            return item.label
+        map_item = function(note)
+            local summary = #note.summary > 0 and table.concat(note.summary, " | ") or "No summary yet"
+            return {
+                value = note,
+                text = ("%s  %s"):format(note.title, summary),
+                preview = {
+                    text = table.concat(vim.fn.readfile(note.path), "\n"),
+                    ft = "markdown",
+                    loc = false,
+                },
+                preview_title = note.title,
+            }
         end,
-        snacks = {
-            preview = "preview",
-            layout = {
-                preset = "select",
-                hidden = {},
-            },
-        },
-    }, function(choice)
-        if not choice or not choice.note then
+    }, function(note)
+        if not note then
             return
         end
         self:activate_project(project.root)
-        vim.cmd.edit(vim.fn.fnameescape(choice.note.path))
+        vim.cmd.edit(vim.fn.fnameescape(note.path))
         self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
     end)
@@ -633,37 +471,25 @@ function ProjectActions:open_project_bookmarks_picker(project)
         return
     end
 
-    local items = {} ---@type table[]
-    for _, bookmark in ipairs(bookmarks) do
-        items[#items + 1] = {
-            bookmark = bookmark,
-            label = ("%s  %s:%d  %s"):format(bookmark.title, bookmark.path, bookmark.line, bookmark.description),
-            preview = {
-                text = table.concat(self.app.project_bookmarks:preview_lines(project, bookmark), "\n"),
-                ft = "markdown",
-                loc = false,
-            },
-            preview_title = bookmark.title,
-        }
-    end
-
-    ui.select(items, {
+    ui.pick_mapped(bookmarks, {
         prompt = ("Bookmarks: %s"):format(project.name),
-        format_item = function(item)
-            return item.label
+        map_item = function(bookmark)
+            return {
+                value = bookmark,
+                text = ("%s  %s:%d  %s"):format(bookmark.title, bookmark.path, bookmark.line, bookmark.description),
+                preview = {
+                    text = table.concat(self.app.project_bookmarks:preview_lines(project, bookmark), "\n"),
+                    ft = "markdown",
+                    loc = false,
+                },
+                preview_title = bookmark.title,
+            }
         end,
-        snacks = {
-            preview = "preview",
-            layout = {
-                preset = "select",
-                hidden = {},
-            },
-        },
-    }, function(choice)
-        if not choice or not choice.bookmark then
+    }, function(bookmark)
+        if not bookmark then
             return
         end
-        self.app.project_bookmarks:jump(project, choice.bookmark)
+        self.app.project_bookmarks:jump(project, bookmark)
         self.app.project_bookmarks:decorate_buffer(project, vim.api.nvim_get_current_buf())
         self.app.project_details_store:touch_activity(project)
     end)
@@ -695,7 +521,7 @@ end
 function ProjectActions:toggle_backend()
     local values = self.app.config:get()
     local next_backend = values.backend == "opencode" and "codex" or "opencode"
-    values.backend = Backend.normalize(next_backend)
+    values.backend = Backend.is_valid_name(next_backend)
     values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
     self.app.terminals:update_config(values)
     self.app.state_preview:update_config(values)
@@ -835,9 +661,9 @@ function ProjectActions:focus_project_session(project)
     end
 
     if not self:show_target(state, {
-        kind = "project",
-        project = project,
-    }) then
+            kind = "project",
+            project = project,
+        }) then
         self.app:refresh_views()
         return
     end

@@ -49,8 +49,10 @@ function Preview:show(opts)
     local filetype = opts.filetype or "markdown"
 
     if self.buf == nil or not vim.api.nvim_buf_is_valid(self.buf) then
-        self.buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_name(self.buf, self.key)
+        self.buf = ui_win.create_buffer({
+            preset = "scratch",
+            name = self.key,
+        })
     end
     configure_buffer(self.buf, filetype)
 
@@ -88,26 +90,16 @@ function Preview:show(opts)
         col = function()
             return math.max(math.floor((editor_width - width) / 2), 1)
         end,
-        wo = {
-            wrap = true,
-            linebreak = true,
-            breakindent = true,
-            number = false,
-            relativenumber = false,
-            signcolumn = "no",
-            spell = false,
-        },
+        view = "markdown",
         bo = {
             buftype = "nofile",
             modifiable = false,
             filetype = filetype,
         },
+        theme = "prompt_editor",
     })
 
     if self.win and self.win:valid() then
-        vim.wo[self.win.win].winhl =
-            "NormalFloat:ClodexPromptEditorNormal,FloatBorder:ClodexPromptEditorBorder,FloatTitle:ClodexPromptEditorTitle"
-        vim.wo[self.win.win].winblend = 0
         vim.keymap.set("n", "q", function()
             self:close()
         end, { buffer = self.buf, silent = true })

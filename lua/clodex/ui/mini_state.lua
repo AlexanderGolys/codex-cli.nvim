@@ -107,13 +107,13 @@ function Preview:ensure_buffer()
         return
     end
 
-    self.buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[self.buf].buftype = "nofile"
-    vim.bo[self.buf].bufhidden = "wipe"
-    vim.bo[self.buf].swapfile = false
-    vim.bo[self.buf].modifiable = false
-    vim.bo[self.buf].filetype = "clodex_state"
-    vim.api.nvim_buf_set_name(self.buf, "clodex-mini-state")
+    self.buf = ui_win.create_buffer({
+        preset = "scratch",
+        name = "clodex-mini-state",
+        bo = {
+            filetype = "clodex_state",
+        },
+    })
 
     for _, lhs in ipairs({ "q", "<Esc>" }) do
         vim.keymap.set("n", lhs, function()
@@ -126,14 +126,13 @@ function Preview:apply_window_style()
     if not win_valid(self.win) then
         return
     end
-    vim.wo[self.win].number = false
-    vim.wo[self.win].relativenumber = false
-    vim.wo[self.win].signcolumn = "no"
-    vim.wo[self.win].wrap = false
-    vim.wo[self.win].foldcolumn = "0"
-    vim.wo[self.win].winblend = self.config.state_preview.mini.winblend
-    vim.wo[self.win].winhl = "Normal:NormalFloat,FloatBorder:FloatBorder"
-    vim.wo[self.win].cursorline = false
+    ui_win.configure(self.win, {
+        view = "panel",
+        wo = {
+            winblend = self.config.state_preview.mini.winblend,
+        },
+        theme = "default_float",
+    })
 end
 
 ---@param snapshot Clodex.App.StateSnapshot
@@ -178,6 +177,8 @@ function Preview:render(snapshot)
         self.win = ui_win.open(vim.tbl_extend("force", opts, {
             buf = self.buf,
             enter = false,
+            view = "panel",
+            theme = "default_float",
         })).win
     end
 

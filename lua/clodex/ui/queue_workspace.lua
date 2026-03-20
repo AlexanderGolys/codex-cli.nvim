@@ -700,20 +700,26 @@ end
 ---@param details? Clodex.ProjectDetails
 ---@return string[]
 project_detail_lines = function(config, app, summary, details)
+    local lines = {} ---@type string[]
+    if summary.active_item_title and summary.active_item_title ~= "" then
+        lines[#lines + 1] = ("    Active:%s"):format(truncate_display(summary.active_item_title, 24))
+    end
+    if summary.queue_loop_enabled then
+        lines[#lines + 1] = "    Loop:armed"
+    end
+
     details = details or app.project_details_store:get_cached(summary.project)
     if not details then
-        return {
-            "    Files:-  " .. GITHUB_ICON,
-            "    Lang:-  -",
-        }
+        lines[#lines + 1] = "    Files:-  " .. GITHUB_ICON
+        lines[#lines + 1] = "    Lang:-  -"
+        return lines
     end
-    return {
-        ("    Files:%d  %s"):format(details.file_count, " " .. GITHUB_ICON),
-        ("    Lang:%s  %s"):format(
-            format_languages(details.languages),
-            format_timestamp(details.last_file_modified_at, config)
-        ),
-    }
+    lines[#lines + 1] = ("    Files:%d  %s"):format(details.file_count, " " .. GITHUB_ICON)
+    lines[#lines + 1] = ("    Lang:%s  %s"):format(
+        format_languages(details.languages),
+        format_timestamp(details.last_file_modified_at, config)
+    )
+    return lines
 end
 
 ---@param app Clodex.App
@@ -812,14 +818,10 @@ end
 
 function Workspace:ensure_buffers()
     local function make_buffer(name)
-        local buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[buf].buftype = "nofile"
-        vim.bo[buf].bufhidden = "wipe"
-        vim.bo[buf].swapfile = false
-        vim.bo[buf].modifiable = false
-        vim.bo[buf].filetype = "clodex_queue_workspace"
-        vim.api.nvim_buf_set_name(buf, name)
-        return buf
+        return ui_win.create_buffer({
+            preset = "workspace",
+            name = name,
+        })
     end
 
     self.project_buf = buf_valid(self.project_buf) and self.project_buf or make_buffer("clodex-queue-projects")
@@ -877,6 +879,7 @@ function Workspace:open()
         border = "rounded",
         title = " Projects ",
         zindex = MAIN_ZINDEX,
+        view = "panel",
     }).win
     self.queue_win = ui_win.open({
         buf = self.queue_buf,
@@ -889,6 +892,7 @@ function Workspace:open()
         border = "rounded",
         title = " Queue ",
         zindex = MAIN_ZINDEX,
+        view = "panel",
     }).win
     self.footer_win = ui_win.open({
         buf = self.footer_buf,
@@ -901,6 +905,7 @@ function Workspace:open()
         border = "rounded",
         title = footer_actions(self.focus).title,
         zindex = FOOTER_ZINDEX,
+        view = "footer",
     }).win
 
     self:configure_windows()
@@ -910,25 +915,18 @@ function Workspace:open()
 end
 
 function Workspace:configure_windows()
-    for _, win in ipairs({ self.project_win, self.queue_win, self.footer_win }) do
-        if win_valid(win) then
-            vim.wo[win].number = false
-            vim.wo[win].relativenumber = false
-            vim.wo[win].signcolumn = "no"
-            vim.wo[win].foldcolumn = "0"
-            vim.wo[win].wrap = false
-            vim.wo[win].spell = false
-        end
-    end
-
     for _, win in ipairs({ self.project_win, self.queue_win }) do
         if win_valid(win) then
-            vim.wo[win].cursorline = false
+            ui_win.configure(win, {
+                view = "panel",
+            })
         end
     end
 
     if win_valid(self.footer_win) then
-        vim.wo[self.footer_win].cursorline = false
+        ui_win.configure(self.footer_win, {
+            view = "footer",
+        })
     end
     self:update_window_highlights()
 end

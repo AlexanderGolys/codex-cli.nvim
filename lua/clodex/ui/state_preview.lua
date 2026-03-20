@@ -235,6 +235,8 @@ local function append_project_summary(self, block, project)
   append_field(self, block, "project", project.name)
   append_field(self, block, "root", project.root)
   append_field(self, block, "queues", queue_counts_text(summary.counts))
+  append_field(self, block, "active item", summary.active_item_title or "none")
+  append_field(self, block, "queue loop", summary.queue_loop_enabled and "armed" or "idle")
   append_field(self, block, "session", session and session_status(session) or "offline")
   append_field(self, block, "last queue update", summary.last_updated_at ~= "" and summary.last_updated_at or "none")
 end
@@ -355,14 +357,13 @@ end
 --- A small buffer cache avoids recreating state each render and keeps UI snappy.
 function Preview:ensure_buffers()
   local function make_buffer(name, filetype)
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].modifiable = false
-    vim.bo[buf].filetype = filetype
-    vim.api.nvim_buf_set_name(buf, name)
-    return buf
+    return ui_win.create_buffer({
+      preset = "scratch",
+      name = name,
+      bo = {
+        filetype = filetype,
+      },
+    })
   end
 
   self.command_buf = buf_valid(self.command_buf) and self.command_buf
@@ -378,14 +379,14 @@ function Preview:apply_window_style()
     if not win_valid(win) then
       return
     end
-    vim.wo[win].number = false
-    vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = "no"
-    vim.wo[win].wrap = false
-    vim.wo[win].foldcolumn = "0"
-    vim.wo[win].winblend = self.config.state_preview.winblend
-    vim.wo[win].cursorline = active
-    vim.wo[win].winhl = "Normal:NormalFloat,FloatBorder:FloatBorder"
+    ui_win.configure(win, {
+      view = "panel",
+      wo = {
+        winblend = self.config.state_preview.winblend,
+        cursorline = active,
+      },
+      theme = "default_float",
+    })
   end
 
   apply(self.command_win, self.focus == "commands")
@@ -507,6 +508,8 @@ function Preview:update_windows()
     self.command_win = ui_win.open(vim.tbl_extend("force", command_config, {
       buf = self.command_buf,
       enter = true,
+      view = "panel",
+      theme = "default_float",
     })).win
   end
 
@@ -516,6 +519,8 @@ function Preview:update_windows()
     self.state_win = ui_win.open(vim.tbl_extend("force", state_config, {
       buf = self.state_buf,
       enter = false,
+      view = "panel",
+      theme = "default_float",
     })).win
   end
 
