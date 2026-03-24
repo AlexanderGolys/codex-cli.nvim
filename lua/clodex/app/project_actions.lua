@@ -5,6 +5,8 @@ local notify = require("clodex.util.notify")
 local MarkdownPreview = require("clodex.ui.markdown_preview")
 local ui = require("clodex.ui.select")
 
+local SWAPFILE_ERROR_CODE = "E325"
+
 --- Coordinates project-scoped actions for registry entries and tab focus.
 --- Project creation, selection, deletion, and terminal lifecycle are routed through this module.
 ---@class Clodex.AppProjectActions
@@ -32,8 +34,19 @@ local function edit_if_safe(path)
         return false
     end
 
-    vim.cmd("edit " .. vim.fn.fnameescape(path))
-    return true
+    local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(path))
+    if ok then
+        return true
+    end
+
+    local message = tostring(err or "")
+    if message:find(SWAPFILE_ERROR_CODE, 1, true) then
+        notify.warn(("Swap file already exists for %s; keeping the current buffer unchanged."):format(path))
+        return false
+    end
+
+    notify.error(("Failed to open %s\n%s"):format(path, message))
+    return false
 end
 
 ---@param self Clodex.AppProjectActions
@@ -398,7 +411,7 @@ function ProjectActions:open_project_notes_picker(project)
             return
         end
         self:activate_project(project.root)
-        vim.cmd("edit " .. vim.fn.fnameescape(note.path))
+        edit_if_safe(note.path)
         self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
     end)
@@ -421,7 +434,7 @@ function ProjectActions:create_project_note(project)
         end
         local path = self.app.project_notes:create(project, title)
         self:activate_project(project.root)
-        vim.cmd("edit " .. vim.fn.fnameescape(path))
+        edit_if_safe(path)
         self.app.project_details_store:touch_activity(project)
         notify.notify(("Created project note for %s: %s"):format(project.name, title))
         self.app:refresh_views()
