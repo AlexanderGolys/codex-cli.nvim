@@ -875,6 +875,9 @@ function M.multiline_input(opts, on_confirm)
     if not body_win:valid() then
       return false
     end
+    if vim.fn.pumvisible() == 1 then
+      return false
+    end
     return vim.api.nvim_win_get_cursor(body_win.win)[1] <= 1
   end
 
