@@ -248,6 +248,7 @@ Example with `lazy.nvim` using the plugin defaults explicitly:
       poll_ms = 5000,
       skills_dir = ".clodex/skills",
       skill_name = "prompt-nvim-clodex",
+      git_workflow = "commit",
     },
     mcp = {
       enabled = true,
@@ -340,6 +341,7 @@ require("clodex").setup({
     poll_ms = 5000,
     skills_dir = ".clodex/skills",
     skill_name = "prompt-nvim-clodex",
+    git_workflow = "commit",
   },
   mcp = {
     enabled = true,
@@ -452,6 +454,13 @@ require("clodex").setup({
 - Clodex also mirrors those skills into `<project>/.agents/skills/` and `<project>/.opencode/skills/` so both backends see the same project-local workflow skills.
 - Set this to an empty string to disable synced skill mode and fall back to inline `$prompt` instructions.
 - Queued prompt dispatch still ends with `$prompt-nvim-clodex` instead of inlining the full queue-file update instructions every time.
+
+`prompt_execution.git_workflow`
+
+- Controls how queued prompts that produce git changes should finish their git workflow.
+- `commit` is the default and keeps the current behavior: the agent creates a focused commit when the prompt kind requires one.
+- `branch_pr` tells the synced prompt skill to use a dedicated branch for that queue item, push it, and open a pull request with `gh` after the commit is ready.
+- `ask` prompts still skip commits entirely, and `freeform` prompts still decide based on whether a commit is warranted.
 
 `mcp.enabled`
 

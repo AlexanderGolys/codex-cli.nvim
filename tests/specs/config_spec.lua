@@ -59,8 +59,9 @@ describe("clodex.config", function()
             assert.are.equal("codex", values.backend)
             assert.are.equal("codex", values.codex_cmd[1])
             assert.are.equal("opencode", values.opencode_cmd[1])
-            assert.matches("%.codex/skills$", values.prompt_execution.skills_dir)
-            assert.are.equal(false, values.mcp.enabled)
+            assert.are.equal(".clodex/skills", values.prompt_execution.skills_dir)
+            assert.are.equal("commit", values.prompt_execution.git_workflow)
+            assert.are.equal(true, values.mcp.enabled)
             assert.are.same({}, values.mcp.cmd)
             assert.are.equal("<leader>pt", values.keymaps.toggle.lhs)
             assert.are.equal("<leader>pq", values.keymaps.queue_workspace.lhs)
@@ -69,7 +70,7 @@ describe("clodex.config", function()
             assert.are.equal("<leader>pb", values.keymaps.backend_toggle.lhs)
         end)
 
-        it("switches the default skill root when opencode backend is selected", function()
+        it("keeps the project-local skill root when opencode backend is selected", function()
             local cfg = Config.new()
             local values = cfg:setup({
                 backend = "opencode",
@@ -77,7 +78,18 @@ describe("clodex.config", function()
 
             assert.are.equal("opencode", values.backend)
             assert.are.same({ "opencode" }, values.opencode_cmd)
-            assert.are.equal(vim.fn.expand("~/.config/opencode/skills"), values.prompt_execution.skills_dir)
+            assert.are.equal(".clodex/skills", values.prompt_execution.skills_dir)
+        end)
+
+        it("keeps an explicit git workflow override", function()
+            local cfg = Config.new()
+            local values = cfg:setup({
+                prompt_execution = {
+                    git_workflow = "branch_pr",
+                },
+            })
+
+            assert.are.equal("branch_pr", values.prompt_execution.git_workflow)
         end)
 
 

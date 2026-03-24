@@ -16,6 +16,15 @@ local function trim(value)
     return vim.trim(value or "")
 end
 
+---@param config Clodex.Config.Values
+---@return Clodex.Config.GitWorkflowMode
+local function git_workflow(config)
+    if config.prompt_execution.git_workflow == "branch_pr" then
+        return "branch_pr"
+    end
+    return "commit"
+end
+
 local function is_absolute_path(path)
     path = fs.normalize(path)
     return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
@@ -77,10 +86,12 @@ end
 local function completion_instruction_lines(item, _config)
     local prompt_kind = Prompt.categories.get(item.kind).id
     local commit_policy = Prompt.categories.commit_policy(item.kind)
+    local workflow = git_workflow(_config)
     local lines = {
         ("Current queue item id: `%s`"):format(item.id),
         ("Current prompt kind: `%s`"):format(prompt_kind),
         ("Commit policy for this prompt: `%s`"):format(commit_policy),
+        ("Git workflow mode for this prompt: `%s`"):format(workflow),
     }
     if prompt_kind == "freeform" then
         lines[#lines + 1] = "Completion destination for this prompt: `agent_decides`"

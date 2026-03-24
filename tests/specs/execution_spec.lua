@@ -8,12 +8,13 @@ local function temp_dir()
     return dir
 end
 
-local function new_execution(skills_dir)
+local function new_execution(skills_dir, prompt_execution)
+    prompt_execution = vim.tbl_extend("force", {
+        skills_dir = skills_dir,
+        skill_name = "prompt-nvim-clodex",
+    }, prompt_execution or {})
     return Execution.new(Config.new():setup({
-        prompt_execution = {
-            skills_dir = skills_dir,
-            skill_name = "prompt-nvim-clodex",
-        },
+        prompt_execution = prompt_execution,
     }))
 end
 
@@ -36,6 +37,7 @@ describe("clodex.workspace.execution", function()
 
         assert.matches("prompt kind is `ask`, do not create a commit", content)
         assert.matches("create a focused git commit", content)
+        assert.matches("branch%-and%-PR flow", content)
         assert.matches("use its queue tools instead of ad%-hoc JSON editing", content)
         assert.matches("queue_complete_current", content)
         assert.matches("%.clodex/implemented%.json", content)
@@ -95,11 +97,13 @@ describe("clodex.workspace.execution", function()
         assert.matches("Current queue item id: `ask%-1`", ask_prompt)
         assert.matches("Current prompt kind: `ask`", ask_prompt)
         assert.matches("Commit policy for this prompt: `skip`", ask_prompt)
+        assert.matches("Git workflow mode for this prompt: `commit`", ask_prompt)
         assert.matches("%$prompt%-nvim%-clodex", ask_prompt)
 
         assert.matches("Current queue item id: `todo%-1`", todo_prompt)
         assert.matches("Current prompt kind: `todo`", todo_prompt)
         assert.matches("Commit policy for this prompt: `required`", todo_prompt)
+        assert.matches("Git workflow mode for this prompt: `commit`", todo_prompt)
         assert.matches("%$prompt%-nvim%-clodex", todo_prompt)
 
         assert.matches("Completion destination for this prompt: `history`", bug_prompt)
@@ -110,7 +114,29 @@ describe("clodex.workspace.execution", function()
         fs.remove(root)
     end)
 
-    it("syncs the checked-in skill into the project-local opencode skills dir", function()
+    it("renders the branch-pr workflow mode into queue prompts", function()
+        local root = temp_dir()
+        local project = {
+            name = "Demo",
+            root = fs.join(root, "project"),
+        }
+        fs.ensure_dir(project.root)
+        local execution = new_execution(fs.join(root, "skills"), {
+            git_workflow = "branch_pr",
+        })
+
+        local prompt = execution:dispatch_prompt(project, {
+            id = "todo-branch-1",
+            kind = "todo",
+            prompt = "Implement the feature",
+        })
+
+        assert.matches("Git workflow mode for this prompt: `branch_pr`", prompt)
+
+        fs.remove(root)
+    end)
+
+    it("syncs the checked-in skill into the configured project-local skills dir", function()
         local root = temp_dir()
         local project = {
             name = "Demo",
@@ -127,7 +153,7 @@ describe("clodex.workspace.execution", function()
         file:close()
 
         assert.are.equal(
-            fs.normalize(vim.fn.expand("~/.config/opencode/skills/prompt-nvim-clodex/SKILL.md")),
+            fs.normalize(".clodex/skills/prompt-nvim-clodex/SKILL.md"),
             skill_file
         )
         assert.matches("Manual History", content)

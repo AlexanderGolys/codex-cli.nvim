@@ -15,6 +15,7 @@
 - Keep project details and picker/workspace summaries focused on durable repository facts and queue contents; do not reintroduce inferred per-session current-task or run-state tracking there unless a task explicitly requires it.
 - There is exactly one project session per registered project root plus one shared free session rooted at the configured `session.free_root`.
 - Project sessions must always start with `cwd = project.root`; the free session must always start with `cwd = session.free_root`.
+- Git workflow behavior for queued prompts lives under `prompt_execution.git_workflow`; keep the default commit-based flow unless a task explicitly needs branch-and-PR execution.
 - Avoid growing module APIs around generic wrappers and pass-through helpers. Keep methods in domain modules meaningful and behavior-oriented.
 - Generic helper functions are fine, but consolidate broadly reusable ones under `lua/clodex/util.lua` instead of scattering small wrapper APIs across many modules.
 - If something is just a wrapper or implementation helper, define it as a local/nested function or move it to `lua/clodex/util.lua`; do not expose it through a module API in that helper-shaped form.

@@ -55,11 +55,14 @@ local fs = require("clodex.util.fs")
 ---@field groups table<string, Clodex.Config.HighlightSpec>
 
 --- Settings driving prompt dispatch and external workspace-sync polling.
+---@alias Clodex.Config.GitWorkflowMode "commit"|"branch_pr"
+---
 ---@class Clodex.Config.PromptExecution
 ---@field receipts_dir string # Backward-compatible base directory for project-local execution artifacts.
 ---@field poll_ms integer
 ---@field skills_dir? string # Project-local skill root relative to the project root unless absolute.
 ---@field skill_name string
+---@field git_workflow Clodex.Config.GitWorkflowMode
 
 --- Session integration toggles for tab-scoped Clodex state.
 ---@class Clodex.Config.Session
@@ -196,6 +199,7 @@ local function defaults()
             poll_ms = 5000,
             skills_dir = fs.join(".clodex", "skills"),
             skill_name = "prompt-nvim-clodex",
+            git_workflow = "commit",
         },
         session = {
             persist_current_project = true,
