@@ -9,6 +9,7 @@ local notify = require("clodex.util.notify")
 ---@field title string
 ---@field cmd string[]
 ---@field env? table<string, string>
+---@field runtime_key? string
 ---@field terminal_provider "snacks"|"term"
 ---@field project_root? string
 ---@field header_enabled boolean
@@ -27,6 +28,7 @@ Session.__index = Session
 ---@field title string
 ---@field cmd string[]
 ---@field env? table<string, string>
+---@field runtime_key? string
 ---@field terminal_provider? "snacks"|"term"
 ---@field project_root? string
 ---@field header_enabled? boolean
@@ -603,6 +605,7 @@ function Session:update_identity(spec)
     self.title = spec.title
     self.cmd = vim.deepcopy(spec.cmd)
     self.env = spec.env and vim.deepcopy(spec.env) or nil
+    self.runtime_key = spec.runtime_key
     self.terminal_provider = normalize_terminal_provider(spec.terminal_provider)
     self.project_root = spec.project_root
     if spec.header_enabled ~= nil then

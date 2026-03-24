@@ -207,4 +207,82 @@ describe("clodex.mcp", function()
         package.loaded["clodex.terminal.manager"] = nil
         package.loaded["clodex.terminal.session"] = original_session
     end)
+
+    it("restarts an opencode session when the MCP runtime config changes at the same path", function()
+        local original_session = package.loaded["clodex.terminal.session"]
+        package.loaded["clodex.terminal.manager"] = nil
+
+        package.loaded["clodex.terminal.session"] = {
+            new = function(spec)
+                return {
+                    key = spec.key,
+                    kind = spec.kind,
+                    cwd = spec.cwd,
+                    title = spec.title,
+                    cmd = vim.deepcopy(spec.cmd),
+                    env = spec.env and vim.deepcopy(spec.env) or nil,
+                    runtime_key = spec.runtime_key,
+                    project_root = spec.project_root,
+                    destroyed = false,
+                    ensure_started = function()
+                        return true
+                    end,
+                    is_running = function(self)
+                        return not self.destroyed
+                    end,
+                    destroy = function(self)
+                        self.destroyed = true
+                    end,
+                    update_identity = function(self, next_spec)
+                        self.key = next_spec.key
+                        self.kind = next_spec.kind
+                        self.cwd = next_spec.cwd
+                        self.title = next_spec.title
+                        self.cmd = vim.deepcopy(next_spec.cmd)
+                        self.env = next_spec.env and vim.deepcopy(next_spec.env) or nil
+                        self.runtime_key = next_spec.runtime_key
+                        self.project_root = next_spec.project_root
+                    end,
+                }
+            end,
+        }
+
+        local runtime_dir = temp_dir()
+        local first_values = Config.new():setup({
+            backend = "opencode",
+            mcp = {
+                enabled = true,
+                cmd = { "cargo", "run", "--bin", "clodex-mcp" },
+                runtime_dir = runtime_dir,
+            },
+        })
+        local second_values = Config.new():setup({
+            backend = "opencode",
+            mcp = {
+                enabled = true,
+                cmd = { "cargo", "run", "--release", "--bin", "clodex-mcp" },
+                runtime_dir = runtime_dir,
+            },
+        })
+        local Manager = require("clodex.terminal.manager")
+        local manager = Manager.new(first_values)
+        local project = {
+            name = "Demo",
+            root = "/tmp/demo",
+        }
+
+        local first = manager:ensure_project_session(project)
+        manager:update_config(second_values)
+        local second = manager:ensure_project_session(project)
+
+        assert.are_not.same(first, second)
+        assert.is_true(first.destroyed)
+        assert.are.equal(Mcp.opencode_config_path(first_values), first.env.OPENCODE_CONFIG)
+        assert.are.equal(Mcp.opencode_config_path(second_values), second.env.OPENCODE_CONFIG)
+        assert.are_not.equal(first.runtime_key, second.runtime_key)
+
+        fs.remove(runtime_dir)
+        package.loaded["clodex.terminal.manager"] = nil
+        package.loaded["clodex.terminal.session"] = original_session
+    end)
 end)

@@ -1,4 +1,5 @@
 local Backend = require("clodex.backend")
+local Mcp = require("clodex.mcp")
 local fs = require("clodex.util.fs")
 local Session = require("clodex.terminal.session")
 local TerminalUi = require("clodex.terminal.ui")
@@ -40,8 +41,19 @@ local function session_requires_restart(session, spec)
         and (
             not vim.deep_equal(session.cmd, spec.cmd)
             or not vim.deep_equal(session.env or {}, spec.env or {})
+            or session.runtime_key ~= spec.runtime_key
             or session.terminal_provider ~= spec.terminal_provider
         )
+end
+
+---@param config Clodex.Config.Values
+---@return string?
+local function session_runtime_key(config)
+    if Backend.normalize(config.backend) ~= "opencode" then
+        return nil
+    end
+
+    return Mcp.runtime_signature(config)
 end
 
 ---@param tabpage number
@@ -152,6 +164,7 @@ function Manager:session_spec(target)
             title = string.format("Clodex: %s", target.project.name),
             cmd = cmd,
             env = Backend.cli_env(self.config, target),
+            runtime_key = session_runtime_key(self.config),
             terminal_provider = terminal_provider,
             project_root = target.project.root,
             header_enabled = false,
@@ -165,6 +178,7 @@ function Manager:session_spec(target)
         title = string.format("Clodex: %s", target.cwd),
         cmd = Backend.cli_cmd(self.config),
         env = Backend.cli_env(self.config, target),
+        runtime_key = session_runtime_key(self.config),
         terminal_provider = terminal_provider,
         header_enabled = true,
     }

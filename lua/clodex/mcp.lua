@@ -7,6 +7,7 @@ local SOURCE_PATH = fs.normalize(debug.getinfo(1, "S").source:sub(2))
 local REPO_ROOT = fs.dirname(fs.dirname(fs.dirname(SOURCE_PATH)))
 local BIN_NAME = vim.fn.has("win32") == 1 and "clodex-mcp.exe" or "clodex-mcp"
 local SERVER_NAME = "clodex"
+local RUNTIME_SIGNATURE_SEPARATOR = "\0"
 
 ---@param values Clodex.Config.Values
 ---@return string
@@ -94,6 +95,23 @@ end
 ---@return boolean
 function M.is_enabled(values)
     return values ~= nil and values.mcp ~= nil and values.mcp.enabled == true and M.is_available(values)
+end
+
+---@param values? Clodex.Config.Values
+---@return string?
+function M.runtime_signature(values)
+    if not M.is_enabled(values) then
+        return nil
+    end
+
+    local cmd = M.server_cmd(values)
+    if not cmd then
+        return nil
+    end
+
+    local parts = { runtime_root(values) }
+    vim.list_extend(parts, cmd)
+    return table.concat(parts, RUNTIME_SIGNATURE_SEPARATOR)
 end
 
 ---@param values? Clodex.Config.Values
