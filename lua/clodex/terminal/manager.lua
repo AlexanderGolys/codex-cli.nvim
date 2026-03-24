@@ -131,7 +131,6 @@ function Manager:session_spec(target)
             terminal_provider = self.config.terminal.provider,
             project_root = target.project.root,
             header_enabled = false,
-            queue_loop_enabled = false,
         }
     end
 
@@ -144,7 +143,6 @@ function Manager:session_spec(target)
         env = Backend.cli_env(self.config, target),
         terminal_provider = self.config.terminal.provider,
         header_enabled = true,
-        queue_loop_enabled = false,
     }
 end
 
@@ -361,7 +359,6 @@ function Manager:open_blocked_input_window(session, tabpage)
     end
 
     local title_suffix = waiting_state == "permission" and "Waiting for permission" or "Waiting for input"
-    local footer = session.active_queue_item_title
     local window
     call_in_tabpage(tabpage, function()
         window = self:open_window(
@@ -369,7 +366,6 @@ function Manager:open_blocked_input_window(session, tabpage)
             nil,
             vim.tbl_deep_extend("force", {
                 title = ("%s - %s"):format(session.title, title_suffix),
-                footer = footer and (" Queue: %s "):format(footer) or nil,
             }, vim.deepcopy(blocked_input.win or {}))
         )
     end)
@@ -503,9 +499,6 @@ function Manager:persistence_specs()
                 env = session.env and vim.deepcopy(session.env) or nil,
                 project_root = session.project_root,
                 header_enabled = session.header_enabled,
-                active_queue_item_id = session.active_queue_item_id,
-                active_queue_item_title = session.active_queue_item_title,
-                queue_loop_enabled = session.queue_loop_enabled,
             }
         end
     end
@@ -520,9 +513,6 @@ function Manager:persistence_specs()
             env = self.free_session.env and vim.deepcopy(self.free_session.env) or nil,
             project_root = self.free_session.project_root,
             header_enabled = self.free_session.header_enabled,
-            active_queue_item_id = self.free_session.active_queue_item_id,
-            active_queue_item_title = self.free_session.active_queue_item_title,
-            queue_loop_enabled = self.free_session.queue_loop_enabled,
         }
     end
 

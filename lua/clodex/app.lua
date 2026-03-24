@@ -276,9 +276,6 @@ local function waiting_session_rank(current_state, session)
     if current_state.active_project_root and session.project_root == current_state.active_project_root then
         rank = rank + 8
     end
-    if session.active_queue_item_id then
-        rank = rank + 1
-    end
     if session.kind == "project" then
         rank = rank + 1
     end
@@ -965,9 +962,6 @@ function App:is_project_working(project)
     if self.exec_runner and self.exec_runner:is_project_active(project.root) then
         return true
     end
-    if self.queue and type(self.queue.active_item) == "function" and self.queue:active_item(project) then
-        return true
-    end
     return self.terminals:is_project_session_working(project.root)
 end
 
@@ -980,7 +974,7 @@ function App:projects_for_queue_workspace()
     for _, project in ipairs(projects) do
         summaries[project.root] = self:queue_summary(project)
         local details = self.project_details_store:get_cached(project)
-        project_updates[project.root] = details and (details.last_file_modified_at or details.last_codex_activity_at)
+        project_updates[project.root] = details and details.last_file_modified_at
             or 0
     end
 
@@ -1012,12 +1006,6 @@ end
 function App:queue_summary(project)
     local session_running = self:is_project_session_running(project)
     local summary = self.queue:summary(project, session_running, self:is_project_working(project))
-    local active_item = type(self.queue.active_item) == "function" and self.queue:active_item(project) or nil
-    local session = type(self.terminals.project_session) == "function" and self.terminals:project_session(project.root)
-        or nil
-    summary.active_item_id = active_item and active_item.id or nil
-    summary.active_item_title = active_item and active_item.title or nil
-    summary.queue_loop_enabled = session ~= nil and session.queue_loop_enabled == true or false
     return summary
 end
 

@@ -232,8 +232,6 @@ local function append_session(self, block, session)
   append_field(self, block, "  job", session.job_id or "none")
   append_field(self, block, "  provider", session.terminal_provider or "snacks")
   append_field(self, block, "  env", session_env_summary(session))
-  append_field(self, block, "  active item", session.active_queue_item_title or session.active_queue_item_id or "none")
-  append_field(self, block, "  queue loop", session.queue_loop_enabled and "armed" or "idle")
   append_field(self, block, "  last line", session.last_cli_line ~= "" and session.last_cli_line or "none")
 end
 
@@ -258,8 +256,6 @@ local function append_project_summary(self, block, project)
   append_field(self, block, "project", project.name)
   append_field(self, block, "root", project.root)
   append_field(self, block, "queues", queue_counts_text(summary.counts))
-  append_field(self, block, "active item", summary.active_item_title or "none")
-  append_field(self, block, "queue loop", summary.queue_loop_enabled and "armed" or "idle")
   append_field(self, block, "session", session and session_status(session) or "offline")
   append_field(self, block, "last queue update", summary.last_updated_at ~= "" and summary.last_updated_at or "none")
 end

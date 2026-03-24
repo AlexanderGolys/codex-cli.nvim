@@ -17,7 +17,6 @@ local language_profile = LanguageProfile.new()
 ---@field file_count integer
 ---@field avg_lines_per_file? number
 ---@field remote_name? string
----@field last_codex_activity_at? integer
 ---@field last_file_modified_at? integer
 ---@field languages Clodex.ProjectDetails.LanguageStat[]
 
@@ -25,7 +24,6 @@ local language_profile = LanguageProfile.new()
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.ProjectDetails.Metadata
 ---@field version integer
----@field last_codex_activity_at? integer
 ---@field captured_at? integer
 ---@field snapshot? Clodex.ProjectDetails.Snapshot
 
@@ -164,7 +162,6 @@ local function normalize_snapshot(snapshot)
     file_count = tonumber(snapshot.file_count) or 0,
     avg_lines_per_file = tonumber(snapshot.avg_lines_per_file) or nil,
     remote_name = type(snapshot.remote_name) == "string" and snapshot.remote_name or nil,
-    last_codex_activity_at = tonumber(snapshot.last_codex_activity_at) or nil,
     last_file_modified_at = tonumber(snapshot.last_file_modified_at) or nil,
     languages = type(snapshot.languages) == "table" and vim.deepcopy(snapshot.languages) or {},
   }
@@ -208,30 +205,14 @@ function Details:get_cached(project)
     return nil
   end
 
-  if metadata.last_codex_activity_at and not snapshot.last_codex_activity_at then
-    snapshot.last_codex_activity_at = metadata.last_codex_activity_at
-  end
-
   cache_snapshot(self, project.root, snapshot, metadata.captured_at)
   return vim.deepcopy(snapshot)
 end
 
---- Records the latest Codex interaction timestamp for a project.
 ---@param project Clodex.Project
 ---@param timestamp? integer
 function Details:touch_activity(project, timestamp)
-  local project_root = project.root
-  local metadata = read_metadata(self.config, project_root)
-  metadata.last_codex_activity_at = timestamp or os.time()
-  if metadata.snapshot then
-    metadata.snapshot.last_codex_activity_at = metadata.last_codex_activity_at
-  end
-  write_metadata(self.config, project_root, metadata)
-
-  local cached = self.cache[project_root]
-  if cached then
-    cached.snapshot.last_codex_activity_at = metadata.last_codex_activity_at
-  end
+  return project, timestamp
 end
 
 --- Removes a project details item and normalizes dependent state.
@@ -345,12 +326,10 @@ function Details:compute(project)
 
   local languages = language_profile:dominant_languages(language_totals)
 
-  local metadata = read_metadata(self.config, project.root)
   return {
     file_count = file_count,
     avg_lines_per_file = line_file_count > 0 and (line_total / line_file_count) or nil,
     remote_name = git.remote_name(project.root),
-    last_codex_activity_at = metadata.last_codex_activity_at,
     last_file_modified_at = last_file_modified_at,
     languages = languages,
   }

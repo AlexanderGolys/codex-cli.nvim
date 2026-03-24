@@ -141,7 +141,7 @@ That gives you:
 - Keep one persistent session per project root.
 - Keep one free non-project session outside registered projects.
 - Track active projects per tabpage.
-- Show a floating runtime-state preview of live session/tab/target state without turning offline registry data into fake in-memory state.
+- Show a floating runtime-state preview of live session/tab/target state without trying to infer or persist a session's current task.
 - Open a queue workspace with project summaries and prompt history.
 - Add prompts from categories or saved prompt templates.
 - Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
@@ -510,7 +510,7 @@ The left pane shows:
 - known projects
 - whether a Codex session is running
 - queue counts for `planned`, `queued`, `implemented`, and `history`
-- project detail snapshots such as file counts, languages, git remote, and recent activity
+- project detail snapshots such as file counts, dominant languages, git remote, and last repository file update
 
 The right pane shows:
 
@@ -543,6 +543,8 @@ When a queued item is dispatched:
 5. Codex performs the work, skips commits for `ask` prompts, creates a focused commit for other kinds when the project is git-backed, and updates the current item in the project-local queue files when done.
 6. If more prompts are still in `queued`, Codex continues with the next one; items in `planned` are left alone.
 7. The plugin polls queue-file revisions on a timer and refreshes the matching item in Neovim.
+
+The workspace deliberately avoids showing inferred per-session "currently running task" metadata. In practice that information was noisy, easy to mis-detect, and less useful than simple repository facts plus queue contents.
 
 If that interactive session later stops on a follow-up question or permission prompt while hidden, Clodex can reopen that exact terminal as a float in the current tab so you can unblock it without switching workspace context.
 
