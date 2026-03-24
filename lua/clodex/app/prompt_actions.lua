@@ -48,6 +48,24 @@ function PromptActions.new(app)
     return setmetatable({ app = app }, PromptActions)
 end
 
+---@param project Clodex.Project
+---@return string?
+local function library_language_hint(self, project)
+    local details_store = self.app.project_details_store
+    if not details_store or not details_store.get_cached then
+        return nil
+    end
+
+    local details = details_store:get_cached(project)
+    local languages = details and details.languages or nil
+    local primary = type(languages) == "table" and languages[1] or nil
+    local name = primary and primary.name or nil
+    if type(name) ~= "string" or name == "other" then
+        return nil
+    end
+    return name
+end
+
 ---@param opts? Clodex.AppPromptActions.ResolveOpts
 ---@return Clodex.Project?
 function PromptActions:resolve_project(opts)
@@ -275,7 +293,7 @@ end
 
 ---@param project Clodex.Project
 function PromptActions:prompt_for_library(project)
-    local templates = Prompt.library.list()
+    local templates = Prompt.library.list({ language = library_language_hint(self, project) })
     local items = {}
     for _, template in ipairs(templates) do
         items[#items + 1] = vim.tbl_extend("force", template, {

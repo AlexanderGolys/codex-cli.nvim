@@ -31,6 +31,10 @@
 ---@field title string
 ---@field details string
 ---@field kind Clodex.PromptCategory
+---@field language_aware? boolean
+
+---@class Clodex.PromptLibrary.ResolveOpts
+---@field language? string
 
 ---@class Clodex.Prompt.NormalizeResult
 ---@field title string
@@ -39,11 +43,34 @@
 
 ---@class Clodex.Prompt
 ---@field categories { list: fun(): Clodex.PromptCategoryDef[], get: fun(id?: string): Clodex.PromptCategoryDef, is_valid: fun(id?: string): boolean, requires_commit: fun(id?: string): boolean, commit_policy: fun(id?: string): "required"|"skip"|"optional" }
----@field library { list: fun(): Clodex.PromptLibrary.Template[], get: fun(id: string): Clodex.PromptLibrary.Template? }
+---@field library { list: fun(opts?: Clodex.PromptLibrary.ResolveOpts): Clodex.PromptLibrary.Template[], get: fun(id: string, opts?: Clodex.PromptLibrary.ResolveOpts): Clodex.PromptLibrary.Template? }
 local M = {}
 
 local WHITESPACE_SUFFIX = " [...]"
 local MIDWORD_SUFFIX = "-[...]"
+local LANGUAGE_LABELS = {
+    c = "C",
+    cpp = "C++",
+    css = "CSS",
+    docker = "Docker",
+    go = "Go",
+    html = "HTML",
+    java = "Java",
+    js = "JavaScript",
+    jsx = "React/JSX",
+    lua = "Lua",
+    make = "Make",
+    php = "PHP",
+    py = "Python",
+    rb = "Ruby",
+    rs = "Rust",
+    sh = "shell",
+    sql = "SQL",
+    ts = "TypeScript",
+    tsx = "React/TSX",
+    vim = "Vimscript",
+    zig = "Zig",
+}
 local TITLE_GROUP_SUFFIX = {
     todo = "TodoTitle",
     bug = "BugTitle",
@@ -169,6 +196,72 @@ local templates = {
             "Fix what should be fixed and explain clearly why any remaining diagnostics should be ignored.",
         }, "\n\n"),
     },
+    {
+        id = "review-current-file",
+        label = "Review current file",
+        title = "Review the current file",
+        kind = "ask",
+        language_aware = true,
+        details = table.concat({
+            "Review `&file` for correctness, structure, naming, and maintainability.",
+            "Call out the most important problems first, then list concrete improvements and any follow-up refactors worth considering.",
+        }, "\n\n"),
+    },
+    {
+        id = "simplify-selection",
+        label = "Simplify selection",
+        title = "Simplify the selected code",
+        kind = "refactor",
+        language_aware = true,
+        details = table.concat({
+            "Focus on `&selection` and simplify it without changing behavior.",
+            "Reduce indirection, duplication, and unnecessary branching while preserving the surrounding API and the repository's style.",
+        }, "\n\n"),
+    },
+    {
+        id = "improve-documentation",
+        label = "Improve documentation",
+        title = "Improve documentation for the current file",
+        kind = "todo",
+        language_aware = true,
+        details = table.concat({
+            "Use `&file` as the main reference and improve the documentation around the code that matters most.",
+            "Prefer concise, high-signal explanations, add missing usage guidance when helpful, and avoid comments that just restate obvious code.",
+        }, "\n\n"),
+    },
+    {
+        id = "map-project-architecture",
+        label = "Map project architecture",
+        title = "Explain the project architecture",
+        kind = "ask",
+        language_aware = true,
+        details = table.concat({
+            "Explain the repository in terms of its main modules, boundaries, data flow, and architectural decisions.",
+            "Highlight the most important tradeoffs, fragile spots, and places where the structure could be clarified or simplified.",
+        }, "\n\n"),
+    },
+    {
+        id = "plan-project-work",
+        label = "Plan project work",
+        title = "Create an implementation plan for the current project",
+        kind = "idea",
+        language_aware = true,
+        details = table.concat({
+            "Study the current codebase and produce a concrete implementation plan before changing code.",
+            "Break the work into ordered steps, mention architectural constraints, and call out the validation needed for each stage.",
+        }, "\n\n"),
+    },
+    {
+        id = "review-plan-against-code",
+        label = "Review plan against code",
+        title = "Review a plan against the current codebase",
+        kind = "ask",
+        language_aware = true,
+        details = table.concat({
+            "Use the pasted plan as the proposal and compare it against the actual repository structure and constraints.",
+            "Point out where the plan matches the codebase, where it conflicts with reality, and what should be changed before implementation starts.",
+        }, "\n\n"),
+    },
 }
 
 local templates_by_id = {} ---@type table<string, Clodex.PromptLibrary.Template>
@@ -187,6 +280,44 @@ local function prepend_details(title, details)
         parts[#parts + 1] = tail
     end
     return #parts > 0 and table.concat(parts, "\n\n") or nil
+end
+
+---@param language? string
+---@return string?
+local function normalize_language(language)
+    language = type(language) == "string" and vim.trim(language):lower() or ""
+    if language == "" or language == "other" then
+        return nil
+    end
+    return language
+end
+
+---@param language? string
+---@return string?
+local function language_label(language)
+    language = normalize_language(language)
+    if not language then
+        return nil
+    end
+    return LANGUAGE_LABELS[language] or language:upper()
+end
+
+---@param template Clodex.PromptLibrary.Template
+---@param opts? Clodex.PromptLibrary.ResolveOpts
+---@return Clodex.PromptLibrary.Template
+local function resolve_template(template, opts)
+    local resolved = vim.deepcopy(template)
+    local language = template.language_aware and language_label(opts and opts.language) or nil
+    if not language then
+        return resolved
+    end
+
+    resolved.label = ("%s (%s)"):format(resolved.label, language)
+    resolved.details = table.concat({
+        ("Use idiomatic %s conventions for structure, naming, error handling, and documentation whenever that guidance fits the code under review."):format(language),
+        resolved.details,
+    }, "\n\n")
+    return resolved
 end
 
 M.categories = {}
@@ -222,16 +353,22 @@ end
 
 M.library = {}
 
+---@param opts? Clodex.PromptLibrary.ResolveOpts
 ---@return Clodex.PromptLibrary.Template[]
-function M.library.list()
-    return vim.deepcopy(templates)
+function M.library.list(opts)
+    local items = {} ---@type Clodex.PromptLibrary.Template[]
+    for _, template in ipairs(templates) do
+        items[#items + 1] = resolve_template(template, opts)
+    end
+    return items
 end
 
 ---@param id string
+---@param opts? Clodex.PromptLibrary.ResolveOpts
 ---@return Clodex.PromptLibrary.Template?
-function M.library.get(id)
+function M.library.get(id, opts)
     local template = templates_by_id[id]
-    return template and vim.deepcopy(template) or nil
+    return template and resolve_template(template, opts) or nil
 end
 
 ---@param title string

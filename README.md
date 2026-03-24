@@ -574,9 +574,14 @@ The built-in prompt library currently ships with reusable templates such as:
 - `fix-diagnostics`
 - `explain-current-file`
 - `refactor-selection`
-- `summarize-qf`
+- `review-current-file`
+- `simplify-selection`
+- `improve-documentation`
+- `map-project-architecture`
+- `plan-project-work`
+- `review-plan-against-code`
 
-These are plain prompt blueprints that can be inserted into the queue as normal items.
+These are plain prompt blueprints that can be inserted into the queue as normal items. When Clodex already knows the dominant project language, library entries can bias their guidance toward that language's conventions.
 
 ## Public Lua API
 
@@ -702,7 +707,7 @@ The runtime loop is straightforward:
 The current implementation is centered on project/session management and queued prompt execution. Planned or likely follow-up areas include:
 
 - richer prompt-generation flows based on editor context such as current file, ranges, diagnostics, and quickfix lists
-- more reusable prompt-library templates
+- richer prompt-library tooling and per-language prompt guidance
 - broader test coverage for config merging, queue transitions, and session persistence
 - additional project/session metadata surfaced in the UI
 - more refined prompt authoring flows for visual and diagnostic tasks
