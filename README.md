@@ -404,6 +404,7 @@ require("clodex").setup({
 - Supported values are `snacks` and `term`.
 - `snacks` uses `snacks.terminal`; `term` uses Neovim's built-in terminal via `termopen()` while keeping the same Clodex session/window workflow.
 - Default is `snacks`.
+- OpenCode sessions always use the native `term` path internally so full-screen CLI redraws are sized from the real Clodex window instead of a hidden bootstrap float.
 
 `terminal.blocked_input`
 

@@ -86,6 +86,16 @@ local function session_running_for_project(session, project_root)
 end
 
 ---@param config Clodex.Config.Values
+---@return "snacks"|"term"
+local function session_terminal_provider(config)
+    local backend = Backend.normalize(config.backend)
+    if backend == "opencode" then
+        return "term"
+    end
+    return config.terminal.provider
+end
+
+---@param config Clodex.Config.Values
 ---@return Clodex.TerminalManager
 function Manager.new(config)
     local self = setmetatable({}, Manager)
@@ -119,6 +129,7 @@ end
 ---@param target Clodex.TerminalTarget
 ---@return Clodex.TerminalSession.Spec
 function Manager:session_spec(target)
+    local terminal_provider = session_terminal_provider(self.config)
     if target.kind == "project" then
         local cmd = Backend.cli_cmd(self.config)
         return {
@@ -128,7 +139,7 @@ function Manager:session_spec(target)
             title = string.format("Clodex: %s", target.project.name),
             cmd = cmd,
             env = Backend.cli_env(self.config, target),
-            terminal_provider = self.config.terminal.provider,
+            terminal_provider = terminal_provider,
             project_root = target.project.root,
             header_enabled = false,
         }
@@ -141,7 +152,7 @@ function Manager:session_spec(target)
         title = string.format("Clodex: %s", target.cwd),
         cmd = Backend.cli_cmd(self.config),
         env = Backend.cli_env(self.config, target),
-        terminal_provider = self.config.terminal.provider,
+        terminal_provider = terminal_provider,
         header_enabled = true,
     }
 end

@@ -93,6 +93,7 @@ describe("clodex.mcp", function()
 
         assert.are.same(Backend.cli_cmd(values), spec.cmd)
         assert.are.equal(Mcp.codex_home(values), spec.env.CODEX_HOME)
+        assert.are.equal("snacks", spec.terminal_provider)
 
         fs.remove(values.mcp.runtime_dir)
     end)
@@ -125,6 +126,7 @@ describe("clodex.mcp", function()
         assert.are.same({ "opencode" }, spec.cmd)
         assert.are.equal(Mcp.opencode_config_path(values), spec.env.OPENCODE_CONFIG)
         assert.are.same({ "cargo", "run", "--bin", "clodex-mcp" }, decoded.mcp.clodex.command)
+        assert.are.equal("term", spec.terminal_provider)
 
         fs.remove(values.mcp.runtime_dir)
     end)
