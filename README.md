@@ -526,6 +526,7 @@ The right pane shows:
 - prompts grouped by queue
 - category-colored titles
 - prompt previews
+- explicit prompt type metadata
 - implementation/history metadata for completed items
 
 Supported workspace actions include:
@@ -802,7 +803,7 @@ Manual validation:
 2. Add prompts and move one into `queued`.
 3. Dispatch it with `:ClodexTodo implement`.
 4. Confirm the prompt is sent to the project session.
-5. Confirm Codex creates a focused commit, updates the implemented item metadata in the `.clodex` queue files, and shows the commit in the main panel preview.
+5. Confirm Codex creates a focused commit, updates the implemented item metadata in the `.clodex` queue files, and shows the prompt type plus commit metadata in the main panel preview.
 
 ## License
 

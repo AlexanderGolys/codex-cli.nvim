@@ -734,6 +734,7 @@ describe("clodex.ui.queue_workspace", function()
             "Implemented (1)",
             "  Fix parser  [󰜘 abc1234]",
             "    Adjust token handling",
+            "    Type: TODO",
             "    󰜘 abc1234",
             "",
         }, lines)

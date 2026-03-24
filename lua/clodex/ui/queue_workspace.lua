@@ -373,6 +373,21 @@ local function prompt_item_kind(item)
 end
 
 ---@param item Clodex.QueueItem
+---@return { text: string, marks: Clodex.Extmark[] }
+local function item_kind_preview_line(item)
+    local kind = Prompt.categories.get(item.kind)
+    local text = ("    Type: %s"):format(kind.label)
+    return {
+        text = text,
+        marks = {
+            Extmark.inline(0, 0, 4, "ClodexQueueItemMuted"),
+            Extmark.inline(0, 4, 10, "ClodexStateFieldLabel"),
+            Extmark.inline(0, 10, #text, Prompt.title_group(kind.id)),
+        },
+    }
+end
+
+---@param item Clodex.QueueItem
 ---@param opts? { max_lines?: integer, fold?: boolean }
 ---@return string[]
 local function prompt_preview_lines(item, opts)
@@ -416,6 +431,7 @@ end
 ---@return { text: string, marks: Clodex.Extmark[] }[]
 local function item_metadata_preview_lines(item, project_root)
     local preview = {} ---@type { text: string, marks: Clodex.Extmark[] }[]
+    preview[#preview + 1] = item_kind_preview_line(item)
     local commits = item.history_commits or {}
     if #commits > 0 then
         local commit_parts = {}
