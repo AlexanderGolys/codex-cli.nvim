@@ -842,7 +842,7 @@ describe("clodex.ui.queue_workspace", function()
         assert.is_true(project_width >= vim.fn.strdisplaywidth(project.name))
     end)
 
-    it("renders a spinner prefix for actively working projects", function()
+    it("renders a running prefix for active project sessions", function()
         local project = {
             name = "Busy Project",
             root = "/tmp/busy-project",
@@ -897,7 +897,7 @@ describe("clodex.ui.queue_workspace", function()
         workspace:render_projects()
 
         local first_line = vim.api.nvim_buf_get_lines(workspace.project_buf, 0, 1, false)[1]
-        assert.are.equal("⠋ ", first_line:sub(1, #"⠋ "))
+        assert.are.equal("󰚩 ", first_line:sub(1, #"󰚩 "))
     end)
 
     it("reflows the open workspace when the project content width changes", function()

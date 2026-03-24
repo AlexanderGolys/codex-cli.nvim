@@ -234,10 +234,6 @@ end
 ---@param animation_tick integer
 ---@return string
 local function project_title_prefix(summary, animation_tick)
-    if summary.session_working then
-        local frame = ((animation_tick - 1) % #PROJECT_WORKING_ICONS) + 1
-        return PROJECT_WORKING_ICONS[frame]
-    end
     return summary.session_running and PROJECT_RUNNING_ICON or PROJECT_STOPPED_ICON
 end
 
@@ -730,11 +726,6 @@ function Workspace.new(app, config)
 end
 
 function Workspace:has_working_projects()
-    for _, project in ipairs(self.projects) do
-        if self.app.is_project_working and self.app:is_project_working(project) then
-            return true
-        end
-    end
     return false
 end
 
@@ -1461,7 +1452,6 @@ function Workspace:render_projects()
         self.project_item_rows[#self.project_item_rows + 1] = #self.project_rows
         local is_active_project = active_root ~= nil and project.root == active_root
         local item_hl = is_active_project and "ClodexQueueProjectCurrent"
-            or summary.session_working and "ClodexQueueProjectWorking"
             or summary.session_running and "ClodexQueueProjectActive"
             or "ClodexQueueProjectInactive"
         local item_extmarks = {

@@ -142,7 +142,7 @@ That gives you:
 - Keep one free non-project session outside registered projects.
 - Track active projects per tabpage.
 - Show a floating runtime-state preview of live session/tab/target state without trying to infer or persist a session's current task.
-- Open a queue workspace with project summaries and prompt history.
+- Open a queue workspace with project summaries and prompt history, focused on repository facts, queue contents, and stable session presence instead of inferred live task state.
 - Add prompts from categories or saved prompt templates.
 - Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
 - Dispatch the next queued prompt or all queued prompts for a project.
