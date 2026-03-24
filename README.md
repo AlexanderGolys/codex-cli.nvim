@@ -506,10 +506,13 @@ Queue and prompt commands:
 - `:ClodexTodo implement [for]? [project]?`
 - `:ClodexTodo all [for]? [project]?`
 - `:ClodexPrompt [kind]? [for]? [project]?`
+- `:ClodexPromptFile [kind]?`
 - `:ClodexPrompt refactor`
 - `:ClodexPrompt bug for`
 - `:ClodexPrompt ask demo-project`
+- `:ClodexPromptFile ask`
 - Run `:'<,'>ClodexPrompt ...` from visual mode to open the prompt composer with the selected range already referenced in the prompt body.
+- `:ClodexPromptFile` targets the registered project that owns the currently focused file instead of the tab's active project.
 
 
 ## Queue Workspace

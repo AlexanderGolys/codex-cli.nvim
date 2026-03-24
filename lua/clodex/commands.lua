@@ -383,6 +383,108 @@ local function enum_completion(enum_spec, arg_index)
     end
 end
 
+---@return string[]
+local function project_completions()
+    local ok, app = pcall(app_instance)
+    if not ok or not app or not app.registry or type(app.registry.list) ~= "function" then
+        return {}
+    end
+
+    local seen = {} ---@type table<string, boolean>
+    local completions = {} ---@type string[]
+    for _, project in ipairs(app.registry:list()) do
+        for _, value in ipairs({ project.name, project.root }) do
+            if type(value) == "string" and value ~= "" and not seen[value] then
+                seen[value] = true
+                completions[#completions + 1] = value
+            end
+        end
+    end
+    table.sort(completions)
+    return completions
+end
+
+---@param ... string[]
+---@return string[]
+local function merge_completions(...)
+    local seen = {} ---@type table<string, boolean>
+    local merged = {} ---@type string[]
+    for _, items in ipairs({ ... }) do
+        for _, item in ipairs(items) do
+            if not seen[item] then
+                seen[item] = true
+                merged[#merged + 1] = item
+            end
+        end
+    end
+    table.sort(merged)
+    return merged
+end
+
+---@param action_enum Clodex.CommandEnum
+---@param fargs string[]
+---@return integer
+local function completion_target_start(action_enum, fargs)
+    if fargs[1] and action_enum.aliases[fargs[1]] ~= nil then
+        return 2
+    end
+    return 1
+end
+
+---@param cmd_line string
+---@param cursor_pos integer
+---@return string[]
+local function completion_fargs(cmd_line, cursor_pos)
+    local parts = vim.split(cmd_line:sub(1, cursor_pos), "%s+", { trimempty = true })
+    table.remove(parts, 1)
+    return parts
+end
+
+---@param action_enum Clodex.CommandEnum
+---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
+local function target_completion(action_enum)
+    return function(_, cmd_line, cursor_pos)
+        local index = completion_arg_index(cmd_line, cursor_pos)
+        local before = completion_fargs(cmd_line, cursor_pos)
+        local target_start = completion_target_start(action_enum, before)
+        if index < target_start then
+            return action_enum.completions
+        end
+        if index == target_start then
+            if target_start == 1 then
+                return merge_completions(action_enum.completions, TARGET_SCOPE.completions, project_completions())
+            end
+            return merge_completions(TARGET_SCOPE.completions, project_completions())
+        end
+        if index == target_start + 1 and TARGET_SCOPE.aliases[before[target_start]] == nil then
+            return project_completions()
+        end
+        return {}
+    end
+end
+
+---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
+local function prompt_completion()
+    return function(_, cmd_line, cursor_pos)
+        local index = completion_arg_index(cmd_line, cursor_pos)
+        local before = completion_fargs(cmd_line, cursor_pos)
+        local target_start = completion_target_start(PROMPT_KIND, before)
+        if index < target_start then
+            return PROMPT_KIND.completions
+        end
+        if index == target_start then
+            if target_start == 1 then
+                return merge_completions(PROMPT_KIND.completions, TARGET_SCOPE.completions, project_completions())
+            end
+            return merge_completions(TARGET_SCOPE.completions, project_completions())
+        end
+        if index == target_start + 1 and TARGET_SCOPE.aliases[before[target_start]] == nil then
+            return project_completions()
+        end
+        return {}
+    end
+end
+
 local function top_level_palette_specs()
     return {
         { name = "Clodex", desc = "Toggle the queue workspace panel", invoke = "Clodex" },
@@ -408,6 +510,7 @@ local function top_level_palette_specs()
         { name = "ClodexTodo bug", desc = "Add a bug-investigation prompt", invoke = "ClodexTodo bug" },
         { name = "ClodexTodo implement", desc = "Implement the next queued item", invoke = "ClodexTodo implement" },
         { name = "ClodexTodo all", desc = "Implement all queued items", invoke = "ClodexTodo all" },
+        { name = "ClodexPromptFile", desc = "Add a prompt for the current file's project", invoke = "ClodexPromptFile" },
     } ---@type Clodex.CommandSpec[]
 end
 
@@ -537,16 +640,7 @@ local function registered_command_specs()
             name = "ClodexTodo",
             desc = "Add or implement todo queue items",
             nargs = "*",
-            complete = function(_, cmd_line, cursor_pos)
-                local index = completion_arg_index(cmd_line, cursor_pos)
-                if index == 1 then
-                    return TODO_ACTION.completions
-                end
-                if index == 2 then
-                    return TARGET_SCOPE.completions
-                end
-                return {}
-            end,
+            complete = target_completion(TODO_ACTION),
             handler = function(command)
                 local clodex = require_clodex()
                 local token = command.fargs[1]
@@ -585,16 +679,7 @@ local function registered_command_specs()
             desc = "Add a prompt with an optional category and project target",
             nargs = "*",
             range = true,
-            complete = function(_, cmd_line, cursor_pos)
-                local index = completion_arg_index(cmd_line, cursor_pos)
-                if index == 1 then
-                    return PROMPT_KIND.completions
-                end
-                if index == 2 then
-                    return TARGET_SCOPE.completions
-                end
-                return {}
-            end,
+            complete = prompt_completion(),
             handler = function(command)
                 local clodex = require_clodex()
                 local fargs = command.fargs
@@ -629,6 +714,32 @@ local function registered_command_specs()
                     return
                 end
                 clodex.add_prompt(opts)
+            end,
+        },
+        {
+            name = "ClodexPromptFile",
+            desc = "Add a prompt for the project that owns the current file",
+            nargs = "?",
+            range = true,
+            complete = enum_completion(PROMPT_KIND, 1),
+            handler = function(command)
+                local clodex = require_clodex()
+                local kind = nil ---@type Clodex.PromptCategory?
+                if command.fargs[1] then
+                    kind = resolve_enum(command.fargs[1], PROMPT_KIND, "ClodexPromptFile")
+                    if not kind then
+                        return
+                    end
+                end
+                if not check_extra_args("ClodexPromptFile", vim.list_slice(command.fargs, 2), "at most one kind argument") then
+                    return
+                end
+
+                clodex.add_prompt_for_current_file_project(vim.tbl_extend("force", kind and {
+                    category = kind,
+                } or {}, visual_selection_context(command) and {
+                    context = visual_selection_context(command),
+                } or {}))
             end,
         },
     }

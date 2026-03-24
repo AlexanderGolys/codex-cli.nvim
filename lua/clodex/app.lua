@@ -25,6 +25,17 @@ local Mcp = require("clodex.mcp")
 local fs = require("clodex.util.fs")
 local notify = require("clodex.util.notify")
 
+---@param self Clodex.App
+---@return boolean
+local function modal_input_open(self)
+    local queue_workspace = self.queue_workspace
+    if queue_workspace and queue_workspace.modal_input_open then
+        return true
+    end
+
+    return require("clodex.ui.select").has_active_input()
+end
+
 --- Defines the Clodex.App type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.App
@@ -865,7 +876,7 @@ function App:state_snapshot()
         sessions = sessions,
         runtime_projects = runtime_projects,
         runtime_project_states = runtime_project_states,
-        backend = Backend.is_valid_name(self.config:get().backend),
+        backend = Backend.normalize(self.config:get().backend),
     }
 end
 
@@ -881,6 +892,10 @@ function App:refresh_queue_workspace()
 end
 
 function App:refresh_views()
+    if modal_input_open(self) then
+        self:close_blocked_input_window()
+        return
+    end
     self:refresh_state_preview()
     self:refresh_queue_workspace()
     self:sync_blocked_input_window()
@@ -898,6 +913,11 @@ function App:close_blocked_input_window()
 end
 
 function App:sync_blocked_input_window()
+    if modal_input_open(self) then
+        self:close_blocked_input_window()
+        return
+    end
+
     local blocked_input = self.config:get().terminal.blocked_input
     if not blocked_input or blocked_input == false or blocked_input.enabled == false then
         self:close_blocked_input_window()
@@ -1027,6 +1047,21 @@ function App:add_prompt_for_project(opts)
     self.prompt_actions:pick_target(opts, function(project, category)
         self.prompt_actions:prompt_for_category_kind(project, category, opts)
     end)
+end
+
+function App:add_prompt_for_current_file_project(opts)
+    opts = opts or {}
+    local path = fs.current_path(opts.buf)
+    local project = self.registry:find_for_path(path)
+    if not project then
+        notify.error(("Current file is not inside a registered project: %s"):format(path))
+        return
+    end
+
+    self:add_prompt_for_project(vim.tbl_extend("force", opts, {
+        project = project,
+        project_required = true,
+    }))
 end
 
 for name, spec in pairs(FORWARDED_METHODS) do

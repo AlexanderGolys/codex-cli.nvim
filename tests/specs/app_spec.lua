@@ -11,6 +11,11 @@ package.loaded["snacks.terminal"] = {
         }
     end,
 }
+package.loaded["clodex.ui.select"] = {
+    has_active_input = function()
+        return false
+    end,
+}
 
 local App = require("clodex.app")
 local Commands = require("clodex.commands")
@@ -201,12 +206,66 @@ describe("clodex.app", function()
         })
 
         assert.is_true(vim.tbl_contains(command_names, "Clodex backend"))
+        assert.is_true(vim.tbl_contains(command_names, "ClodexPromptFile"))
         assert.is_true(vim.tbl_contains(
             vim.tbl_map(function(item)
                 return item.lhs
             end, keymaps),
             "<leader>pb"
         ))
+    end)
+
+    it("uses the current file project when opening a prompt composer", function()
+        local project = { name = "Alpha", root = "/tmp/alpha" }
+        local called
+        local app = setmetatable({
+            registry = {
+                find_for_path = function(_, path)
+                    if path == "/tmp/alpha/lua/example.lua" then
+                        return project
+                    end
+                end,
+            },
+            add_prompt_for_project = function(_, opts)
+                called = opts
+            end,
+        }, App)
+        local original_get_name = vim.api.nvim_buf_get_name
+        vim.api.nvim_buf_get_name = function()
+            return "/tmp/alpha/lua/example.lua"
+        end
+
+        app:add_prompt_for_current_file_project({ category = "ask" })
+
+        vim.api.nvim_buf_get_name = original_get_name
+        assert.are.same(project, called.project)
+        assert.are.equal("ask", called.category)
+        assert.is_true(called.project_required)
+    end)
+
+    it("reports an error when the current file is outside registered projects", function()
+        local app = setmetatable({
+            registry = {
+                find_for_path = function()
+                    return nil
+                end,
+            },
+        }, App)
+        local messages = {}
+        local original_notify = vim.notify
+        local original_get_name = vim.api.nvim_buf_get_name
+        vim.notify = function(message)
+            messages[#messages + 1] = message
+        end
+        vim.api.nvim_buf_get_name = function()
+            return "/tmp/outside/file.lua"
+        end
+
+        app:add_prompt_for_current_file_project()
+
+        vim.api.nvim_buf_get_name = original_get_name
+        vim.notify = original_notify
+        assert.matches("Current file is not inside a registered project", messages[#messages])
     end)
 
     it("surfaces hidden waiting sessions in a floating terminal", function()
@@ -308,6 +367,60 @@ describe("clodex.app", function()
                     opened = true
                 end,
             },
+        }, App)
+
+        app:sync_blocked_input_window()
+
+        assert.is_false(opened)
+        assert.are.equal(nil, app.blocked_input_window)
+    end)
+
+    it("does not surface blocked-input popups while a workspace modal input is opening", function()
+        local opened = false
+        local waiting_session = {
+            key = "/tmp/alpha",
+            kind = "project",
+            title = "Clodex: Alpha",
+            project_root = "/tmp/alpha",
+            is_running = function()
+                return true
+            end,
+            waiting_state = function()
+                return "question"
+            end,
+        }
+        local app = setmetatable({
+            config = {
+                get = function()
+                    return {
+                        terminal = {
+                            blocked_input = {
+                                enabled = true,
+                            },
+                        },
+                    }
+                end,
+            },
+            queue_workspace = {
+                modal_input_open = true,
+            },
+            current_tab = function()
+                return {
+                    tabpage = vim.api.nvim_get_current_tabpage(),
+                    active_project_root = "/tmp/alpha",
+                    session_key = nil,
+                }
+            end,
+            terminals = {
+                sessions = function()
+                    return { waiting_session }
+                end,
+                open_blocked_input_window = function()
+                    opened = true
+                end,
+            },
+            close_blocked_input_window = function()
+            end,
         }, App)
 
         app:sync_blocked_input_window()
