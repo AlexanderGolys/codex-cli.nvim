@@ -1,5 +1,6 @@
 local notify = require("clodex.util.notify")
 local Prompt = require("clodex.prompt")
+local PromptContext = require("clodex.prompt.context")
 
 local M = {}
 
@@ -45,6 +46,7 @@ local did_register = false
 ---@field name string
 ---@field desc string
 ---@field nargs? string
+---@field range? boolean|string|integer
 ---@field complete? fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
 ---@field handler fun(command: vim.api.keyset.create_user_command.command_args)
 
@@ -352,6 +354,23 @@ local function parse_target(command_name, fargs, start_index)
     return project and { project = project } or {}
 end
 
+---@param command vim.api.keyset.create_user_command.command_args
+---@return Clodex.PromptContext.Capture?
+local function visual_selection_context(command)
+    if not command or (command.range or 0) <= 0 then
+        return nil
+    end
+
+    local selection_mode = vim.fn.visualmode()
+    if selection_mode == "" then
+        selection_mode = "v"
+    end
+
+    return PromptContext.capture({
+        selection_mode = selection_mode,
+    })
+end
+
 ---@param enum_spec Clodex.CommandEnum
 ---@param arg_index integer
 ---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
@@ -565,6 +584,7 @@ local function registered_command_specs()
             name = "ClodexPrompt",
             desc = "Add a prompt with an optional category and project target",
             nargs = "*",
+            range = true,
             complete = function(_, cmd_line, cursor_pos)
                 local index = completion_arg_index(cmd_line, cursor_pos)
                 if index == 1 then
@@ -578,6 +598,7 @@ local function registered_command_specs()
             handler = function(command)
                 local clodex = require_clodex()
                 local fargs = command.fargs
+                local context = visual_selection_context(command)
                 local kind = nil ---@type Clodex.PromptCategory?
                 local start_index = 1
 
@@ -600,7 +621,9 @@ local function registered_command_specs()
                     return
                 end
 
-                local opts = vim.tbl_extend("force", target, kind and { category = kind } or {})
+                local opts = vim.tbl_extend("force", target, kind and { category = kind } or {}, context and {
+                    context = context,
+                } or {})
                 if target.project_required then
                     clodex.add_prompt_for_project(opts)
                     return
@@ -674,6 +697,9 @@ function M.register()
         end
         if spec.complete ~= nil then
             opts.complete = spec.complete
+        end
+        if spec.range ~= nil then
+            opts.range = spec.range
         end
         vim.api.nvim_create_user_command(spec.name, spec.handler, opts)
     end

@@ -19,6 +19,7 @@ local ui = require("clodex.ui.select")
 ---@class Clodex.AppPromptActions.PickPromptOpts: Clodex.AppPromptActions.ResolveOpts
 ---@field project_required? boolean
 ---@field category? Clodex.PromptCategory
+---@field context? Clodex.PromptContext.Capture
 
 --- Defines the Clodex.AppPromptActions.AddTodoSpec type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -191,10 +192,13 @@ function PromptActions:pick_target(opts, callback)
 end
 
 ---@param project Clodex.Project
-function PromptActions:prompt_for_todo(project)
+---@param context? Clodex.PromptContext.Capture
+---@param default_body? string
+function PromptActions:prompt_for_todo(project, context, default_body)
     ui.multiline_input({
         prompt = ("Todo prompt for %s"):format(project.name),
-        context = PromptContext.capture({ project = project }),
+        default = default_body,
+        context = context or PromptContext.capture({ project = project }),
         paste_image = self:paste_image_callback(project, "todo"),
         submit_actions = {
             { value = "save",  label = "plan",    key = "<C-s>" },
@@ -217,17 +221,34 @@ function PromptActions:prompt_for_todo(project)
         end)
 end
 
+---@param category Clodex.PromptCategory
+---@param context? Clodex.PromptContext.Capture
+---@return string?
+local function selection_default_body(category, context)
+    if not context or not context.selection_text then
+        return nil
+    end
+
+    if category == "bug" or category == "visual" or category == "library" then
+        return nil
+    end
+
+    local definition = Prompt.categories.get(category)
+    return Prompt.render(definition.default_title, "&selection")
+end
+
 --- Opens a multiline prompt composer for a category-specific todo.
 --- The composed body is parsed back into queue title/details before persistence.
 ---@param project Clodex.Project
 ---@param definition Clodex.PromptCategoryDef
 ---@param category Clodex.PromptCategory
 ---@param default_body? string
-function PromptActions:compose_category_prompt(project, definition, category, default_body)
+---@param context? Clodex.PromptContext.Capture
+function PromptActions:compose_category_prompt(project, definition, category, default_body, context)
     ui.multiline_input({
         prompt = ("%s prompt for %s"):format(definition.label, project.name),
         default = default_body or definition.default_title,
-        context = PromptContext.capture({ project = project }),
+        context = context or PromptContext.capture({ project = project }),
         paste_image = self:paste_image_callback(project, category),
         submit_actions = {
             { value = "save",  label = "plan",    key = "<C-s>" },
@@ -253,9 +274,11 @@ end
 
 ---@param project Clodex.Project
 ---@param category Clodex.PromptCategory
-function PromptActions:prompt_for_category(project, category)
+---@param context? Clodex.PromptContext.Capture
+---@param default_body? string
+function PromptActions:prompt_for_category(project, category, context, default_body)
     local definition = Prompt.categories.get(category)
-    self:compose_category_prompt(project, definition, category)
+    self:compose_category_prompt(project, definition, category, default_body, context)
 end
 
 ---@param project Clodex.Project
@@ -334,7 +357,11 @@ end
 
 ---@param project Clodex.Project
 ---@param category Clodex.PromptCategory
-function PromptActions:prompt_for_category_kind(project, category)
+---@param opts? { context?: Clodex.PromptContext.Capture }
+function PromptActions:prompt_for_category_kind(project, category, opts)
+    opts = opts or {}
+    local default_body = selection_default_body(category, opts.context)
+
     if category == "bug" then
         self:add_bug_todo({ project = project })
         return
@@ -344,7 +371,7 @@ function PromptActions:prompt_for_category_kind(project, category)
         return
     end
     if category == "todo" then
-        self:prompt_for_todo(project)
+        self:prompt_for_todo(project, opts.context, default_body)
         return
     end
     if category == "library" then
@@ -352,7 +379,7 @@ function PromptActions:prompt_for_category_kind(project, category)
         return
     end
 
-    self:prompt_for_category(project, category)
+    self:prompt_for_category(project, category, opts.context, default_body)
 end
 
 ---@param project Clodex.Project

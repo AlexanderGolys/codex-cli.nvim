@@ -1016,15 +1016,16 @@ function App:add_todo(opts)
 end
 
 function App:add_prompt(opts)
-    self.prompt_actions:pick_target(opts or {}, function(project, category)
-        self.prompt_actions:prompt_for_category_kind(project, category)
+    local prompt_opts = opts or {}
+    self.prompt_actions:pick_target(prompt_opts, function(project, category)
+        self.prompt_actions:prompt_for_category_kind(project, category, prompt_opts)
     end)
 end
 
 function App:add_prompt_for_project(opts)
     opts = vim.tbl_extend("force", { project_required = true }, opts or {})
     self.prompt_actions:pick_target(opts, function(project, category)
-        self.prompt_actions:prompt_for_category_kind(project, category)
+        self.prompt_actions:prompt_for_category_kind(project, category, opts)
     end)
 end
 

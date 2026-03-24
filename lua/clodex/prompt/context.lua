@@ -216,6 +216,7 @@ end
 ---@class Clodex.PromptContext.CaptureOpts
 ---@field project? Clodex.Project
 ---@field project_root? string
+---@field selection_mode? string
 
 --- Captures the best available editor buffer/window for prompt expansions.
 --- Floating plugin windows are skipped so prompt state comes from the user's code buffer instead.
@@ -230,7 +231,7 @@ function M.capture(opts)
 
   local buf = vim.api.nvim_win_get_buf(win)
   local cursor = vim.api.nvim_win_get_cursor(win)
-  local mode = vim.fn.mode(1)
+  local mode = opts.selection_mode or vim.fn.mode(1)
   local visible_start, visible_end = vim.api.nvim_win_call(win, function()
     return vim.fn.line("w0"), vim.fn.line("w$")
   end)

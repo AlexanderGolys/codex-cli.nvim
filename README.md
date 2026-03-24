@@ -508,6 +508,7 @@ Queue and prompt commands:
 - `:ClodexPrompt refactor`
 - `:ClodexPrompt bug for`
 - `:ClodexPrompt ask demo-project`
+- Run `:'<,'>ClodexPrompt ...` from visual mode to open the prompt composer with the selected range already referenced in the prompt body.
 
 
 ## Queue Workspace

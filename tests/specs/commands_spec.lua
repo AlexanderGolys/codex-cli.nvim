@@ -4,6 +4,7 @@ describe("clodex.commands", function()
     local fake_clodex
     local notify_calls
     local original_notify
+    local captured_prompt_context
 
     before_each(function()
         package.loaded["clodex.commands"] = nil
@@ -12,6 +13,12 @@ describe("clodex.commands", function()
 
         created = {}
         notify_calls = {}
+        captured_prompt_context = {
+            selection_text = "print(value)",
+            selection_start_row = 3,
+            selection_end_row = 3,
+            relative_path = "lua/example.lua",
+        }
         fake_clodex = {
             toggle = function() end,
             open_queue_workspace = function() end,
@@ -56,6 +63,14 @@ describe("clodex.commands", function()
                 }
             end,
         }
+        package.loaded["clodex.prompt.context"] = {
+            capture = function(opts)
+                if opts and opts.selection_mode then
+                    return vim.deepcopy(captured_prompt_context)
+                end
+                return nil
+            end,
+        }
 
         original_notify = vim.notify
         vim.notify = function(message, level)
@@ -90,6 +105,7 @@ describe("clodex.commands", function()
         assert.is_not_nil(created.ClodexProject)
         assert.is_not_nil(created.ClodexTodo)
         assert.is_not_nil(created.ClodexPrompt)
+        assert.is_true(created.ClodexPrompt.opts.range)
     end)
 
     it("dispatches prompt kind aliases through the base prompt command", function()
@@ -104,6 +120,25 @@ describe("clodex.commands", function()
 
         assert.is_not_nil(called)
         assert.are.equal("ask", called.category)
+    end)
+
+    it("passes visual selection context to prompt commands", function()
+        Commands.register()
+
+        local called
+        fake_clodex.add_prompt = function(opts)
+            called = opts
+        end
+
+        created.ClodexPrompt.handler({
+            args = "refactor",
+            fargs = { "refactor" },
+            range = 2,
+        })
+
+        assert.is_not_nil(called)
+        assert.are.equal("refactor", called.category)
+        assert.are.same(captured_prompt_context, called.context)
     end)
 
     it("uses the explicit project when provided to todo commands", function()
