@@ -525,6 +525,7 @@ The left pane shows:
 - whether a Codex session is running
 - queue counts for `planned`, `queued`, `implemented`, and `history`
 - project detail snapshots such as file counts, dominant languages, git remote, and last repository file update
+- project details render as one compact icon-based summary line so language icons stay visible before lower-priority metadata
 
 The right pane shows:
 

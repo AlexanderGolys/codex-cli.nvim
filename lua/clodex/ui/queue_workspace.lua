@@ -71,8 +71,11 @@ local PROJECT_SEARCH_FIELDS = {
     "root",
 }
 local ITEM_TITLE_PREFIX_WIDTH = 2
+local FILE_ICON = "󰈔 "
+local TIMESTAMP_ICON = " "
 local PROJECT_DETAIL_LABELS = {
-    " ",
+    FILE_ICON,
+    TIMESTAMP_ICON,
 }
 local PROJECT_RUNNING_ICON = "󰚩 "
 local PROJECT_STOPPED_ICON = "󱙻 "
@@ -727,10 +730,28 @@ end
 ---@param summary Clodex.ProjectQueueSummary
 ---@param details? Clodex.ProjectDetails
 ---@return string[]
-project_detail_lines = function(config, app, summary, details)
+project_detail_lines = function(config, app, summary, details, max_width)
+    local function fit_project_detail(prefix, suffixes)
+        if not max_width or max_width <= 0 then
+            return prefix .. table.concat(suffixes)
+        end
+
+        if vim.fn.strdisplaywidth(prefix) > max_width then
+            return truncate_display(prefix, max_width)
+        end
+
+        local line = prefix
+        for _, suffix in ipairs(suffixes) do
+            if vim.fn.strdisplaywidth(line .. suffix) > max_width then
+                break
+            end
+            line = line .. suffix
+        end
+        return line
+    end
+
     local lines = {} ---@type string[]
     details = details or app.project_details_store:get_cached(summary.project)
-    lines[#lines + 1] = "    " .. (details and format_languages(details.languages) or "-")
 
     if summary.active_item_title and summary.active_item_title ~= "" then
         lines[#lines + 1] = ("    Active:%s"):format(truncate_display(summary.active_item_title, 24))
@@ -740,11 +761,18 @@ project_detail_lines = function(config, app, summary, details)
     end
 
     if not details then
-        lines[#lines + 1] = "    Files:-  " .. GITHUB_ICON
+        lines[#lines + 1] = fit_project_detail("    -", {
+            "  " .. FILE_ICON .. "-",
+            "  " .. GITHUB_ICON,
+            "  " .. TIMESTAMP_ICON .. "-",
+        })
         return lines
     end
-    lines[#lines + 1] = ("    Files:%d  %s"):format(details.file_count, " " .. GITHUB_ICON)
-    lines[#lines + 1] = ("    %s"):format(format_timestamp(details.last_file_modified_at, config))
+    lines[#lines + 1] = fit_project_detail("    " .. format_languages(details.languages), {
+        ("  %s%d"):format(FILE_ICON, details.file_count),
+        "  " .. GITHUB_ICON,
+        "  " .. TIMESTAMP_ICON .. format_timestamp(details.last_file_modified_at, config),
+    })
     return lines
 end
 
@@ -1495,8 +1523,7 @@ function Workspace:render_projects()
         block:append_line(title, item_extmarks)
 
         local has_remote = details ~= nil and details.remote_name ~= nil and details.remote_name ~= ""
-        for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
-            detail = truncate_display(detail, max_width)
+        for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details, max_width)) do
             self.project_rows[#self.project_rows + 1] = {
                 kind = "detail",
                 text = detail,

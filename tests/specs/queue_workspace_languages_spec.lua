@@ -20,7 +20,7 @@ describe("clodex.ui.queue_workspace language details", function()
         package.loaded["snacks.picker.select"] = nil
     end)
 
-    it("renders all recognized language icons on the first project detail line", function()
+    it("keeps multiple language icons visible on one detail line", function()
         local project = {
             name = "Test Project",
             root = "/tmp/test-project",
@@ -42,8 +42,7 @@ describe("clodex.ui.queue_workspace language details", function()
                         remote_name = "origin",
                         languages = {
                             { name = "lua" },
-                            { name = "ts" },
-                            { name = "py" },
+                            { name = "rs" },
                         },
                         last_file_modified_at = os.time(),
                     }
@@ -80,7 +79,7 @@ describe("clodex.ui.queue_workspace language details", function()
             relative = "editor",
             row = 1,
             col = 1,
-            width = 40,
+            width = 22,
             height = 8,
             style = "minimal",
         })
@@ -104,8 +103,9 @@ describe("clodex.ui.queue_workspace language details", function()
         workspace:refresh()
 
         local lines = vim.api.nvim_buf_get_lines(workspace.project_buf, 0, -1, false)
-        assert.are.equal("      ", lines[2])
+        assert.is_not_nil(lines[2]:find(" ", 1, true))
         assert.is_nil(lines[2]:find("Lang:", 1, true))
+        assert.is_nil(lines[2]:find("Files:", 1, true))
 
         vim.api.nvim_win_close(workspace.footer_win, true)
         vim.api.nvim_win_close(workspace.queue_win, true)
