@@ -51,8 +51,7 @@ local notify = require("clodex.util.notify")
 ---@field queue_item_rows integer[]
 ---@field suppress_open_until? integer
 ---@field focus_augroup? integer
----@field animation_tick integer
----@field animation_refresh_pending boolean
+---@field modal_input_open boolean
 local Workspace = {}
 Workspace.__index = Workspace
 
@@ -73,12 +72,10 @@ local PROJECT_SEARCH_FIELDS = {
 }
 local ITEM_TITLE_PREFIX_WIDTH = 2
 local PROJECT_DETAIL_LABELS = {
-    "Files:",
+    " ",
 }
-local PROJECT_WORKING_ICONS = { "⠋ ", "⠙ ", "⠹ ", "⠸ ", "⠼ ", "⠴ ", "⠦ ", "⠧ ", "⠇ ", "⠏ " }
 local PROJECT_RUNNING_ICON = "󰚩 "
 local PROJECT_STOPPED_ICON = "󱙻 "
-local PROJECT_WORKING_ANIMATION_MS = 120
 local GITHUB_ICON = ""
 local COMMIT_ICON = "󰜘 "
 local COMMIT_HIGHLIGHT = "SnacksPickerGitCommit"
@@ -157,6 +154,25 @@ local function clear_open_suppression_later(self, delay_ms)
     end, delay_ms or 250)
 end
 
+---@param self Clodex.QueueWorkspace
+---@param opts vim.ui.input.Opts
+---@param on_confirm fun(value?: string)
+local function open_workspace_input(self, opts, on_confirm)
+    opts = vim.deepcopy(opts or {})
+    opts.win = opts.win or {}
+
+    local previous_on_close = opts.win.on_close
+    opts.win.on_close = function(win)
+        self.modal_input_open = false
+        if previous_on_close then
+            previous_on_close(win)
+        end
+    end
+
+    self.modal_input_open = true
+    return ui.input(opts, on_confirm)
+end
+
 ---@param text string
 ---@param max_width integer
 ---@return string
@@ -231,19 +247,17 @@ end
 
 -- @@@clodex.panel.project.title
 ---@param summary Clodex.ProjectQueueSummary
----@param animation_tick integer
 ---@return string
-local function project_title_prefix(summary, animation_tick)
+local function project_title_prefix(summary)
     return summary.session_running and PROJECT_RUNNING_ICON or PROJECT_STOPPED_ICON
 end
 
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
----@param animation_tick integer
 ---@param max_width integer
 ---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
-local function project_title_text(project, summary, animation_tick, max_width)
-    local prefix = project_title_prefix(summary, animation_tick)
+local function project_title_text(project, summary, max_width)
+    local prefix = project_title_prefix(summary)
     local suffix, spans = project_count_suffix(summary)
     local name_width = math.max(max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(suffix), 1)
     return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width), spans
@@ -285,10 +299,9 @@ end
 
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
----@param animation_tick integer
 ---@return integer
-local function project_title_width(project, summary, animation_tick)
-    local prefix = project_title_prefix(summary, animation_tick)
+local function project_title_width(project, summary)
+    local prefix = project_title_prefix(summary)
     local suffix = project_count_suffix(summary)
     return vim.fn.strdisplaywidth(prefix) + vim.fn.strdisplaywidth(project.name) + vim.fn.strdisplaywidth(suffix)
 end
@@ -311,7 +324,7 @@ local function project_target_width(self)
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
         local details = self.app.project_details_store:get_cached(project)
-        width = math.max(width, project_title_width(project, summary, self.animation_tick) + PROJECT_LAYOUT_PADDING)
+        width = math.max(width, project_title_width(project, summary) + PROJECT_LAYOUT_PADDING)
 
         for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
             width = math.max(width, vim.fn.strdisplaywidth(detail) + PROJECT_LAYOUT_PADDING)
@@ -432,7 +445,15 @@ end
 local function item_metadata_preview_lines(item, project_root)
     local preview = {} ---@type { text: string, marks: Clodex.Extmark[] }[]
     preview[#preview + 1] = item_kind_preview_line(item)
-    local commits = item.history_commits or {}
+    local commits = {} ---@type string[]
+    for _, commit_id in ipairs(type(item.history_commits) == "table" and item.history_commits or {}) do
+        if type(commit_id) == "string" then
+            local trimmed = vim.trim(commit_id)
+            if trimmed ~= "" then
+                commits[#commits + 1] = trimmed
+            end
+        end
+    end
     if #commits > 0 then
         local commit_parts = {}
         for _, commit_id in ipairs(commits) do
@@ -507,15 +528,20 @@ local function queue_header_line(queue_name, count)
 end
 
 ---@param focus "projects"|"queue"
+---@param project_search string
+---@param queue_search string
 ---@return Clodex.QueueWorkspace.ActionSet
-local function footer_actions(focus)
+local function footer_actions(focus, project_search, queue_search)
+    local project_clear_filter = project_search ~= "" and "   Backspace: clear filter" or ""
+    local queue_clear_filter = queue_search ~= "" and "   Backspace: clear filter" or ""
+
     if focus == "projects" then
         return {
             title = " Project Actions ",
             lines = {
                 "s: set current project   A: start session   X: stop session   a: add prompt/project   D: delete project",
-                "/: filter projects by name/root/activity   Backspace: clear filter",
-                "&: insert editor context in prompt editor   x: canned prompt in prompt editor",
+                "/: filter by project text" .. project_clear_filter,
+                "x: canned prompt",
             },
         }
     end
@@ -524,8 +550,8 @@ local function footer_actions(focus)
         title = " Queue Actions ",
         lines = {
             "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
-            "/: search prompt list by title/details/body   Backspace: clear filter",
-            "p: move project   H/L: prev/next project   d: delete item   &: context   x: canned prompt   !: mark not working   Ctrl-S: save",
+            "/: filter by prompt text" .. queue_clear_filter,
+            "p: move project   H/L: prev/next project   d: delete item   x: canned prompt   !: mark not working   Ctrl-S: save",
         },
     }
 end
@@ -548,13 +574,17 @@ end
 ---@return string
 local function history_suffix(item, project_root)
     local parts = {} ---@type string[]
-    if item.history_summary and item.history_summary ~= "" then
+    if type(item.history_summary) == "string" and item.history_summary ~= "" then
         parts[#parts + 1] = item.history_summary
     end
-    local commits = item.history_commits or {}
+    local commits = type(item.history_commits) == "table" and item.history_commits or {}
     for _, commit_id in ipairs(commits) do
-        local short = commit_id:sub(1, 8)
-        parts[#parts + 1] = COMMIT_ICON .. short
+        if type(commit_id) == "string" then
+            local short = vim.trim(commit_id):sub(1, 8)
+            if short ~= "" then
+                parts[#parts + 1] = COMMIT_ICON .. short
+            end
+        end
     end
     return #parts > 0 and ("  [" .. table.concat(parts, " | ") .. "]") or ""
 end
@@ -736,29 +766,8 @@ function Workspace.new(app, config)
     self.project_item_rows = {}
     self.queue_rows = {}
     self.queue_item_rows = {}
-    self.animation_tick = 1
-    self.animation_refresh_pending = false
+    self.modal_input_open = false
     return self
-end
-
-function Workspace:has_working_projects()
-    return false
-end
-
-function Workspace:queue_animation_refresh()
-    if self.animation_refresh_pending or not self:is_open() or not self:has_working_projects() then
-        return
-    end
-
-    self.animation_refresh_pending = true
-    vim.defer_fn(function()
-        self.animation_refresh_pending = false
-        if not self:is_open() or not self:has_working_projects() then
-            return
-        end
-        self.animation_tick = (self.animation_tick % #PROJECT_WORKING_ICONS) + 1
-        self:refresh()
-    end, PROJECT_WORKING_ANIMATION_MS)
 end
 
 ---@param config Clodex.Config.Values
@@ -863,11 +872,11 @@ function Workspace:open()
     self.project_win = ui_win.open({
         buf = self.project_buf,
         enter = true,
+        fixbuf = true,
         row = row,
         col = col,
         width = project_width,
         height = height,
-        fixbuf = true,
         style = "minimal",
         border = "rounded",
         title = " Projects ",
@@ -877,10 +886,10 @@ function Workspace:open()
     self.queue_win = ui_win.open({
         buf = self.queue_buf,
         enter = false,
+        fixbuf = true,
         row = row,
         col = col + project_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
         width = queue_width,
-        fixbuf = true,
         height = height,
         style = "minimal",
         border = "rounded",
@@ -891,14 +900,14 @@ function Workspace:open()
     self.footer_win = ui_win.open({
         buf = self.footer_buf,
         enter = false,
+        fixbuf = true,
         row = row + height + 1,
         col = col,
         width = project_width + queue_width + PANEL_BORDER_COLS + PANEL_GAP_COLS,
-        fixbuf = true,
         height = footer_height,
         style = "minimal",
         border = "rounded",
-        title = footer_actions(self.focus).title,
+        title = footer_actions(self.focus, self.project_search, self.queue_search).title,
         zindex = FOOTER_ZINDEX,
         view = "footer",
     }).win
@@ -931,7 +940,6 @@ end
 function Workspace:close()
     require("clodex.ui.select").close_active_input()
     self:clear_focus_tracking()
-    self.animation_refresh_pending = false
     local wins = {
         self.project_win,
         self.queue_win,
@@ -1290,7 +1298,7 @@ function Workspace:set_focus(focus)
         self:render_footer()
         if win_valid(self.footer_win) then
             update_win_config(self.footer_win, {
-                title = footer_actions(self.focus).title,
+                title = footer_actions(self.focus, self.project_search, self.queue_search).title,
                 title_pos = "center",
             })
         end
@@ -1310,6 +1318,9 @@ end
 
 function Workspace:apply_focus()
     self:update_window_highlights()
+    if self.modal_input_open or require("clodex.ui.select").has_active_input() then
+        return
+    end
     local win = self.focus == "projects" and self.project_win or self.queue_win
     if not win_valid(win) then
         win = win_valid(self.project_win) and self.project_win or self.queue_win
@@ -1423,12 +1434,11 @@ function Workspace:refresh(initial)
     end
     if win_valid(self.footer_win) then
         update_win_config(self.footer_win, {
-            title = footer_actions(self.focus).title,
+            title = footer_actions(self.focus, self.project_search, self.queue_search).title,
             title_pos = "center",
         })
     end
     self:apply_focus()
-    self:queue_animation_refresh()
 end
 
 function Workspace:render_projects()
@@ -1461,7 +1471,7 @@ function Workspace:render_projects()
         local summary = self.app:queue_summary(project)
         local details = project.root == selected_root and self.app.project_details_store:get(project)
             or self.app.project_details_store:get_cached(project)
-        local title, count_spans = project_title_text(project, summary, self.animation_tick, max_width)
+        local title, count_spans = project_title_text(project, summary, max_width)
         local count_suffix = project_count_suffix(summary)
         self.project_rows[#self.project_rows + 1] = {
             kind = "item",
@@ -1679,7 +1689,7 @@ function Workspace:render_queue()
 end
 
 function Workspace:render_footer()
-    local action_set = footer_actions(self.focus)
+    local action_set = footer_actions(self.focus, self.project_search, self.queue_search)
     local block = TextBlock.new()
     for _, line in ipairs(action_set.lines) do
         line = footer_text(line)
@@ -1911,7 +1921,7 @@ function Workspace:mark_queue_item_not_working()
         return
     end
 
-    ui.input({
+    open_workspace_input(self, {
         prompt = "Optional note",
     }, function(note)
         if note == nil then
@@ -2079,7 +2089,7 @@ function Workspace:delete_project()
 end
 
 function Workspace:prompt_project_search()
-    ui.input({
+    open_workspace_input(self, {
         prompt = "Project filter",
         default = self.project_search,
     }, function(value)
@@ -2105,7 +2115,7 @@ function Workspace:clear_project_search()
 end
 
 function Workspace:prompt_queue_search()
-    ui.input({
+    open_workspace_input(self, {
         prompt = "Prompt filter",
         default = self.queue_search,
     }, function(value)
