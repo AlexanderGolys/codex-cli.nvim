@@ -440,19 +440,19 @@ local function completion_fargs(cmd_line, cursor_pos)
     return parts
 end
 
----@param action_enum Clodex.CommandEnum
+---@param enum_spec Clodex.CommandEnum
 ---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
-local function target_completion(action_enum)
+local function scoped_completion(enum_spec)
     return function(_, cmd_line, cursor_pos)
         local index = completion_arg_index(cmd_line, cursor_pos)
         local before = completion_fargs(cmd_line, cursor_pos)
-        local target_start = completion_target_start(action_enum, before)
+        local target_start = completion_target_start(enum_spec, before)
         if index < target_start then
-            return action_enum.completions
+            return enum_spec.completions
         end
         if index == target_start then
             if target_start == 1 then
-                return merge_completions(action_enum.completions, TARGET_SCOPE.completions, project_completions())
+                return merge_completions(enum_spec.completions, TARGET_SCOPE.completions, project_completions())
             end
             return merge_completions(TARGET_SCOPE.completions, project_completions())
         end
@@ -463,26 +463,27 @@ local function target_completion(action_enum)
     end
 end
 
+---@param command vim.api.keyset.create_user_command.command_args
+---@param category? Clodex.PromptCategory
+---@return table
+local function prompt_command_opts(command, category)
+    local context = visual_selection_context(command)
+    return vim.tbl_extend("force", category and {
+        category = category,
+    } or {}, context and {
+        context = context,
+    } or {})
+end
+
+---@param action_enum Clodex.CommandEnum
+---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
+local function target_completion(action_enum)
+    return scoped_completion(action_enum)
+end
+
 ---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
 local function prompt_completion()
-    return function(_, cmd_line, cursor_pos)
-        local index = completion_arg_index(cmd_line, cursor_pos)
-        local before = completion_fargs(cmd_line, cursor_pos)
-        local target_start = completion_target_start(PROMPT_KIND, before)
-        if index < target_start then
-            return PROMPT_KIND.completions
-        end
-        if index == target_start then
-            if target_start == 1 then
-                return merge_completions(PROMPT_KIND.completions, TARGET_SCOPE.completions, project_completions())
-            end
-            return merge_completions(TARGET_SCOPE.completions, project_completions())
-        end
-        if index == target_start + 1 and TARGET_SCOPE.aliases[before[target_start]] == nil then
-            return project_completions()
-        end
-        return {}
-    end
+    return scoped_completion(PROMPT_KIND)
 end
 
 local function top_level_palette_specs()
@@ -683,7 +684,6 @@ local function registered_command_specs()
             handler = function(command)
                 local clodex = require_clodex()
                 local fargs = command.fargs
-                local context = visual_selection_context(command)
                 local kind = nil ---@type Clodex.PromptCategory?
                 local start_index = 1
 
@@ -706,9 +706,7 @@ local function registered_command_specs()
                     return
                 end
 
-                local opts = vim.tbl_extend("force", target, kind and { category = kind } or {}, context and {
-                    context = context,
-                } or {})
+                local opts = vim.tbl_extend("force", target, prompt_command_opts(command, kind))
                 if target.project_required then
                     clodex.add_prompt_for_project(opts)
                     return
@@ -735,11 +733,7 @@ local function registered_command_specs()
                     return
                 end
 
-                clodex.add_prompt_for_current_file_project(vim.tbl_extend("force", kind and {
-                    category = kind,
-                } or {}, visual_selection_context(command) and {
-                    context = visual_selection_context(command),
-                } or {}))
+                clodex.add_prompt_for_current_file_project(prompt_command_opts(command, kind))
             end,
         },
     }
