@@ -422,7 +422,7 @@ function Config.new()
 end
 
 --- Applies setup values, maps legacy highlight keys, and caches active values.
----@param opts? table<string, any>
+---@param opts? table
 ---@return Clodex.Config.Values
 function Config:setup(opts)
     self.values = Config.merge(defaults(), opts or {})

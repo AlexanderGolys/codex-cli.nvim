@@ -31,8 +31,8 @@ local notify = require("clodex.util.notify")
 --- Defines the Clodex.QueueWorkspace type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.QueueWorkspace
----@field app Clodex.App
----@field config Clodex.Config.Values
+---@field app Clodex.QueueWorkspace.AppHost
+---@field config Clodex.QueueWorkspace.ConfigHost
 ---@field project_buf? integer
 ---@field queue_buf? integer
 ---@field footer_buf? integer
@@ -54,6 +54,10 @@ local notify = require("clodex.util.notify")
 ---@field modal_input_open boolean
 local Workspace = {}
 Workspace.__index = Workspace
+
+---@alias Clodex.QueueWorkspace.AppHost Clodex.App
+
+---@alias Clodex.QueueWorkspace.ConfigHost Clodex.Config.Values
 
 local MAIN_ZINDEX = 55
 local FOOTER_ZINDEX = 56

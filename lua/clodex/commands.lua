@@ -44,8 +44,7 @@ local did_register = false
 ---@field desc string
 ---@field opts vim.api.keyset.keymap
 
----@class Clodex.Commands.KeymapValues
----@field keymaps? table<string, string|Clodex.Config.KeymapConfig|false>
+---@alias Clodex.Commands.KeymapValues Clodex.Config.Values|{ keymaps?: table<string, string|Clodex.Config.KeymapConfig|false> }
 
 ---@class Clodex.RegisteredCommandSpec
 ---@field name string

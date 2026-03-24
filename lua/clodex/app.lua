@@ -36,6 +36,10 @@ local function modal_input_open(self)
     return require("clodex.ui.select").has_active_input()
 end
 
+---@class Clodex.UvTimer
+---@field start fun(self: Clodex.UvTimer, timeout: integer, repeat_interval: integer, callback: function)
+---@field stop fun(self: Clodex.UvTimer)
+
 --- Defines the Clodex.App type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.App
@@ -58,8 +62,8 @@ end
 ---@field queue_actions Clodex.AppQueueActions
 ---@field session_persistence Clodex.SessionPersistence
 ---@field group? integer
----@field execution_timer? uv.uv_timer_t
----@field blocked_input_timer? uv.uv_timer_t
+---@field execution_timer? Clodex.UvTimer
+---@field blocked_input_timer? Clodex.UvTimer
 ---@field blocked_input_window? snacks.win
 ---@field blocked_input_session_key? string
 ---@field current_tab fun(self: Clodex.App): Clodex.TabState
@@ -104,7 +108,6 @@ end
 ---@field notes_count integer
 ---@field cheatsheet_count integer
 ---@field cheatsheet_items string[]
----@type Clodex.App
 local App = {}
 App.__index = App
 
@@ -303,7 +306,7 @@ local function waiting_session_rank(current_state, session)
     return rank
 end
 
----@return uv.uv_timer_t
+---@return Clodex.UvTimer
 local function create_timer()
     local uv = vim.uv or vim.loop
     local new_timer = uv and uv["new_timer"] or nil
@@ -361,7 +364,7 @@ function App.new()
     return self
 end
 
----@param opts? Clodex.Config.Values|{}
+---@param opts? table
 --- Applies/refreshes configuration and rebuilds dependent managers when options change.
 --- This is invoked on startup and every setup call from the public API layer.
 function App:setup(opts)

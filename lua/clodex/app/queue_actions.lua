@@ -17,12 +17,7 @@ local COMMIT_ICON = "󰜘 "
 
 --- Defines the Clodex.AppQueueActions type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
----@class Clodex.AppQueueActions.Host
----@field queue Clodex.Workspace.Queue
----@field is_project_working fun(project: Clodex.Project): boolean
----@field execution Clodex.Workspace.Execution|{ queue_item_instructions: fun(self: any, item: Clodex.QueueItem): string }
----@field project_details_store Clodex.ProjectDetails|{ touch_activity: fun(self: any, project: Clodex.Project): nil }
----@field refresh_views fun()
+---@alias Clodex.AppQueueActions.Host Clodex.App
 
 ---@class Clodex.AppQueueActions
 ---@field app Clodex.AppQueueActions.Host

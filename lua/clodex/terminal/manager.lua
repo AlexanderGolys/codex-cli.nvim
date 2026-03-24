@@ -45,11 +45,24 @@ local function session_requires_restart(session, spec)
 end
 
 ---@param tabpage number
+---@return integer?
+local function resolved_tabpage(tabpage)
+    if vim.api.nvim_tabpage_is_valid(tabpage) then
+        return tabpage
+    end
+
+    local current = vim.api.nvim_get_current_tabpage()
+    if vim.api.nvim_tabpage_is_valid(current) then
+        return current
+    end
+end
+
+---@param tabpage number
 ---@param fn fun()
 local function call_in_tabpage(tabpage, fn)
-    local target = tabpage
-    if not vim.api.nvim_tabpage_is_valid(target) then
-        target = vim.api.nvim_get_current_tabpage()
+    local target = resolved_tabpage(tabpage)
+    if not target then
+        return
     end
 
     local tabpage_call = vim.api.nvim_tabpage_call
@@ -399,6 +412,11 @@ end
 ---@param preferred? integer
 ---@return integer?
 local function split_parent_window(tabpage, preferred)
+    tabpage = resolved_tabpage(tabpage)
+    if not tabpage then
+        return nil
+    end
+
     if type(preferred) == "number" and is_tab_local_normal_window(preferred, tabpage) then
         return preferred
     end
@@ -419,6 +437,12 @@ end
 ---@param state Clodex.TabState
 ---@param session Clodex.TerminalSession
 function Manager:show_in_tab(state, session)
+    local tabpage = resolved_tabpage(state.tabpage)
+    if not tabpage then
+        return
+    end
+    state.tabpage = tabpage
+
     local parent_win = state:has_visible_window() and state.window.win or nil
     if state:has_visible_window() then
         local previous = state.session_key and self:session_by_key(state.session_key) or nil
@@ -428,9 +452,9 @@ function Manager:show_in_tab(state, session)
         state:hide_window()
     end
 
-    parent_win = split_parent_window(state.tabpage, parent_win)
+    parent_win = split_parent_window(tabpage, parent_win)
     local window
-    call_in_tabpage(state.tabpage, function()
+    call_in_tabpage(tabpage, function()
         window = self:open_window(session, parent_win)
     end)
     window:on("WinClosed", function()
