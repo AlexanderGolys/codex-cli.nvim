@@ -174,6 +174,39 @@ describe("clodex.commands", function()
         assert.are.equal("ask", called.category)
     end)
 
+    it("offers explicit backend completion for the top-level command", function()
+        Commands.register()
+
+        assert.are.same({ "backend", "chat", "cli", "header", "history", "panel", "term", "term-header", "terminal", "terminal-header", "terminal_header" }, created.Clodex.opts.complete("", "Clodex ", 7))
+        assert.are.same({ "codex", "opencode" }, created.Clodex.opts.complete("", "Clodex backend ", 15))
+    end)
+
+    it("routes explicit backend selection through the runtime backend setter", function()
+        local called
+        package.loaded["clodex.app"] = {
+            instance = function()
+                return {
+                    registry = {
+                        list = function()
+                            return {}
+                        end,
+                    },
+                    set_backend = function(_, backend)
+                        called = backend
+                    end,
+                }
+            end,
+        }
+
+        package.loaded["clodex.commands"] = nil
+        Commands = require("clodex.commands")
+        Commands.register()
+
+        created.Clodex.handler({ args = "backend opencode", fargs = { "backend", "opencode" } })
+
+        assert.are.equal("opencode", called)
+    end)
+
     it("passes visual selection context to prompt commands", function()
         Commands.register()
 

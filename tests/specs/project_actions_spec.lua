@@ -235,4 +235,48 @@ describe("clodex.app.project_actions", function()
         vim.fn.delete(root, "rf")
     end)
 
+    it("switches the backend at runtime without recreating the app", function()
+        local notified_messages = {}
+        local update_values
+        local refresh_count = 0
+        local values = {
+            backend = "codex",
+            prompt_execution = {
+                skills_dir = "/tmp/codex-skills",
+            },
+        }
+
+        package.loaded["clodex.util.notify"].notify = function(message)
+            notified_messages[#notified_messages + 1] = message
+        end
+
+        local actions = ProjectActions.new({
+            config = {
+                get = function()
+                    return values
+                end,
+            },
+            terminals = {
+                update_config = function(_, updated)
+                    update_values = updated
+                end,
+            },
+            state_preview = { update_config = function() end },
+            execution = { update_config = function() end },
+            exec_runner = { update_config = function() end },
+            queue_workspace = { update_config = function() end },
+            refresh_views = function()
+                refresh_count = refresh_count + 1
+            end,
+        })
+
+        actions:set_backend("opencode")
+
+        assert.are.equal("opencode", values.backend)
+        assert.are.equal(vim.fn.expand("~/.config/opencode/skills"), values.prompt_execution.skills_dir)
+        assert.are.same(values, update_values)
+        assert.are.equal(1, refresh_count)
+        assert.are.same({ "Switched Clodex backend to OpenCode" }, notified_messages)
+    end)
+
 end)

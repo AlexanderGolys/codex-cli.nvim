@@ -549,6 +549,18 @@ end
 function ProjectActions:toggle_backend()
     local values = self.app.config:get()
     local next_backend = values.backend == "opencode" and "codex" or "opencode"
+    self:set_backend(next_backend)
+end
+
+---@param backend string?
+function ProjectActions:set_backend(backend)
+    local values = self.app.config:get()
+    local next_backend = Backend.normalize(backend)
+    if values.backend == next_backend then
+        notify.notify(("Clodex backend already set to %s"):format(Backend.display_name(next_backend)))
+        return
+    end
+
     values.backend = Backend.normalize(next_backend)
     values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
     self.app.terminals:update_config(values)

@@ -105,8 +105,13 @@ local CLODEX_ACTION = enum("action", {
     { value = "panel", desc = "Toggle the queue workspace panel" },
     { value = "terminal", aliases = { "cli", "term", "chat" }, desc = "Toggle the project terminal" },
     { value = "history", desc = "Open global Clodex history" },
-    { value = "backend", desc = "Toggle the active backend" },
+    { value = "backend", desc = "Toggle or set the active backend" },
     { value = "header", aliases = { "term-header", "terminal-header", "terminal_header" }, desc = "Toggle the active terminal header" },
+})
+
+local BACKEND_NAME = enum("backend", {
+    { value = "codex", desc = "Use Codex CLI" },
+    { value = "opencode", desc = "Use OpenCode CLI" },
 })
 
 local DEBUG_ACTION = enum("action", {
@@ -467,6 +472,22 @@ local function scoped_completion(enum_spec)
     end
 end
 
+---@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
+local function clodex_completion()
+    return function(_, cmd_line, cursor_pos)
+        local index = completion_arg_index(cmd_line, cursor_pos)
+        local fargs = completion_fargs(cmd_line, cursor_pos)
+        local action = fargs[1] and CLODEX_ACTION.aliases[fargs[1]] or nil
+        if index <= 1 then
+            return CLODEX_ACTION.completions
+        end
+        if index == 2 and action == "backend" then
+            return BACKEND_NAME.completions
+        end
+        return {}
+    end
+end
+
 ---@param command vim.api.keyset.create_user_command.command_args
 ---@param category? Clodex.PromptCategory
 ---@return table
@@ -486,6 +507,8 @@ local function top_level_palette_specs()
         { name = "Clodex cli", desc = "Toggle the project terminal", invoke = "Clodex cli" },
         { name = "Clodex history", desc = "Open global Clodex history", invoke = "Clodex history" },
         { name = "Clodex backend", desc = "Toggle the active backend", invoke = "Clodex backend" },
+        { name = "Clodex backend codex", desc = "Switch to the Codex backend", invoke = "Clodex backend codex" },
+        { name = "Clodex backend opencode", desc = "Switch to the OpenCode backend", invoke = "Clodex backend opencode" },
         { name = "Clodex header", desc = "Toggle the active terminal header", invoke = "Clodex header" },
         { name = "ClodexDebug panel", desc = "Toggle the debug state panel", invoke = "ClodexDebug panel", keep_open = true },
         { name = "ClodexDebug mini", desc = "Toggle the compact debug panel", invoke = "ClodexDebug mini" },
@@ -538,8 +561,8 @@ local function registered_command_specs()
         {
             name = "Clodex",
             desc = "Open the Clodex panel or run a top-level action",
-            nargs = "?",
-            complete = enum_completion(CLODEX_ACTION, 1),
+            nargs = "*",
+            complete = clodex_completion(),
             handler = function(command)
                 local clodex = require_clodex()
                 local token = command.fargs[1]
@@ -547,18 +570,39 @@ local function registered_command_specs()
                 if not action then
                     return
                 end
-                if not check_extra_args("Clodex", vim.list_slice(command.fargs, 2), "at most one action argument") then
-                    return
-                end
                 if action == "panel" then
+                    if not check_extra_args("Clodex", vim.list_slice(command.fargs, 2), "at most one action argument") then
+                        return
+                    end
                     clodex.open_queue_workspace()
                 elseif action == "terminal" then
+                    if not check_extra_args("Clodex", vim.list_slice(command.fargs, 2), "at most one action argument") then
+                        return
+                    end
                     clodex.toggle()
                 elseif action == "history" then
+                    if not check_extra_args("Clodex", vim.list_slice(command.fargs, 2), "at most one action argument") then
+                        return
+                    end
                     clodex.open_history()
                 elseif action == "backend" then
-                    clodex.toggle_backend()
+                    local backend_token = command.fargs[2]
+                    if not backend_token then
+                        clodex.toggle_backend()
+                        return
+                    end
+                    local backend = resolve_enum(backend_token, BACKEND_NAME, "Clodex")
+                    if not backend then
+                        return
+                    end
+                    if not check_extra_args("Clodex", vim.list_slice(command.fargs, 3), "at most one backend argument") then
+                        return
+                    end
+                    app_instance():set_backend(backend)
                 elseif action == "header" then
+                    if not check_extra_args("Clodex", vim.list_slice(command.fargs, 2), "at most one action argument") then
+                        return
+                    end
                     clodex.toggle_terminal_header()
                 end
             end,
