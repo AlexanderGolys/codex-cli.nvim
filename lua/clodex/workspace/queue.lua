@@ -19,6 +19,7 @@ local util = require("clodex.util")
 ---@field updated_at string
 ---@field history_summary? string
 ---@field history_commits string[]
+---@field history_commit? string
 ---@field history_completed_at? string
 
 --- Human-friendly queue summary assembled for UI and project-level diagnostics.
@@ -34,6 +35,12 @@ local util = require("clodex.util")
 ---@field root_dir string
 local Queue = {}
 Queue.__index = Queue
+
+---@return string
+local function iso_utc_now()
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    return type(timestamp) == "string" and timestamp or ""
+end
 
 local ORDER = { "planned", "queued", "implemented", "history" }
 
@@ -76,6 +83,36 @@ local function has_item_id(item)
     return type(item) == "table" and type(item.id) == "string" and vim.trim(item.id) ~= ""
 end
 
+---@param item Clodex.QueueItem
+local function sanitize_history_metadata(item)
+    if type(item.history_summary) ~= "string" or vim.trim(item.history_summary) == "" then
+        item.history_summary = nil
+    else
+        item.history_summary = vim.trim(item.history_summary)
+    end
+
+    if item.history_commits == nil and type(item.history_commit) == "string" and vim.trim(item.history_commit) ~= "" then
+        item.history_commits = { item.history_commit }
+    end
+    item.history_commit = nil
+
+    if type(item.history_commits) ~= "table" then
+        item.history_commits = {}
+        return
+    end
+
+    local commits = {} ---@type string[]
+    for _, commit in ipairs(item.history_commits) do
+        if type(commit) == "string" then
+            commit = vim.trim(commit)
+            if commit ~= "" then
+                commits[#commits + 1] = commit
+            end
+        end
+    end
+    item.history_commits = commits
+end
+
 ---@param item any
 ---@return Clodex.QueueItem
 local function normalize_item(item)
@@ -84,13 +121,12 @@ local function normalize_item(item)
         item.id = util.uuid_v4()
     end
     item.kind = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
-    item.history_commits = item.history_commits or {}
-    if item.history_commit and not item.history_commits then
-        item.history_commits = { item.history_commit }
-        item.history_commit = nil
-    end
+    sanitize_history_metadata(item)
     if type(item.execution_instructions) ~= "string" or vim.trim(item.execution_instructions) == "" then
         item.execution_instructions = nil
+    end
+    if type(item.image_path) ~= "string" or vim.trim(item.image_path) == "" then
+        item.image_path = nil
     end
     if item.completion_target ~= "history" then
         item.completion_target = nil
@@ -252,7 +288,7 @@ end
 ---@return Clodex.QueueItem
 function Queue:add_todo(project, spec)
     local queue_name = KNOWN_QUEUES[spec.queue] and spec.queue or "planned"
-    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local timestamp = iso_utc_now()
     local title = vim.trim(spec.title)
     local details = spec.details and vim.trim(spec.details) or nil
 
@@ -308,7 +344,7 @@ function Queue:put_item(project, queue_name, item, opts)
 
     opts = opts or {}
     local items = self:queue(project, queue_name)
-    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local timestamp = iso_utc_now()
     local moved = vim.deepcopy(item)
 
     if opts.copy then
@@ -325,6 +361,7 @@ function Queue:put_item(project, queue_name, item, opts)
     if opts.execution_instructions ~= nil then
         moved.execution_instructions = opts.execution_instructions ~= false and opts.execution_instructions or nil
     end
+    sanitize_history_metadata(moved)
 
     table.insert(items, 1, moved)
     save_queue_file(project.root, queue_name, items)
@@ -388,7 +425,8 @@ function Queue:update_item(project, item_id, attrs)
                 if attrs.completion_target ~= nil then
                     item.completion_target = attrs.completion_target ~= false and attrs.completion_target or nil
                 end
-                item.updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                sanitize_history_metadata(item)
+                item.updated_at = iso_utc_now()
                 save_queue_file(project.root, queue_name, items)
                 return vim.deepcopy(item)
             end

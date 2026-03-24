@@ -1,23 +1,19 @@
---- Defines the Clodex.TabState type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.TabState
 ---@field tabpage number
 ---@field active_project_root? string
 ---@field prompted_project? boolean
 ---@field window? snacks.win
 ---@field session_key? string
+local State = {}
+State.__index = State
 
---- Defines the Clodex.TabState.Snapshot type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.TabState.Snapshot
 ---@field tabpage number
 ---@field active_project_root? string
----@field prompted_project boolean
+---@field prompted_project? boolean
 ---@field has_visible_window boolean
 ---@field session_key? string
 ---@field window_id? integer
-local State = {}
-State.__index = State
 
 local ACTIVE_PROJECT_VAR = "clodex_active_project_root"
 

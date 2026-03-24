@@ -2,6 +2,8 @@ describe("clodex.ui.queue_workspace", function()
     local Workspace
     local original_select
     local confirm_callbacks
+    local active_input_open
+    local input_callbacks
 
     local function extmark_rows(buf, hl_group)
         local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
@@ -18,6 +20,7 @@ describe("clodex.ui.queue_workspace", function()
         package.loaded["clodex.ui.queue_workspace"] = nil
         original_select = package.loaded["clodex.ui.select"]
         confirm_callbacks = {}
+        input_callbacks = {}
         package.loaded["snacks.input"] = {
             input = function() end,
         }
@@ -30,8 +33,18 @@ describe("clodex.ui.queue_workspace", function()
             confirm = function(_prompt, on_choice)
                 confirm_callbacks[#confirm_callbacks + 1] = on_choice
             end,
+            input = function(opts, on_confirm)
+                input_callbacks[#input_callbacks + 1] = {
+                    opts = opts,
+                    on_confirm = on_confirm,
+                }
+            end,
             close_active_input = function() end,
+            has_active_input = function()
+                return active_input_open
+            end,
         }
+        active_input_open = false
         Workspace = require("clodex.ui.queue_workspace")
     end)
 
@@ -742,6 +755,72 @@ describe("clodex.ui.queue_workspace", function()
         vim.api.nvim_win_close(workspace.queue_win, true)
     end)
 
+    it("ignores malformed history metadata while rendering implemented items", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 1,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {
+                            {
+                                id = "item-1",
+                                title = "Fix parser",
+                                details = "Adjust token handling",
+                                prompt = "Fix parser\n\nAdjust token handling",
+                                kind = "todo",
+                                history_summary = vim.NIL,
+                                history_commits = { vim.NIL, "abc1234" },
+                            },
+                        },
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 80,
+            height = 20,
+            style = "minimal",
+        })
+
+        workspace:render_queue()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
+        assert.are.same({
+            "Implemented (1)",
+            "  Fix parser  [󰜘 abc1234]",
+            "    Adjust token handling",
+            "    Type: TODO",
+            "    󰜘 abc1234",
+            "",
+        }, lines)
+
+        vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
     it("uses the full editor footprint when the workspace is configured fullscreen", function()
         local original_list_uis = vim.api.nvim_list_uis
         vim.api.nvim_list_uis = function()
@@ -856,7 +935,6 @@ describe("clodex.ui.queue_workspace", function()
                 return {
                     project = project,
                     session_running = true,
-                    session_working = true,
                     counts = {
                         planned = 0,
                         queued = 1,
@@ -893,7 +971,6 @@ describe("clodex.ui.queue_workspace", function()
         workspace.projects = { project }
         workspace.project_index = 1
         workspace.project_buf = vim.api.nvim_create_buf(false, true)
-        workspace.animation_tick = 1
 
         workspace:render_projects()
 
@@ -1161,6 +1238,145 @@ describe("clodex.ui.queue_workspace", function()
         vim.api.nvim_win_close(workspace.footer_win, true)
         vim.api.nvim_win_close(workspace.queue_win, true)
         vim.api.nvim_win_close(workspace.project_win, true)
+    end)
+
+    it("does not steal focus back from an active one-line input", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.focus = "queue"
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, true, {
+            relative = "editor",
+            row = 1,
+            col = 42,
+            width = 40,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 14,
+            col = 1,
+            width = 81,
+            height = 3,
+            style = "minimal",
+        })
+
+        local input_buf = vim.api.nvim_create_buf(false, true)
+        local input_win = vim.api.nvim_open_win(input_buf, true, {
+            relative = "editor",
+            row = 3,
+            col = 8,
+            width = 30,
+            height = 1,
+            style = "minimal",
+            border = "rounded",
+        })
+        active_input_open = true
+
+        workspace:apply_focus()
+
+        assert.are.equal(input_win, vim.api.nvim_get_current_win())
+
+        active_input_open = false
+        vim.api.nvim_win_close(input_win, true)
+        vim.api.nvim_win_close(workspace.footer_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.project_win, true)
+    end)
+
+    it("marks modal input as open before spawning the not-working note prompt", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Broken feature",
+        }
+        local rewind_called = false
+
+        local workspace = {
+            app = {
+                queue_actions = {
+                    rewind_queue_item = function()
+                        rewind_called = true
+                    end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "implemented"
+            end,
+            refresh = function() end,
+            queue_index = 1,
+            modal_input_open = false,
+        }
+
+        Workspace.mark_queue_item_not_working(workspace)
+
+        assert.is_true(workspace.modal_input_open)
+        assert.are.equal(1, #input_callbacks)
+        assert.are.equal("Optional note", input_callbacks[1].opts.prompt)
+        assert.is_false(rewind_called)
+
+        input_callbacks[1].opts.win.on_close()
+
+        assert.is_false(workspace.modal_input_open)
     end)
 
     it("re-renders footer actions when focus changes", function()

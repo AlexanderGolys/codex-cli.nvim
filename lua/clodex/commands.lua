@@ -30,8 +30,10 @@ local did_register = false
 ---@field lhs string
 ---@field desc string
 
+---@alias Clodex.KeymapField "toggle"|"queue_workspace"|"state_preview"|"mini_state_preview"|"backend_toggle"
+
 ---@class Clodex.GlobalKeymapDefinition
----@field field keyof Clodex.Config.Keymaps
+---@field field Clodex.KeymapField
 ---@field mode string
 ---@field action string
 ---@field desc string
@@ -41,6 +43,9 @@ local did_register = false
 ---@field lhs string
 ---@field desc string
 ---@field opts vim.api.keyset.keymap
+
+---@class Clodex.Commands.KeymapValues
+---@field keymaps? table<string, string|Clodex.Config.KeymapConfig|false>
 
 ---@class Clodex.RegisteredCommandSpec
 ---@field name string
@@ -191,8 +196,8 @@ local GLOBAL_KEYMAPS = {
 
 local REGISTERED_KEYMAPS = {} ---@type { mode: string|string[], lhs: string }[]
 
----@param values Clodex.Config.Values
----@param field keyof Clodex.Config.Keymaps
+---@param values Clodex.Commands.KeymapValues
+---@param field Clodex.KeymapField
 ---@param definition Clodex.GlobalKeymapDefinition
 ---@return Clodex.ResolvedKeymap?
 local function resolve_keymap(values, field, definition)
@@ -475,17 +480,6 @@ local function prompt_command_opts(command, category)
     } or {})
 end
 
----@param action_enum Clodex.CommandEnum
----@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
-local function target_completion(action_enum)
-    return scoped_completion(action_enum)
-end
-
----@return fun(arg_lead: string, cmd_line: string, cursor_pos: integer): string[]
-local function prompt_completion()
-    return scoped_completion(PROMPT_KIND)
-end
-
 local function top_level_palette_specs()
     return {
         { name = "Clodex", desc = "Toggle the queue workspace panel", invoke = "Clodex" },
@@ -641,7 +635,7 @@ local function registered_command_specs()
             name = "ClodexTodo",
             desc = "Add or implement todo queue items",
             nargs = "*",
-            complete = target_completion(TODO_ACTION),
+            complete = scoped_completion(TODO_ACTION),
             handler = function(command)
                 local clodex = require_clodex()
                 local token = command.fargs[1]
@@ -680,7 +674,7 @@ local function registered_command_specs()
             desc = "Add a prompt with an optional category and project target",
             nargs = "*",
             range = true,
-            complete = prompt_completion(),
+            complete = scoped_completion(PROMPT_KIND),
             handler = function(command)
                 local clodex = require_clodex()
                 local fargs = command.fargs
@@ -744,7 +738,7 @@ function M.list()
     return command_specs()
 end
 
----@param values Clodex.Config.Values
+---@param values Clodex.Commands.KeymapValues
 ---@return Clodex.KeymapSpec[]
 function M.list_keymaps(values)
     local keymaps = {} ---@type Clodex.KeymapSpec[]
@@ -766,7 +760,7 @@ function M.list_keymaps(values)
     return keymaps
 end
 
----@param values Clodex.Config.Values
+---@param values Clodex.Commands.KeymapValues
 function M.register_keymaps(values)
     for _, keymap in ipairs(REGISTERED_KEYMAPS) do
         pcall(vim.keymap.del, keymap.mode, keymap.lhs)

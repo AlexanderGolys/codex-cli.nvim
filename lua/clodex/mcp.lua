@@ -8,6 +8,12 @@ local REPO_ROOT = fs.dirname(fs.dirname(fs.dirname(SOURCE_PATH)))
 local BIN_NAME = vim.fn.has("win32") == 1 and "clodex-mcp.exe" or "clodex-mcp"
 local SERVER_NAME = "clodex"
 
+---@param values Clodex.Config.Values
+---@return string
+local function runtime_root(values)
+    return fs.normalize(values.mcp.runtime_dir)
+end
+
 ---@param value string
 ---@return string
 local function toml_string(value)
@@ -27,6 +33,24 @@ local function server_args(values)
         args[#args + 1] = toml_string(configured[index])
     end
     return args
+end
+
+---@param values Clodex.Config.Values
+---@return string
+function M.codex_home(values)
+    return fs.join(runtime_root(values), "codex")
+end
+
+---@param values Clodex.Config.Values
+---@return string
+function M.codex_config_path(values)
+    return fs.join(M.codex_home(values), "config.toml")
+end
+
+---@param values Clodex.Config.Values
+---@return string
+function M.opencode_config_path(values)
+    return fs.join(runtime_root(values), "opencode.json")
 end
 
 ---@return string
@@ -92,6 +116,46 @@ function M.codex_config_args(values)
     end
 
     return args
+end
+
+---@param values Clodex.Config.Values
+local function write_codex_runtime(values)
+    local cmd = assert(M.server_cmd(values))
+    local lines = {
+        ("[mcp_servers.%s]"):format(SERVER_NAME),
+        ("command = %s"):format(toml_string(cmd[1])),
+    }
+
+    local server_cmd_args = server_args(values)
+    if #server_cmd_args > 0 then
+        lines[#lines + 1] = ("args = [%s]"):format(table.concat(server_cmd_args, ", "))
+    end
+
+    fs.write_file(M.codex_config_path(values), table.concat(lines, "\n") .. "\n")
+end
+
+---@param values Clodex.Config.Values
+local function write_opencode_runtime(values)
+    local cmd = assert(M.server_cmd(values))
+    fs.write_json(M.opencode_config_path(values), {
+        mcp = {
+            [SERVER_NAME] = {
+                type = "local",
+                command = cmd,
+                enabled = true,
+            },
+        },
+    })
+end
+
+---@param values Clodex.Config.Values
+function M.sync_runtime(values)
+    if not M.is_enabled(values) then
+        return
+    end
+
+    write_codex_runtime(values)
+    write_opencode_runtime(values)
 end
 
 return M

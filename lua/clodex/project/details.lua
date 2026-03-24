@@ -254,7 +254,7 @@ local function list_files(root, max_files)
 end
 
 ---@param path string
----@param stat uv.aliases.fs_stat_table?
+---@param stat Clodex.FsStat?
 ---@return integer?, boolean
 local function line_count_for_file(path, stat)
   if stat and stat.size and stat.size > MAX_COUNTED_FILE_BYTES then

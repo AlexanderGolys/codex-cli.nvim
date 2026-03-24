@@ -97,8 +97,8 @@ local categories = {
         id = "bug",
         label = "Bug",
         highlight = "bug_title",
-        default_title = "Investigate runtime bug",
-        title_prefix = "Investigate runtime bug",
+        default_title = "Investigate runtime error",
+        title_prefix = "Investigate runtime error",
     },
     {
         id = "visual",

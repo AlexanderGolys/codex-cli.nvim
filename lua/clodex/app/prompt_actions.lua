@@ -341,7 +341,6 @@ function PromptActions:prompt_for_library(project)
         })
     end
 
-    ---@param item Clodex.PromptLibrary.Template
     ui.pick_text(items, {
         prompt = ("Prompt library for %s"):format(project.name),
     }, function(item)
@@ -533,7 +532,6 @@ function PromptActions:pick_bug_source(project, latest_screenshot, screenshot_di
         }
     end
 
-    ---@param choice { label: string, detail: string, value: string, preview: table, preview_title: string }
     ui.pick_text(items, {
         prompt = ("Bug prompt source for %s"):format(project.name),
     }, function(choice)

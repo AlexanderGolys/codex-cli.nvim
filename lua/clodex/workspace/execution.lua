@@ -64,7 +64,6 @@ local function skill_name(config)
     return name ~= "" and name or "prompt-nvim-clodex"
 end
 
----@param config Clodex.Config.Values
 ---@return string
 local function repo_skill_content()
     local file = io.open(REPO_SKILL_TEMPLATE_PATH, "rb")
@@ -80,7 +79,14 @@ local function repo_skill_content()
     return content
 end
 
----@param item Clodex.QueueItem
+---@class Clodex.Workspace.ExecutionItem
+---@field id string
+---@field kind Clodex.PromptCategory
+---@field prompt string
+---@field completion_target? Clodex.QueueName
+---@field image_path? string
+
+---@param item Clodex.Workspace.ExecutionItem
 ---@param _config Clodex.Config.Values
 ---@return string[]
 local function completion_instruction_lines(item, _config)
@@ -102,7 +108,7 @@ local function completion_instruction_lines(item, _config)
     return lines
 end
 
----@param item Clodex.QueueItem
+---@param item Clodex.Workspace.ExecutionItem
 ---@return string[]
 local function prompt_prefix_lines(item)
     local lines = {} ---@type string[]
@@ -115,7 +121,7 @@ local function prompt_prefix_lines(item)
     return lines
 end
 
----@param item Clodex.QueueItem
+---@param item Clodex.Workspace.ExecutionItem
 ---@return string
 function Execution:queue_item_instructions(item)
     local lines = completion_instruction_lines(item, self.config)
@@ -151,13 +157,15 @@ function Execution:skill_dir()
     return assert(skills_dir(self.config))
 end
 
+---@param _project? Clodex.Project
 ---@return string
-function Execution:skill_file()
+function Execution:skill_file(_project)
     return fs.join(self:skill_dir(), skill_name(self.config), "SKILL.md")
 end
 
+---@param _project? Clodex.Project
 ---@return boolean
-function Execution:sync_prompt_skill()
+function Execution:sync_prompt_skill(_project)
     if not self:uses_prompt_skill() then
         return false
     end
@@ -174,7 +182,7 @@ function Execution:project_execution_dir(project)
 end
 
 ---@param _project Clodex.Project
----@param item Clodex.QueueItem
+---@param item Clodex.Workspace.ExecutionItem
 ---@return string
 function Execution:dispatch_prompt(_project, item)
     if not item.prompt or vim.trim(item.prompt) == "" then

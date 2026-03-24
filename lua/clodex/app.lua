@@ -64,6 +64,15 @@ end
 ---@field blocked_input_session_key? string
 ---@field current_tab fun(self: Clodex.App): Clodex.TabState
 ---@field resolve_target fun(self: Clodex.App, state: Clodex.TabState): Clodex.TerminalTarget
+---@field resolve_target_from_path fun(self: Clodex.App, state: Clodex.TabState, path: string, mutate: boolean): Clodex.TerminalTarget
+---@field state_snapshot fun(self: Clodex.App): Clodex.App.StateSnapshot
+---@field projects_for_queue_workspace fun(self: Clodex.App): Clodex.Project[]
+---@field queue_summary fun(self: Clodex.App, project: Clodex.Project): Clodex.ProjectQueueSummary
+---@field refresh_views fun(self: Clodex.App)
+---@field refresh_changed_project_buffers fun(self: Clodex.App)
+---@field clear_active_project fun(self: Clodex.App)
+---@field set_current_project fun(self: Clodex.App, project: Clodex.Project|string)
+---@field add_project fun(self: Clodex.App)
 
 --- Defines the Clodex.App.StateSnapshot type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
@@ -88,13 +97,14 @@ end
 ---@field usage_events string
 ---@field working string
 ---@field waiting_state? "question"|"permission"
----@field model string
----@field context string
+---@field model? string
+---@field context? string
 ---@field runtime_sources string[]
 ---@field bookmark_count integer
 ---@field notes_count integer
 ---@field cheatsheet_count integer
 ---@field cheatsheet_items string[]
+---@type Clodex.App
 local App = {}
 App.__index = App
 
@@ -291,6 +301,17 @@ local function waiting_session_rank(current_state, session)
         rank = rank + 1
     end
     return rank
+end
+
+---@return uv.uv_timer_t
+local function create_timer()
+    local uv = vim.uv or vim.loop
+    local new_timer = uv and uv["new_timer"] or nil
+    if type(new_timer) ~= "function" then
+        error("Neovim libuv timer API is unavailable")
+    end
+
+    return new_timer()
 end
 
 ---@param app Clodex.App
@@ -621,7 +642,7 @@ function App:setup_execution_timer()
         return
     end
 
-    self.execution_timer = vim.uv.new_timer()
+    self.execution_timer = create_timer()
     self.execution_timer:start(
         poll_ms,
         poll_ms,
@@ -658,7 +679,7 @@ function App:setup_blocked_input_timer()
         return
     end
 
-    self.blocked_input_timer = vim.uv.new_timer()
+    self.blocked_input_timer = create_timer()
     self.blocked_input_timer:start(
         poll_ms,
         poll_ms,

@@ -151,6 +151,24 @@ describe("clodex.workspace.queue", function()
         assert.are.equal(0, summary.counts.history)
     end)
 
+    it("normalizes malformed history metadata when loading queue items", function()
+        local item = queue:add_todo(project, {
+            title = "history cleanup",
+            queue = "queued",
+            kind = "todo",
+        })
+        queue:advance(project, item.id)
+        queue:update_item(project, item.id, {
+            history_summary = vim.NIL,
+            history_commits = { vim.NIL, "  abc12345  ", "" },
+        })
+
+        local _, _, stored = queue:find_item(project, item.id)
+
+        assert.is_nil(stored.history_summary)
+        assert.are.same({ "abc12345" }, stored.history_commits)
+    end)
+
     it("reports the most recent workspace update in queue summaries", function()
         local first = queue:add_todo(project, {
             title = "older item",

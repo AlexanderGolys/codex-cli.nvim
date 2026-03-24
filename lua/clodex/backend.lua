@@ -79,4 +79,25 @@ function Backend.cli_cmd(config)
     return cmd
 end
 
+---@param config Clodex.Config.Values
+---@param _target? Clodex.TerminalTarget
+---@return table<string, string>?
+function Backend.cli_env(config, _target)
+    if not Mcp.is_enabled(config) then
+        return nil
+    end
+
+    Mcp.sync_runtime(config)
+
+    if Backend.normalize(config.backend) == "opencode" then
+        return {
+            OPENCODE_CONFIG = Mcp.opencode_config_path(config),
+        }
+    end
+
+    return {
+        CODEX_HOME = Mcp.codex_home(config),
+    }
+end
+
 return Backend

@@ -12,7 +12,7 @@ TextBlock.__index = TextBlock
 ---@return string
 local function normalize_line(text)
   text = tostring(text or "")
-  return text:gsub("\r", " "):gsub("\n", " ")
+  return (text:gsub("\r", " "):gsub("\n", " "))
 end
 
 ---@param lines? string[]

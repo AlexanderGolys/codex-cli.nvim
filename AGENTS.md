@@ -21,6 +21,7 @@
 - If something is just a wrapper or implementation helper, define it as a local/nested function or move it to `lua/clodex/util.lua`; do not expose it through a module API in that helper-shaped form.
 - Root files:
   - `README.md`: user-facing setup and architecture notes.
+  - `AGENTS.md`: repository-specific coding and workflow rules for agents.
   - `LICENSE`: MIT license.
   - `.gitignore`: local/editor/runtime ignores.
 - Runtime bootstrap should live under `plugin/`.
@@ -71,15 +72,18 @@
 - Use Neovim headless checks while developing:
   - `nvim --headless "+lua require('clodex').setup()" +qa` validates plugin load.
   - `nvim --headless "+lua print(vim.inspect(require('clodex')))" +qa` sanity-checks exports.
-- Manual runtime test: install with `lazy.nvim`, then run `:ClodexToggle`.
+- Focused specs can be run with `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/specs/<name>_spec.lua" +qa`.
+- Full test suite runs through `bash bin/clodex-nvim-test`.
+- Manual runtime test: install with `lazy.nvim`, then run `:Clodex cli` or `:Clodex`.
 
 ## Testing Guidelines
-- Automated tests are not present yet; add tests as new behavior lands.
-- Recommended test layout: `tests/` with one spec per module.
+- Automated tests live under `tests/specs/` and use `tests/minimal_init.lua`.
+- Keep one focused spec per module/behavior when practical.
 - Cover at least:
   - `setup()` option merging behavior.
   - Public API stability.
   - Project detection and session lifecycle edge cases.
+- When queue/prompt workflows change, update README command/examples and the checked-in workflow skill expectations together.
 
 ## Commit & Pull Request Guidelines
 - Follow the existing imperative style seen in history, e.g.:

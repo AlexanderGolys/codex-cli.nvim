@@ -9,6 +9,7 @@ local fs = require("clodex.util.fs")
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.StatePreview
 ---@field config Clodex.Config.Values
+---@field app? Clodex.App
 ---@field state_buf? integer
 ---@field command_buf? integer
 ---@field state_win? integer
@@ -119,7 +120,7 @@ local function project_name(project)
   return project and project.name or "none"
 end
 
----@param target Clodex.App.TargetSnapshot
+---@param target Clodex.TerminalTarget
 ---@return string
 --- Builds a compact display label for the current target snapshot.
 --- It distinguishes whether focus is on a project session or free terminal.
@@ -130,7 +131,7 @@ local function target_label(target)
   return ("free:%s"):format(target.cwd)
 end
 
----@param project_state Clodex.App.ProjectStateSnapshot
+---@param project_state Clodex.App.ProjectState
 --- Builds human-readable status text for a project's workspace state.
 --- Includes tracking and visibility flags used in project line summaries.
 ---@return string
@@ -192,7 +193,7 @@ end
 
 ---@param self Clodex.StatePreview
 ---@param block Clodex.TextBlock
----@param project_state Clodex.App.ProjectStateSnapshot
+---@param project_state Clodex.App.ProjectState
 --- Appends one project line and key metadata fields to the state block.
 --- It is called for every project snapshot while rendering the main state pane.
 local function append_project_state(self, block, project_state)
@@ -262,7 +263,7 @@ end
 
 ---@param self Clodex.StatePreview
 ---@param block Clodex.TextBlock
----@param target Clodex.App.TargetSnapshot
+---@param target Clodex.TerminalTarget
 --- Adds active target data to the state output, including project or free path target.
 --- This keeps the selected project/session context obvious to the user.
 local function append_target(self, block, target)
@@ -276,7 +277,7 @@ end
 
 ---@param self Clodex.StatePreview
 ---@param block Clodex.TextBlock
----@param tab Clodex.Tab.StateSnapshot
+---@param tab Clodex.TabState.Snapshot
 --- Adds tab state summary rows with visibility and window metadata.
 --- It shows what session each tab is currently showing if any.
 local function append_tab(self, block, tab)
@@ -684,7 +685,6 @@ end
 ---@param snapshot Clodex.App.StateSnapshot
 --- Renders project/tab/state details from an app snapshot into the state pane.
 --- The snapshot is assumed to already include project details and resolved target.
----@param snapshot Clodex.App.StateSnapshot
 function Preview:render_state(snapshot)
   self.max_state_width = 0
   local session_count = #snapshot.sessions
@@ -790,7 +790,6 @@ end
 ---@param delta integer
 --- Moves command selection by delta and updates cursor.
 --- No-op when command list is empty.
----@param delta integer
 function Preview:move_command_selection(delta)
   if #self.commands == 0 then
     return
@@ -821,7 +820,6 @@ end
 ---@param snapshot Clodex.App.StateSnapshot
 --- Full render pass for both command and state windows.
 --- It ensures buffer creation and updates all panels in one call.
----@param snapshot Clodex.App.StateSnapshot
 function Preview:render(snapshot)
   self:ensure_buffers()
   self:render_commands()
@@ -831,7 +829,6 @@ end
 
 ---@param app Clodex.App
 --- Refreshes the currently open preview from latest app state.
----@param app Clodex.App
 function Preview:refresh(app)
   if not self:is_open() then
     return

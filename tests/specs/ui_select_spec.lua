@@ -7,6 +7,8 @@ end
 describe("clodex.ui.select", function()
     local select
     local opened_windows
+    local input_windows
+    local input_opts_calls
     local original_ui_win
     local original_completeopt
     local picker_select_calls
@@ -17,10 +19,46 @@ describe("clodex.ui.select", function()
         original_ui_win = package.loaded["clodex.ui.win"]
         original_completeopt = vim.o.completeopt
         opened_windows = {}
+        input_windows = {}
+        input_opts_calls = {}
         picker_select_calls = {}
         picker_select_opts = {}
         package.loaded["snacks.input"] = {
-            input = function() end,
+            input = function(opts, _on_confirm)
+                input_opts_calls[#input_opts_calls + 1] = vim.deepcopy(opts)
+                local buf = vim.api.nvim_create_buf(false, true)
+                vim.bo[buf].buftype = "prompt"
+                local win = vim.api.nvim_open_win(buf, true, {
+                    relative = "editor",
+                    style = "minimal",
+                    row = 1,
+                    col = 1,
+                    width = 40,
+                    height = 1,
+                    border = "rounded",
+                })
+                local object = {
+                    buf = buf,
+                    win = win,
+                }
+
+                function object:valid()
+                    return vim.api.nvim_win_is_valid(self.win)
+                end
+
+                function object:focus()
+                    vim.api.nvim_set_current_win(self.win)
+                end
+
+                function object:close()
+                    if self:valid() then
+                        vim.api.nvim_win_close(self.win, true)
+                    end
+                end
+
+                input_windows[#input_windows + 1] = object
+                return object
+            end,
         }
         package.loaded["snacks.picker.select"] = {
             select = function(_items, opts, on_choice)
@@ -112,6 +150,11 @@ describe("clodex.ui.select", function()
 
     after_each(function()
         for _, window in ipairs(opened_windows or {}) do
+            if window:valid() then
+                window:close()
+            end
+        end
+        for _, window in ipairs(input_windows or {}) do
             if window:valid() then
                 window:close()
             end
@@ -219,6 +262,53 @@ describe("clodex.ui.select", function()
         assert.are.same({ "input", "preview" }, picker_select_opts[1].snacks.layout.hidden)
         assert.are.equal(100, picker_select_opts[1].snacks.layout.layout.zindex)
         assert.is_true(picker_select_opts[1].snacks.win.list.enter)
+    end)
+
+    it("re-focuses one-line inputs after delayed focus changes", function()
+        local parent_buf = vim.api.nvim_create_buf(false, true)
+        local parent_win = vim.api.nvim_open_win(parent_buf, true, {
+            relative = "editor",
+            style = "minimal",
+            row = 3,
+            col = 3,
+            width = 40,
+            height = 4,
+            border = "rounded",
+        })
+
+        select.input({
+            prompt = "Optional note",
+        }, function() end)
+
+        wait_for(function()
+            return #input_windows == 1
+        end)
+
+        vim.schedule(function()
+            if vim.api.nvim_win_is_valid(parent_win) then
+                vim.api.nvim_set_current_win(parent_win)
+            end
+        end)
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == input_windows[1].win
+        end)
+
+        if vim.api.nvim_win_is_valid(parent_win) then
+            vim.api.nvim_win_close(parent_win, true)
+        end
+    end)
+
+    it("opens one-line inputs above workspace-level floats", function()
+        select.input({
+            prompt = "Optional note",
+        }, function() end)
+
+        wait_for(function()
+            return #input_opts_calls == 1
+        end)
+
+        assert.are.equal(101, input_opts_calls[1].win.zindex)
     end)
 
     it("uses built-in completion items for prompt context insertion", function()

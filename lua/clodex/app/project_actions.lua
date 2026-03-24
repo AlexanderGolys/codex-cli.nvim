@@ -32,7 +32,7 @@ local function edit_if_safe(path)
         return false
     end
 
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    vim.cmd("edit " .. vim.fn.fnameescape(path))
     return true
 end
 
@@ -266,8 +266,8 @@ function ProjectActions:open_project_workspace_target(project)
     self.app:refresh_views()
 end
 
---- Opens the current project's todo file in the active window.
---- The file lives at `TODO.md` in the project root and is created on demand.
+--- Opens the current project's README in the active window.
+--- The file prefers an existing README and falls back to creating `README.md` on demand.
 ---@param project? Clodex.Project
 function ProjectActions:open_project_readme_file(project)
     project = current_or_target_project(self, project)
@@ -398,7 +398,7 @@ function ProjectActions:open_project_notes_picker(project)
             return
         end
         self:activate_project(project.root)
-        vim.cmd.edit(vim.fn.fnameescape(note.path))
+        vim.cmd("edit " .. vim.fn.fnameescape(note.path))
         self.app.project_details_store:touch_activity(project)
         self.app:refresh_views()
     end)
@@ -421,7 +421,7 @@ function ProjectActions:create_project_note(project)
         end
         local path = self.app.project_notes:create(project, title)
         self:activate_project(project.root)
-        vim.cmd.edit(vim.fn.fnameescape(path))
+        vim.cmd("edit " .. vim.fn.fnameescape(path))
         self.app.project_details_store:touch_activity(project)
         notify.notify(("Created project note for %s: %s"):format(project.name, title))
         self.app:refresh_views()
@@ -536,7 +536,7 @@ end
 function ProjectActions:toggle_backend()
     local values = self.app.config:get()
     local next_backend = values.backend == "opencode" and "codex" or "opencode"
-    values.backend = Backend.is_valid_name(next_backend)
+    values.backend = Backend.normalize(next_backend)
     values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
     self.app.terminals:update_config(values)
     self.app.state_preview:update_config(values)
@@ -699,7 +699,6 @@ end
 ---@param opts? { name?: string, root?: string }
 --- Registers a new project if needed and activates terminal context.
 --- Called from command paths and picker flow; it can auto-use existing projects.
----@param opts? { name?: string, root?: string }
 function ProjectActions:add_project(opts)
     opts = opts or {}
     local path = fs.current_path()

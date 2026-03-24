@@ -2,6 +2,11 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
+---@class Clodex.FsStat
+---@field type? string
+---@field size? integer
+---@field mtime? { sec: integer, nsec: integer }
+
 local function is_windows_drive_path(path)
     return type(path) == "string" and path:match("^%a:[/\\]") ~= nil
 end
@@ -26,8 +31,11 @@ end
 
 --- Gets filesystem stat metadata or returns nil when the path is missing.
 ---@param path string
----@return uv.aliases.fs_stat_table?
+---@return Clodex.FsStat?
 function M.stat(path)
+    if type(path) ~= "string" or path == "" then
+        return nil
+    end
     return uv.fs_stat(path)
 end
 
@@ -69,7 +77,7 @@ function M.basename(path)
 end
 
 --- Joins path segments and normalizes separators.
----@param ...
+---@param ... string
 ---@return string
 function M.join(...)
     return M.normalize(table.concat({ ... }, "/"))

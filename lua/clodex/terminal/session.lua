@@ -2,21 +2,6 @@ local fs = require("clodex.util.fs")
 local History = require("clodex.history")
 local notify = require("clodex.util.notify")
 
---- Defines the Clodex.TerminalSession.Spec type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
----@class Clodex.TerminalSession.Spec
----@field key string
----@field kind 'project'|'free'
----@field cwd string
----@field title string
----@field cmd string[]
----@field env? table<string, string>
----@field terminal_provider? "snacks"|"term"
----@field project_root? string
----@field header_enabled? boolean
-
---- Defines the Clodex.TerminalSession type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.TerminalSession
 ---@field key string
 ---@field kind 'project'|'free'
@@ -32,25 +17,34 @@ local notify = require("clodex.util.notify")
 ---@field suppress_exit_warning boolean
 ---@field archived_line_count integer
 ---@field awaiting_response boolean
+local Session = {}
+Session.__index = Session
 
---- Defines the Clodex.TerminalSession.Snapshot type for this module.
---- This annotation documents structured state so modules can pass data with consistent expectations.
----@class Clodex.TerminalSession.Snapshot
+---@class Clodex.TerminalSession.Spec
 ---@field key string
 ---@field kind 'project'|'free'
 ---@field cwd string
 ---@field title string
+---@field cmd string[]
+---@field env? table<string, string>
+---@field terminal_provider? "snacks"|"term"
+---@field project_root? string
+---@field header_enabled? boolean
+
+---@class Clodex.TerminalSession.Snapshot
+---@field key string
+---@field kind? 'project'|'free'
+---@field cwd? string
+---@field title? string
 ---@field project_root? string
 ---@field buf? integer
 ---@field buffer_valid boolean
 ---@field job_id? integer
 ---@field running boolean
 ---@field waiting_state? "question"|"permission"
----@field last_cli_line string
+---@field last_cli_line? string
 ---@field terminal_provider "snacks"|"term"
----@field env_keys string[]
-local Session = {}
-Session.__index = Session
+---@field env_keys? string[]
 
 
 local Snacks = {
@@ -136,7 +130,7 @@ end
 ---@param text string
 ---@return string
 local function statusline_escape(text)
-    return (text or ""):gsub("%%", "%%%%")
+    return ((text or ""):gsub("%%", "%%%%"))
 end
 
 ---@param spec Clodex.TerminalSession.Spec
@@ -266,7 +260,8 @@ end
 ---@return string
 function Session:history_project_label()
     if self.kind == "project" then
-        return self.title:gsub("^Clodex:%s*", "")
+        local project_label = self.title:gsub("^Clodex:%s*", "")
+        return project_label
     end
     return self.cwd
 end
@@ -555,8 +550,6 @@ function Session:send(text)
     return true
 end
 
----@param text string
----@return boolean
 local function is_opencode_backend(self)
     if type(self.cmd) ~= "table" then
         return false

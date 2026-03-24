@@ -104,6 +104,32 @@ end
 ---@field index integer
 ---@field items T[]
 
+---@class Clodex.UiSelect.InputOpts
+---@field prompt? string
+---@field default? string
+---@field completion? string
+---@field win? table<string, any>
+
+---@class Clodex.UiSelect.SelectOpts
+---@field prompt? string
+---@field format_item? fun(item: any, supports_chunks: boolean): string|snacks.picker.Highlight[]
+---@field kind? string
+---@field snacks? table
+
+---@class Clodex.UiSelect.CompletedItem
+---@field word string
+---@field abbr? string
+---@field menu? string
+---@field info? string
+
+---@class Clodex.UiSelect.MultilineOpts
+---@field prompt string
+---@field default? string
+---@field min_height? integer
+---@field context? Clodex.PromptContext.Capture
+---@field paste_image? fun(): string?
+---@field submit_actions? Clodex.UiSelect.MultilineAction[]
+
 ---@param item Clodex.UiSelect.TextChoice
 ---@return string|snacks.picker.Highlight[]
 local function text_choice_chunks(item)
@@ -170,7 +196,7 @@ end
 ---@param on_choice fun(value?: T, idx?: number, entry?: Clodex.UiSelect.PickerEntry<T>)
 function M.pick_mapped(items, opts, on_choice)
   opts = opts or {}
-  local entries = {} ---@type Clodex.UiSelect.PickerEntry<T>[]
+  local entries = {}
 
   for index, item in ipairs(items) do
     local entry = opts.map_item and opts.map_item(item, {
@@ -201,7 +227,7 @@ end
 
 ---@generic T
 ---@param items T[]
----@param opts? vim.ui.select.Opts
+---@param opts? Clodex.UiSelect.SelectOpts
 ---@param on_choice fun(item?: T, idx?: number)
 function M.select(items, opts, on_choice)
   opts = opts or {}
@@ -233,7 +259,7 @@ function M.select(items, opts, on_choice)
   return picker
 end
 
----@param opts vim.ui.input.Opts
+---@param opts Clodex.UiSelect.InputOpts
 ---@param on_confirm fun(value?: string)
 function M.input(opts, on_confirm)
   opts = vim.deepcopy(opts or {})
@@ -326,7 +352,7 @@ end
 --- The menu inserts `&token` placeholders and only expands them when the prompt is submitted.
 ---@param findstart integer
 ---@param base string
----@return integer|vim.CompletedItem[]
+---@return integer|Clodex.UiSelect.CompletedItem[]
 function M.prompt_context_complete(findstart, base)
   local buf = vim.api.nvim_get_current_buf()
   local context = prompt_context_completion[buf]
@@ -340,7 +366,7 @@ function M.prompt_context_complete(findstart, base)
     return {}
   end
 
-  local matches = {} ---@type vim.CompletedItem[]
+  local matches = {} ---@type Clodex.UiSelect.CompletedItem[]
   for _, item in ipairs(PromptContext.tokens(context)) do
     if not item.disabled and vim.startswith(item.token, base) then
       local expansion = PromptContext.expand_token(item.token, context)
@@ -358,7 +384,7 @@ function M.prompt_context_complete(findstart, base)
 end
 
 ---@param items Clodex.UiSelect.TextChoice[]
----@param opts? vim.ui.select.Opts
+---@param opts? Clodex.UiSelect.SelectOpts
 ---@param on_choice fun(item?: Clodex.UiSelect.TextChoice, idx?: number)
 function M.pick_text(items, opts, on_choice)
   opts = opts or {}
@@ -564,14 +590,11 @@ local function render_hint_lines(buf, lines)
         if not from then
           break
         end
-        vim.api.nvim_buf_add_highlight(
-          buf,
-          -1,
-          "ClodexPromptEditorKey",
-          line_index - 1,
-          from - 1,
-          from + #key - 1
-        )
+        vim.api.nvim_buf_set_extmark(buf, PROMPT_CONTEXT_HIGHLIGHT_NS, line_index - 1, from - 1, {
+          end_row = line_index - 1,
+          end_col = from + #key - 1,
+          hl_group = "ClodexPromptEditorKey",
+        })
         start = from + #key
       end
     end
@@ -664,7 +687,7 @@ local function single_field_hint_lines(actions)
   }
 end
 
----@param opts { prompt: string, default?: string, min_height?: integer, context?: Clodex.PromptContext.Capture, paste_image?: fun(): string?, submit_actions?: Clodex.UiSelect.MultilineAction[] }
+---@param opts Clodex.UiSelect.MultilineOpts
 ---@param on_confirm fun(value?: string, action?: string)
 function M.multiline_input(opts, on_confirm)
   opts = opts or {}

@@ -196,7 +196,7 @@ end
 ---@param bookmark Clodex.ProjectBookmark
 function Bookmarks:jump(project, bookmark)
     local path = absolute_path(project, bookmark.path)
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    vim.cmd("edit " .. vim.fn.fnameescape(path))
     local line = math.max(bookmark.line, 1)
     vim.api.nvim_win_set_cursor(0, { line, 0 })
     vim.cmd.normal({ args = { "zz" }, bang = true })

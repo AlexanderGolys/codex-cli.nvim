@@ -49,7 +49,8 @@ end
 ---@param value string
 ---@return string
 local function color_key(value)
-    return value:gsub("#", "")
+    local cleaned = value:gsub("#", "")
+    return cleaned
 end
 
 ---@param win integer
@@ -59,7 +60,7 @@ local function ensure_terminal_statusline_highlights(win)
     local bg = terminal_statusline_bg(buf)
     local fg = terminal_statusline_fg(buf)
     if not bg or not fg then
-        return "ClodexTerminalStatuslineActive", "ClodexTerminalStatusline"
+        return ("ClodexTerminalStatuslineActive"), ("ClodexTerminalStatusline")
     end
 
     local suffix = color_key(bg) .. "_" .. color_key(fg)

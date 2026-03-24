@@ -13,7 +13,7 @@ end
 
 ---@return string
 local function timestamp()
-    return os.date("!%Y-%m-%d %H:%M:%S UTC")
+    return os.date("!%d.%m.%Y %H:%M:%S")
 end
 
 ---@param text string?
@@ -103,7 +103,7 @@ function M.open()
     if not fs.is_file(M.path) then
         fs.write_file(M.path, "")
     end
-    vim.cmd.edit(vim.fn.fnameescape(M.path))
+    vim.cmd("edit " .. vim.fn.fnameescape(M.path))
 end
 
 return M

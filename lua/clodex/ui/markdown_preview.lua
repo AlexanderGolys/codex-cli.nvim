@@ -67,7 +67,7 @@ function Preview:show(opts)
     local height = math.min(math.max(#lines, 6), opts.height or DEFAULT_HEIGHT, editor_height - 4)
 
     if self:is_open() then
-        self.win:update({
+        (self.win --[[@as any]]):update({
             title = (" %s "):format(opts.title),
             width = width,
             height = height,

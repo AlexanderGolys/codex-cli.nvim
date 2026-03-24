@@ -16,8 +16,6 @@ local function is_absolute_path(path)
     return path ~= "" and (vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil)
 end
 
----@param project_root string
----@return string
 ---@param config Clodex.Config.Values
 ---@param project_root string
 ---@return string?

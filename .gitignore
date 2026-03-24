@@ -33,8 +33,9 @@ Thumbs.db
 .nvimlog
 **.json
 STYLE_GUIDELINES.md
-AGENTS.md
 .clodex/
+.agents/
+.opencode/
 .codex-cli/
 .state/
 /private/

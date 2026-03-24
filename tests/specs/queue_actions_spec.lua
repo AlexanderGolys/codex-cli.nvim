@@ -233,31 +233,49 @@ describe("clodex.app.queue_actions", function()
         assert.are.equal(1, refresh_count)
     end)
 
-    it("blocks implementing a queued item while the project is already working", function()
+    it("still dispatches a queued item while the project is already working", function()
         local item = queue:add_todo(project, {
             title = "queued while busy",
             queue = "queued",
             kind = "todo",
         })
+        local dispatched_project
+        local dispatched_item
+
         actions.app.is_project_working = function()
+            return true
+        end
+        actions.dispatch_item = function(_, queued_project, queued_item)
+            dispatched_project = queued_project
+            dispatched_item = queued_item
             return true
         end
 
         local ok, status = actions:implement_queue_item(project, item.id)
 
-        assert.is_false(ok)
-        assert.are.equal("blocked", status)
+        assert.is_true(ok)
+        assert.are.equal("started", status)
+        assert.are.same(project, dispatched_project)
+        assert.are.same(item.id, dispatched_item.id)
         assert.are.equal("queued", queue:find_item(project, item.id))
-        assert.are.equal(0, refresh_count)
+        assert.are.equal(1, refresh_count)
     end)
 
-    it("moves a planned item forward instead of dispatching while the project is already working", function()
+    it("still dispatches a planned item while the project is already working", function()
         local item = queue:add_todo(project, {
             title = "planned while busy",
             queue = "planned",
             kind = "todo",
         })
+        local dispatched_project
+        local dispatched_item
+
         actions.app.is_project_working = function()
+            return true
+        end
+        actions.dispatch_item = function(_, queued_project, queued_item)
+            dispatched_project = queued_project
+            dispatched_item = queued_item
             return true
         end
 
@@ -265,7 +283,9 @@ describe("clodex.app.queue_actions", function()
         local queue_name, _, current_item = queue:find_item(project, item.id)
 
         assert.is_true(ok)
-        assert.are.equal("queued", status)
+        assert.are.equal("started", status)
+        assert.are.same(project, dispatched_project)
+        assert.are.same(item.id, dispatched_item.id)
         assert.are.equal("queued", queue_name)
         assert.are.equal(item.id, current_item.id)
         assert.is_truthy(type(current_item.execution_instructions) == "string")

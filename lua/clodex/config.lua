@@ -422,7 +422,7 @@ function Config.new()
 end
 
 --- Applies setup values, maps legacy highlight keys, and caches active values.
----@param opts? Clodex.Config.Values|{}
+---@param opts? table<string, any>
 ---@return Clodex.Config.Values
 function Config:setup(opts)
     self.values = Config.merge(defaults(), opts or {})
@@ -431,7 +431,7 @@ function Config:setup(opts)
 end
 
 --- Writes configured highlight groups to Neovim whenever setup is called or reloaded.
----@param values Clodex.Config.Values
+---@param values Clodex.Config.Values|{ highlights: Clodex.Config.Highlights }
 function Config.apply_highlights(values)
     local groups = values and values.highlights and values.highlights.groups or nil
     if type(groups) ~= "table" then

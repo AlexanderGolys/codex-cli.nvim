@@ -27,20 +27,26 @@ describe("clodex.ui.mini_state", function()
             detected_project = nil,
             resolved_target = {
                 kind = "project",
-                project = { name = "Demo" },
+                project = { name = "Demo", root = "/tmp/demo" },
             },
             current_tab = {
                 tabpage = 3,
                 has_visible_window = true,
                 session_key = "project:/tmp/demo",
                 window_id = 19,
+                prompted_project = false,
             },
             sessions = {
                 {
                     key = "project:/tmp/demo",
+                    kind = "project",
+                    cwd = "/tmp/demo",
+                    title = "Clodex: Demo",
                     running = true,
                     buffer_valid = true,
+                    last_cli_line = "ready",
                     terminal_provider = "term",
+                    env_keys = {},
                     active_queue_item_title = "Implement parser retry flow",
                 },
             },

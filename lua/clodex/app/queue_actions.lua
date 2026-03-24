@@ -17,8 +17,15 @@ local COMMIT_ICON = "󰜘 "
 
 --- Defines the Clodex.AppQueueActions type for this module.
 --- This annotation documents structured state so modules can pass data with consistent expectations.
+---@class Clodex.AppQueueActions.Host
+---@field queue Clodex.Workspace.Queue
+---@field is_project_working fun(project: Clodex.Project): boolean
+---@field execution Clodex.Workspace.Execution|{ queue_item_instructions: fun(self: any, item: Clodex.QueueItem): string }
+---@field project_details_store Clodex.ProjectDetails|{ touch_activity: fun(self: any, project: Clodex.Project): nil }
+---@field refresh_views fun()
+
 ---@class Clodex.AppQueueActions
----@field app Clodex.App
+---@field app Clodex.AppQueueActions.Host
 ---@field workspace_revisions table<string, string?>
 local QueueActions = {}
 QueueActions.__index = QueueActions
@@ -100,7 +107,7 @@ local function rewind_item_spec(item, opts, project_root)
     return moved
 end
 
----@param app Clodex.App
+---@param app Clodex.AppQueueActions.Host
 ---@return Clodex.AppQueueActions
 function QueueActions.new(app)
     return setmetatable({
@@ -332,21 +339,10 @@ end
 
 ---@param project Clodex.Project
 ---@param item_id string
----@return boolean
+---@return boolean, "started"|"blocked"
 function QueueActions:implement_queue_item(project, item_id)
     local queue_name, _, item = self.app.queue:find_item(project, item_id)
     local moved_from_planned = false
-    local project_working = self.app.is_project_working and self.app:is_project_working(project) or false
-
-    if project_working and queue_name == "queued" then
-        notify.warn(("%s is already working on another prompt"):format(project.name))
-        return false, "blocked"
-    end
-
-    if project_working and queue_name == "planned" then
-        self:advance_queue_item(project, item_id)
-        return true, "queued"
-    end
 
     if queue_name == "planned" then
         if not self.app.queue:advance(project, item_id) then
