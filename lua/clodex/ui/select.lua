@@ -38,6 +38,15 @@ local PROMPT_EDITOR_HINT_KEYS = {
 local active_input
 local prompt_context_completion = {} ---@type table<integer, Clodex.PromptContext.Capture?>
 
+---@param win? snacks.win
+local function focus_input_window(win)
+  if active_input ~= win or not win or not win:valid() then
+    return
+  end
+  win:focus()
+  vim.cmd("startinsert!")
+end
+
 ---@param picker? table
 local function focus_picker_list(picker)
   if not picker or picker.closed then
@@ -56,8 +65,9 @@ local function focus_picker_list(picker)
   end
 
   local list_win = picker.list and picker.list.win or nil
-  if list_win and vim.api.nvim_win_is_valid(list_win) then
-    vim.api.nvim_set_current_win(list_win)
+  local list_win_id = type(list_win) == "table" and list_win.win or list_win
+  if type(list_win_id) == "number" and vim.api.nvim_win_is_valid(list_win_id) then
+    vim.api.nvim_set_current_win(list_win_id)
   end
 end
 
@@ -228,6 +238,7 @@ end
 function M.input(opts, on_confirm)
   opts = vim.deepcopy(opts or {})
   opts.win = opts.win or {}
+  opts.win.zindex = math.max(opts.win.zindex or 0, MODAL_ZINDEX + 1)
 
   local previous_on_close = opts.win.on_close
   opts.win.on_close = function(win)
@@ -247,11 +258,10 @@ function M.input(opts, on_confirm)
   active_input = win
 
   vim.schedule(function()
-    if active_input ~= win or not win or not win:valid() then
-      return
-    end
-    win:focus()
-    vim.cmd("startinsert!")
+    focus_input_window(win)
+    vim.defer_fn(function()
+      focus_input_window(win)
+    end, 20)
   end)
 
   return win
@@ -266,6 +276,11 @@ function M.close_active_input()
     return
   end
   win:close()
+end
+
+---@return boolean
+function M.has_active_input()
+  return active_input ~= nil and active_input:valid()
 end
 
 ---@param line string
