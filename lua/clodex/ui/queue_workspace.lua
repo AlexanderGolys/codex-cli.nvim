@@ -541,7 +541,6 @@ local function footer_actions(focus, project_search, queue_search)
             lines = {
                 "s: set current project   A: start session   X: stop session   a: add prompt/project   D: delete project",
                 "/: filter by project text" .. project_clear_filter,
-                "x: canned prompt",
             },
         }
     end
@@ -551,7 +550,7 @@ local function footer_actions(focus, project_search, queue_search)
         lines = {
             "a: add prompt   e: edit prompt   i: implement queued item   m/M: move forward/back",
             "/: filter by prompt text" .. queue_clear_filter,
-            "p: move project   H/L: prev/next project   d: delete item   x: canned prompt   !: mark not working   Ctrl-S: save",
+            "p: move project   H/L: prev/next project   d: delete item   !: mark not working   Ctrl-S: save",
         },
     }
 end
