@@ -1,4 +1,6 @@
 local fs = require("clodex.util.fs")
+local util = require("clodex.util")
+local notify = require("clodex.util.notify")
 
 ---@class Clodex.History
 ---@field path string
@@ -103,7 +105,15 @@ function M.open()
     if not fs.is_file(M.path) then
         fs.write_file(M.path, "")
     end
-    vim.cmd("edit " .. vim.fn.fnameescape(M.path))
+    local result = util.safe_edit(M.path)
+    if result.ok then
+        return
+    end
+    if result.reason == "modified" or result.reason == "swapfile" then
+        notify.warn(result.message)
+        return
+    end
+    notify.error(result.message)
 end
 
 return M

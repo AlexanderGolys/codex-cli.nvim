@@ -1,3 +1,5 @@
+-- @@@clodex.init
+
 ---@alias Clodex.PublicAction
 ---| "toggle"
 ---| "toggle_state_preview"

@@ -1,4 +1,5 @@
 local fs = require("clodex.util.fs")
+local util = require("clodex.util")
 
 ---@class Clodex.ProjectBookmark
 ---@field id string
@@ -194,12 +195,17 @@ end
 
 ---@param project Clodex.Project
 ---@param bookmark Clodex.ProjectBookmark
+---@return Clodex.SafeEditResult
 function Bookmarks:jump(project, bookmark)
     local path = absolute_path(project, bookmark.path)
-    vim.cmd("edit " .. vim.fn.fnameescape(path))
+    local result = util.safe_edit(path)
+    if not result.ok then
+        return result
+    end
     local line = math.max(bookmark.line, 1)
     vim.api.nvim_win_set_cursor(0, { line, 0 })
     vim.cmd.normal({ args = { "zz" }, bang = true })
+    return result
 end
 
 ---@param project Clodex.Project

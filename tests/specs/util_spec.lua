@@ -45,4 +45,76 @@ describe("clodex.util", function()
             end
         end)
     end)
+
+    describe("safe_edit", function()
+        local original_edit
+
+        before_each(function()
+            original_edit = vim.cmd.edit
+            vim.cmd.enew({ bang = true })
+            vim.bo[0].modified = false
+        end)
+
+        after_each(function()
+            vim.cmd.edit = original_edit
+            vim.bo[0].modified = false
+        end)
+
+        it("keeps modified buffers open when opening another file", function()
+            local path = vim.fn.tempname()
+            vim.fn.writefile({ "demo" }, path)
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, { "unsaved" })
+            vim.bo[0].modified = true
+
+            local result = util.safe_edit(path)
+
+            assert.is_false(result.ok)
+            assert.are.equal("modified", result.reason)
+            assert.are.equal(
+                "Current buffer has unsaved changes; keeping it open instead of replacing it.",
+                result.message
+            )
+
+            vim.fn.delete(path)
+        end)
+
+        it("reports swapfile conflicts without throwing", function()
+            local path = vim.fn.tempname()
+            local edit_calls = 0
+            vim.fn.writefile({ "demo" }, path)
+            vim.cmd.edit = function()
+                edit_calls = edit_calls + 1
+                error("vim/_editor.lua:0: nvim_exec2(), line 1: Vim(edit):E325: ATTENTION")
+            end
+
+            local result = util.safe_edit(path)
+
+            assert.is_false(result.ok)
+            assert.are.equal("swapfile", result.reason)
+            assert.are.equal(1, edit_calls)
+            assert.are.equal(
+                ("Swap file already exists for %s; keeping the current buffer unchanged."):format(path),
+                result.message
+            )
+
+            vim.fn.delete(path)
+        end)
+
+        it("wraps other edit failures as errors", function()
+            local path = vim.fn.tempname()
+            vim.fn.writefile({ "demo" }, path)
+            vim.cmd.edit = function()
+                error("boom")
+            end
+
+            local result = util.safe_edit(path)
+
+            assert.is_false(result.ok)
+            assert.are.equal("error", result.reason)
+            assert.matches("Failed to open ", result.message)
+            assert.matches("boom", result.message)
+
+            vim.fn.delete(path)
+        end)
+    end)
 end)

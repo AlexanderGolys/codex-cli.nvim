@@ -150,7 +150,7 @@ end
 
 ---@return integer
 local function now_ms()
-    return vim.uv.now()
+    return math.floor(vim.fn.reltimefloat(vim.fn.reltime()) * 1000)
 end
 
 ---@param self Clodex.QueueWorkspace
@@ -162,7 +162,7 @@ local function clear_open_suppression_later(self, delay_ms)
 end
 
 ---@param self Clodex.QueueWorkspace
----@param opts vim.ui.input.Opts
+---@param opts Clodex.UiSelect.InputOpts
 ---@param on_confirm fun(value?: string)
 local function open_workspace_input(self, opts, on_confirm)
     opts = vim.deepcopy(opts or {})
@@ -226,10 +226,10 @@ end
 ---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
 local function project_count_suffix(summary)
     local entries = {
-        { text = tostring(summary.counts.planned), hl_group = "ClodexQueueTodoCount" },
-        { text = tostring(summary.counts.queued), hl_group = "ClodexQueueQueuedCount" },
+        { text = tostring(summary.counts.planned),     hl_group = "ClodexQueueTodoCount" },
+        { text = tostring(summary.counts.queued),      hl_group = "ClodexQueueQueuedCount" },
         { text = tostring(summary.counts.implemented), hl_group = "ClodexQueueImplementedCount" },
-        { text = tostring(summary.counts.history), hl_group = "ClodexQueueHistoryCount" },
+        { text = tostring(summary.counts.history),     hl_group = "ClodexQueueHistoryCount" },
     }
     local parts = { "  " }
     local spans = {} ---@type { start_col: integer, end_col: integer, hl_group: string }[]
@@ -319,7 +319,8 @@ local function project_target_width(self)
     local width = PROJECT_WINDOW_MIN_WIDTH
 
     if self.project_search ~= "" then
-        width = math.max(width, vim.fn.strdisplaywidth(("Filter: %s"):format(self.project_search)) + PROJECT_LAYOUT_PADDING)
+        width = math.max(width,
+            vim.fn.strdisplaywidth(("Filter: %s"):format(self.project_search)) + PROJECT_LAYOUT_PADDING)
     end
 
     if #self.projects == 0 then
@@ -572,7 +573,8 @@ end
 ---@param text string
 ---@return string
 local function footer_text(text)
-    return text:gsub("Left/Right", "←/→"):gsub("Up/Down", "↑/↓")
+    local normalized = text:gsub("Left/Right", "←/→"):gsub("Up/Down", "↑/↓")
+    return normalized
 end
 
 ---@param item Clodex.QueueItem
@@ -605,7 +607,8 @@ local function format_timestamp(timestamp, config)
 
     local date_format = config and config.queue_workspace and config.queue_workspace.date_format or nil
     if date_format ~= "ago" then
-        return os.date(date_format or "%H:%M %d.%m.%Y", timestamp)
+        local formatted = os.date(date_format or "%H:%M %d.%m.%Y", timestamp)
+        return type(formatted) == "string" and formatted or "-"
     end
 
     local now = os.time()
@@ -615,12 +618,12 @@ local function format_timestamp(timestamp, config)
     end
 
     local units = {
-        { name = "y", seconds = 31536000 },
+        { name = "y",  seconds = 31536000 },
         { name = "mo", seconds = 2592000 },
-        { name = "d", seconds = 86400 },
-        { name = "h", seconds = 3600 },
-        { name = "m", seconds = 60 },
-        { name = "s", seconds = 1 },
+        { name = "d",  seconds = 86400 },
+        { name = "h",  seconds = 3600 },
+        { name = "m",  seconds = 60 },
+        { name = "s",  seconds = 1 },
     }
 
     for _, unit in ipairs(units) do
@@ -660,7 +663,6 @@ local function format_languages(languages)
 end
 
 ---@param detail string
----@return Clodex.Extmark[]
 ---@param has_remote boolean
 ---@return Clodex.Extmark[]
 local function project_detail_extmarks(detail, has_remote)
@@ -695,8 +697,8 @@ local function normalize_search(value)
     return vim.trim(value):lower()
 end
 
----@param config Clodex.Config.Values
----@param details? Clodex.ProjectDetails
+---@param config Clodex.QueueWorkspace.ConfigHost
+---@param details? Clodex.ProjectDetails.Snapshot
 ---@return string
 local function summary_search_text(config, details)
     if not details then
@@ -712,8 +714,9 @@ local function summary_search_text(config, details)
 end
 
 ---@param project Clodex.Project
----@param details? Clodex.ProjectDetails
+---@param details? Clodex.ProjectDetails.Snapshot
 ---@param query string
+---@param config Clodex.QueueWorkspace.ConfigHost
 ---@return boolean
 local function project_matches_search(project, details, query, config)
     if query == "" then
@@ -730,9 +733,11 @@ local function project_matches_search(project, details, query, config)
     return summary_search_text(config, details):lower():find(query, 1, true) ~= nil
 end
 
----@param config Clodex.Config.Values
+---@param config Clodex.QueueWorkspace.ConfigHost
 ---@param summary Clodex.ProjectQueueSummary
----@param details? Clodex.ProjectDetails
+---@param app Clodex.QueueWorkspace.AppHost
+---@param details? Clodex.ProjectDetails.Snapshot
+---@param max_width? integer
 ---@return string[]
 project_detail_lines = function(config, app, summary, details, max_width)
     local function fit_project_detail(prefix, suffixes)
@@ -756,14 +761,6 @@ project_detail_lines = function(config, app, summary, details, max_width)
 
     local lines = {} ---@type string[]
     details = details or app.project_details_store:get_cached(summary.project)
-
-    if summary.active_item_title and summary.active_item_title ~= "" then
-        lines[#lines + 1] = ("    Active:%s"):format(truncate_display(summary.active_item_title, 24))
-    end
-    if summary.queue_loop_enabled then
-        lines[#lines + 1] = "    Loop:armed"
-    end
-
     if not details then
         lines[#lines + 1] = fit_project_detail("    -", {
             "  " .. FILE_ICON .. "-",
@@ -772,6 +769,7 @@ project_detail_lines = function(config, app, summary, details, max_width)
         })
         return lines
     end
+
     lines[#lines + 1] = fit_project_detail("    " .. format_languages(details.languages), {
         ("  %s%d"):format(FILE_ICON, details.file_count),
         "  " .. GITHUB_ICON,
@@ -780,8 +778,8 @@ project_detail_lines = function(config, app, summary, details, max_width)
     return lines
 end
 
----@param app Clodex.App
----@param config Clodex.Config.Values
+---@param app Clodex.QueueWorkspace.AppHost
+---@param config Clodex.QueueWorkspace.ConfigHost
 ---@return Clodex.QueueWorkspace
 function Workspace.new(app, config)
     local self = setmetatable({}, Workspace)
@@ -801,7 +799,7 @@ function Workspace.new(app, config)
     return self
 end
 
----@param config Clodex.Config.Values
+---@param config Clodex.QueueWorkspace.ConfigHost
 function Workspace:update_config(config)
     self.config = config
 end
@@ -1620,7 +1618,7 @@ function Workspace:render_queue()
                 for _, item in ipairs(items) do
                     rendered_items = true
                     local suffix = (queue_name == "implemented" or queue_name == "history")
-                            and history_suffix(item, project and project.root)
+                        and history_suffix(item, project and project.root)
                         or ""
                     local item_text = "  " .. item.title .. suffix
                     local title_text = "  " .. item.title
@@ -1641,10 +1639,10 @@ function Workspace:render_queue()
                     block:append_line(item_text, item_extmarks)
 
                     for _, preview in
-                        ipairs(prompt_preview_lines(item, {
-                            max_lines = self.config.queue_workspace.preview_max_lines,
-                            fold = self.config.queue_workspace.fold_preview,
-                        }))
+                    ipairs(prompt_preview_lines(item, {
+                        max_lines = self.config.queue_workspace.preview_max_lines,
+                        fold = self.config.queue_workspace.fold_preview,
+                    }))
                     do
                         self.queue_rows[#self.queue_rows + 1] = {
                             kind = "preview",
@@ -1813,9 +1811,9 @@ function Workspace:add_todo()
             return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
         end,
         submit_actions = {
-            { value = "save", label = "plan", key = "<C-s>" },
-            { value = "queue", label = "queue", key = "<C-q>" },
-            { value = "exec", label = "run now", key = "<C-e>" },
+            { value = "save",  label = "plan",    key = "<C-s>" },
+            { value = "queue", label = "queue",   key = "<C-q>" },
+            { value = "exec",  label = "run now", key = "<C-e>" },
         },
     }, function(body, action)
         local spec = body and Prompt.parse(body) or nil
@@ -2019,7 +2017,7 @@ function Workspace:prompt_move_to_project(project, item, queue_name, target_proj
 
     if queue_name == "history" then
         ui.select({
-            { label = "Move history item", copy = false },
+            { label = "Move history item",      copy = false },
             { label = "Duplicate history item", copy = true },
         }, {
             prompt = ("Transfer '%s' to %s"):format(item.title, target_project.name),

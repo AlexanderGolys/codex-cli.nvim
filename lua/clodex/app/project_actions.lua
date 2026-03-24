@@ -1,11 +1,10 @@
 local fs = require("clodex.util.fs")
+local util = require("clodex.util")
 local Backend = require("clodex.backend")
 local git = require("clodex.util.git")
 local notify = require("clodex.util.notify")
 local MarkdownPreview = require("clodex.ui.markdown_preview")
 local ui = require("clodex.ui.select")
-
-local SWAPFILE_ERROR_CODE = "E325"
 
 --- Coordinates project-scoped actions for registry entries and tab focus.
 --- Project creation, selection, deletion, and terminal lifecycle are routed through this module.
@@ -26,26 +25,16 @@ end
 ---@param path string
 ---@return boolean
 local function edit_if_safe(path)
-    local current_buf = vim.api.nvim_get_current_buf()
-    local current_path = vim.api.nvim_buf_get_name(current_buf)
-    local same_path = current_path ~= "" and fs.normalize(current_path) == fs.normalize(path)
-    if vim.bo[current_buf].modified and not same_path then
-        notify.warn("Current buffer has unsaved changes; keeping it open instead of replacing it.")
-        return false
-    end
-
-    local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(path))
-    if ok then
+    local result = util.safe_edit(path)
+    if result.ok then
         return true
     end
 
-    local message = tostring(err or "")
-    if message:find(SWAPFILE_ERROR_CODE, 1, true) then
-        notify.warn(("Swap file already exists for %s; keeping the current buffer unchanged."):format(path))
-        return false
+    if result.reason == "modified" or result.reason == "swapfile" then
+        notify.warn(result.message)
+    else
+        notify.error(result.message)
     end
-
-    notify.error(("Failed to open %s\n%s"):format(path, message))
     return false
 end
 
@@ -517,7 +506,15 @@ function ProjectActions:open_project_bookmarks_picker(project)
         if not bookmark then
             return
         end
-        self.app.project_bookmarks:jump(project, bookmark)
+        local result = self.app.project_bookmarks:jump(project, bookmark)
+        if not result.ok then
+            if result.reason == "modified" or result.reason == "swapfile" then
+                notify.warn(result.message)
+            else
+                notify.error(result.message)
+            end
+            return
+        end
         self.app.project_bookmarks:decorate_buffer(project, vim.api.nvim_get_current_buf())
         self.app.project_details_store:touch_activity(project)
     end)

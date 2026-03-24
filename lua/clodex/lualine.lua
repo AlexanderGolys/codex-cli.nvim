@@ -1,3 +1,5 @@
+-- @@@clodex.lualine
+
 local App = require("clodex.app")
 
 --- Defines the Clodex.Lualine.Opts type for this module.
