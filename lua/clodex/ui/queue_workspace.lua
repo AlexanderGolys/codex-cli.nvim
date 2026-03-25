@@ -547,7 +547,7 @@ local function footer_actions(focus, project_search, queue_search)
         return {
             title = " Project Actions ",
             lines = {
-                "s: set current project   A: start session   X: stop session   a: add prompt/project   D: delete project",
+                "s: set current project   t: open in new tab   A: start session   X: stop session   a: add prompt/project   D: delete project",
                 "/: filter by project text" .. project_clear_filter,
             },
         }
@@ -1151,6 +1151,9 @@ function Workspace:attach_keymaps()
 
     map(self.project_buf, "s", function()
         self:set_current_project()
+    end)
+    map(self.project_buf, "t", function()
+        self:open_selected_project_in_new_tab()
     end)
     map(self.project_buf, "A", function()
         self:activate_selected_project()
@@ -1764,6 +1767,23 @@ function Workspace:open_selected_project()
     end
     self:close()
     vim.schedule(function()
+        self.app.project_actions:open_project_workspace_target(project)
+    end)
+end
+
+function Workspace:open_selected_project_in_new_tab()
+    if self.suppress_open_until and self.suppress_open_until > now_ms() then
+        return
+    end
+
+    local project = self:selected_project()
+    if not project then
+        self:add_project()
+        return
+    end
+    self:close()
+    vim.schedule(function()
+        vim.cmd.tabnew()
         self.app.project_actions:open_project_workspace_target(project)
     end)
 end

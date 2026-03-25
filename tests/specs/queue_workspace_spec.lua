@@ -123,6 +123,49 @@ describe("clodex.ui.queue_workspace", function()
         }, shown_target)
     end)
 
+    it("opens the selected project in a new tab", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local close_count = 0
+        local opened_project
+        local tabnew_count = 0
+        local original_tabnew = vim.cmd.tabnew
+
+        vim.cmd.tabnew = function()
+            tabnew_count = tabnew_count + 1
+        end
+
+        local workspace = {
+            app = {
+                project_actions = {
+                    open_project_workspace_target = function(_, opened)
+                        opened_project = opened
+                    end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            close = function()
+                close_count = close_count + 1
+            end,
+        }
+
+        Workspace.open_selected_project_in_new_tab(workspace)
+
+        vim.wait(100, function()
+            return opened_project ~= nil
+        end)
+
+        vim.cmd.tabnew = original_tabnew
+
+        assert.are.equal(1, close_count)
+        assert.are.equal(1, tabnew_count)
+        assert.are.same(project, opened_project)
+    end)
+
     it("allows implementing a planned item through the same action", function()
         local project = {
             name = "Test Project",
