@@ -2123,18 +2123,23 @@ function Workspace:delete_project()
 end
 
 function Workspace:prompt_project_search()
-    open_workspace_input(self, {
-        prompt = "Project filter",
-        default = self.project_search,
-    }, function(value)
-        if value == nil then
-            return
-        end
-        self.project_search = vim.trim(value)
+    local function apply_search(value)
+        self.project_search = vim.trim(value or "")
         self.project_index = 1
         self.queue_index = 1
         self.focus = "projects"
         self:refresh()
+    end
+
+    open_workspace_input(self, {
+        prompt = "Project filter",
+        default = self.project_search,
+        changed = apply_search,
+    }, function(value)
+        if value == nil then
+            return
+        end
+        apply_search(value)
     end)
 end
 

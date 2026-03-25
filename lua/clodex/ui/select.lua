@@ -108,6 +108,7 @@ end
 ---@field prompt? string
 ---@field default? string
 ---@field completion? string
+---@field changed? fun(value: string)
 ---@field win? table<string, any>
 
 ---@class Clodex.UiSelect.SelectOpts
@@ -282,6 +283,15 @@ function M.input(opts, on_confirm)
     on_confirm(value)
   end)
   active_input = win
+
+  if type(opts.changed) == "function" then
+    win:on({ "TextChangedI", "TextChanged" }, function()
+      if not win:valid() then
+        return
+      end
+      opts.changed(win:text())
+    end, { buf = true })
+  end
 
   vim.schedule(function()
     focus_input_window(win)

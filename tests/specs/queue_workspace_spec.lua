@@ -1392,6 +1392,35 @@ describe("clodex.ui.queue_workspace", function()
         assert.is_false(workspace.modal_input_open)
     end)
 
+    it("updates the project filter while the input is being typed", function()
+        local refresh_count = 0
+        local workspace = {
+            project_search = "",
+            project_index = 3,
+            queue_index = 4,
+            focus = "queue",
+            modal_input_open = false,
+            refresh = function()
+                refresh_count = refresh_count + 1
+            end,
+        }
+
+        setmetatable(workspace, { __index = Workspace })
+
+        workspace:prompt_project_search()
+
+        assert.are.equal(1, #input_callbacks)
+        assert.is_function(input_callbacks[1].opts.changed)
+
+        input_callbacks[1].opts.changed("demo")
+
+        assert.are.equal("demo", workspace.project_search)
+        assert.are.equal(1, workspace.project_index)
+        assert.are.equal(1, workspace.queue_index)
+        assert.are.equal("projects", workspace.focus)
+        assert.are.equal(1, refresh_count)
+    end)
+
     it("re-renders footer actions when focus changes", function()
         local project = {
             name = "Test Project",
