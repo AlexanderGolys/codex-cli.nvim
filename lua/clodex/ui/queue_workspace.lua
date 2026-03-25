@@ -804,6 +804,11 @@ function Workspace:update_config(config)
     self.config = config
 end
 
+function Workspace:reset_filters()
+    self.project_search = ""
+    self.queue_search = ""
+end
+
 --- Focuses a project row by root so selection commands can land on the right entry.
 ---@param root? string
 function Workspace:focus_project(root)
@@ -969,6 +974,7 @@ end
 function Workspace:close()
     require("clodex.ui.select").close_active_input()
     self:clear_focus_tracking()
+    self:reset_filters()
     local wins = {
         self.project_win,
         self.queue_win,

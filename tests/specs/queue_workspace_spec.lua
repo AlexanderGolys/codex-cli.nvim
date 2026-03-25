@@ -394,6 +394,19 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal("queue", workspace.focus)
     end)
 
+    it("clears project and queue filters when the workspace closes", function()
+        local workspace = Workspace.new({}, {
+            queue_workspace = {},
+        })
+        workspace.project_search = "demo"
+        workspace.queue_search = "prompt"
+
+        workspace:close()
+
+        assert.are.equal("", workspace.project_search)
+        assert.are.equal("", workspace.queue_search)
+    end)
+
     it("moves the queue selection highlight when keyboard navigation changes the selected item", function()
         local project = {
             name = "Test Project",
