@@ -129,6 +129,11 @@ function Composer:get_draft()
     }
 end
 
+---@return string[]
+function Composer:draft_fields()
+    return { "title", "details" }
+end
+
 ---@return integer[]
 function Composer:buffers()
     return { self.title_buf, self.body_buf }

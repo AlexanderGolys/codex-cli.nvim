@@ -594,6 +594,78 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.same({ creator.layout.title_buf, creator.layout.preview_buf }, creator.layout:buffers())
     end)
 
+    it("preserves shared draft fields when switching kinds", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        vim.api.nvim_buf_set_lines(creator.layout.title_buf, 0, -1, false, { "Shared title" })
+        vim.api.nvim_buf_set_lines(creator.layout.body_buf, 0, -1, false, { "Shared details" })
+
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.state.kind == "bug"
+        end)
+
+        assert.are.equal("Shared title", vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1])
+        assert.are.equal("Shared details", vim.api.nvim_buf_get_lines(creator.layout.body_buf, 0, 1, false)[1])
+    end)
+
+    it("caches hidden draft fields until a compatible tab is reopened", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "bug",
+            on_submit = function() end,
+        })
+
+        vim.api.nvim_buf_set_lines(creator.layout.title_buf, 0, -1, false, { "Sticky title" })
+        vim.api.nvim_buf_set_lines(creator.layout.body_buf, 0, -1, false, { "Sticky details" })
+
+        creator:switch_variant(1)
+
+        wait_for(function()
+            return creator.state.variant == "clipboard_error"
+        end)
+
+        assert.are.equal("Sticky title", vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1])
+
+        creator:switch_variant(1)
+
+        wait_for(function()
+            return creator.state.variant == "clipboard_screenshot"
+        end)
+
+        assert.are.equal("Sticky title", vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1])
+        assert.are.equal("Sticky details", vim.api.nvim_buf_get_lines(creator.layout.body_buf, 0, 1, false)[1])
+    end)
+
     it("keeps completion popup navigation in the details field", function()
         creator = Creator.open({
             app = {

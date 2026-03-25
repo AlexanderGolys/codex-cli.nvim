@@ -111,6 +111,11 @@ function ClipboardPreview:get_draft()
     }
 end
 
+---@return string[]
+function ClipboardPreview:draft_fields()
+    return { "title" }
+end
+
 ---@return integer[]
 function ClipboardPreview:buffers()
     return { self.title_buf, self.preview_buf }

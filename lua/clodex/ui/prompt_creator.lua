@@ -43,6 +43,7 @@ local layout_modules = {
 ---@field variant_index integer
 ---@field state table
 ---@field drafts Clodex.PromptDraftStore
+---@field field_cache table<string, any>
 ---@field layout any
 ---@field project_buf integer
 ---@field kind_buf integer
@@ -226,6 +227,21 @@ local function selection_seed(kind, context)
     } or nil
 end
 
+---@param kind Clodex.PromptCategory
+---@param variant? string
+---@return string
+local function layout_id_for(kind, variant)
+    local creator = CreatorRegistry.get(kind)
+    if variant then
+        for _, item in ipairs(CreatorRegistry.variants(kind)) do
+            if item.id == variant then
+                return item.layout
+            end
+        end
+    end
+    return creator.layout
+end
+
 ---@param opts Clodex.PromptCreator.OpenOpts
 ---@return Clodex.PromptCreator
 function Creator.new(opts)
@@ -282,6 +298,7 @@ function Creator.new(opts)
             preview_text = "",
         },
         drafts = DraftStore.new(),
+        field_cache = {},
         project_buf = prompt_buffer("scratch"),
         kind_buf = prompt_buffer("scratch"),
         footer_buf = prompt_buffer("scratch"),
@@ -345,7 +362,13 @@ function Creator:sync_state_from_draft()
         self.state.variant = variants[self.variant_index].id
     end
 
-    local draft = self.drafts:get(self.state.kind, self.state.variant, CreatorRegistry.default_draft(self.state.kind, self.state.variant))
+    local default_draft = CreatorRegistry.default_draft(self.state.kind, self.state.variant)
+    local draft = self:merge_cached_fields(
+        self.state.kind,
+        self.state.variant,
+        self.drafts:get(self.state.kind, self.state.variant, default_draft),
+        default_draft
+    )
     self.state.title = ""
     self.state.details = ""
     self.state.image_path = nil
@@ -364,6 +387,45 @@ function Creator:sync_state_from_draft()
     if self.state.variant == "clipboard_screenshot" and not self.state.image_path then
         self:replace_clipboard_image(true)
     end
+end
+
+---@param kind Clodex.PromptCategory
+---@param variant? string
+---@return string[]
+function Creator:draft_fields_for(kind, variant)
+    local layout = layout_modules[layout_id_for(kind, variant)]
+    if layout and layout.draft_fields then
+        return layout.draft_fields(layout) or {}
+    end
+    return {}
+end
+
+---@param fields string[]
+---@param draft table
+function Creator:update_field_cache(fields, draft)
+    for _, field in ipairs(fields) do
+        if draft[field] ~= nil then
+            self.field_cache[field] = vim.deepcopy(draft[field])
+        end
+    end
+end
+
+---@param kind Clodex.PromptCategory
+---@param variant? string
+---@param draft table
+---@param default_draft table
+---@return table
+function Creator:merge_cached_fields(kind, variant, draft, default_draft)
+    local merged = vim.deepcopy(draft or {})
+    for _, field in ipairs(self:draft_fields_for(kind, variant)) do
+        local cached = self.field_cache[field]
+        local current = merged[field]
+        local default_value = default_draft[field]
+        if cached ~= nil and (current == nil or current == "" or current == default_value) then
+            merged[field] = vim.deepcopy(cached)
+        end
+    end
+    return merged
 end
 
 ---@return Clodex.PromptContext.Capture?
@@ -444,6 +506,7 @@ function Creator:save_current_draft()
             if self.state.preview_text and draft.preview_text == nil then
                 draft.preview_text = self.state.preview_text
             end
+            self:update_field_cache(self.layout.draft_fields and self.layout:draft_fields() or {}, draft)
             self.drafts:set(self.state.kind, self.state.variant, vim.tbl_extend("force", draft, {
                 image_path = self.state.image_path,
                 preview_text = self.state.preview_text,
@@ -1241,7 +1304,12 @@ function Creator:activate_layout(focus_context)
     end
     self.layout = layout_modules[layout_id].new(self)
     self.layout:open()
-    self.layout:set_draft(vim.tbl_extend("force", self.drafts:get(self.state.kind, self.state.variant, self.state), {
+    self.layout:set_draft(vim.tbl_extend("force", self:merge_cached_fields(
+        self.state.kind,
+        self.state.variant,
+        self.drafts:get(self.state.kind, self.state.variant, self.state),
+        CreatorRegistry.default_draft(self.state.kind, self.state.variant)
+    ), {
         title = self.state.title,
         details = self.state.details,
         image_path = self.state.image_path,
