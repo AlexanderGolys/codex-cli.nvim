@@ -228,6 +228,49 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_true(vim.tbl_contains(groups, "ClodexPromptEditorKey"))
     end)
 
+    it("supports context token highlighting and completion in the composer body", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            context = {
+                file_path = "/tmp/demo/lua/demo.lua",
+                project_root = "/tmp/demo",
+                relative_path = "lua/demo.lua",
+                cursor_row = 7,
+                current_word = "token",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "",
+                details = "Explain &file",
+            },
+            on_submit = function() end,
+        })
+
+        local body_buf = creator.layout.body_buf
+        local groups = extmark_groups(body_buf)
+
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptEditorContext"))
+
+        vim.api.nvim_set_current_win(creator.layout.body_win.win)
+        vim.api.nvim_win_set_cursor(creator.layout.body_win.win, { 1, 13 })
+
+        local items = require("clodex.ui.select").prompt_context_complete(0, "&f")
+        assert.is_true(#items > 0)
+        assert.are.equal("&file", items[1].word)
+    end)
+
     it("changes kind tabs from the footer and keeps normal-mode focus in the editor", function()
         creator = Creator.open({
             app = {

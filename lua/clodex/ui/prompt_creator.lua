@@ -5,6 +5,7 @@ local KindRegistry = require("clodex.prompt.kind_registry")
 local Prompt = require("clodex.prompt")
 local PromptSubmit = require("clodex.prompt.submit")
 local Extmark = require("clodex.ui.extmark")
+local ui_select = require("clodex.ui.select")
 local notify = require("clodex.util.notify")
 local ui_win = require("clodex.ui.win")
 
@@ -225,6 +226,69 @@ function Creator:sync_state_from_draft()
     if self.state.variant == "clipboard_screenshot" and not self.state.image_path then
         self:replace_clipboard_image(true)
     end
+end
+
+---@return Clodex.PromptContext.Capture?
+function Creator:prompt_context()
+    return self.state.context or self.context
+end
+
+---@param buf integer
+function Creator:refresh_prompt_context(buf)
+    ui_select.refresh_prompt_context(buf, self:prompt_context())
+end
+
+function Creator:refresh_layout_prompt_contexts()
+    if not self.layout or not self.layout.buffers then
+        return
+    end
+
+    for _, buf in ipairs(self.layout:buffers()) do
+        if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modifiable then
+            self:refresh_prompt_context(buf)
+        end
+    end
+end
+
+---@param buf integer
+function Creator:trigger_context_completion(buf)
+    self:refresh_prompt_context(buf)
+    vim.cmd.startinsert()
+    vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(buf) or vim.api.nvim_get_current_buf() ~= buf then
+            return
+        end
+        vim.api.nvim_feedkeys(vim.keycode("&<C-x><C-u>"), "n", false)
+    end)
+end
+
+---@param buf integer
+function Creator:attach_prompt_context(buf)
+    if not vim.bo[buf].modifiable then
+        return
+    end
+
+    self:refresh_prompt_context(buf)
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+        buffer = buf,
+        callback = function()
+            self:refresh_prompt_context(buf)
+        end,
+    })
+    vim.api.nvim_create_autocmd("BufWipeout", {
+        once = true,
+        buffer = buf,
+        callback = function()
+            ui_select.clear_prompt_context(buf)
+        end,
+    })
+    vim.keymap.set("n", "&", function()
+        self:trigger_context_completion(buf)
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("i", "&", function()
+        self:refresh_prompt_context(buf)
+        return "&" .. vim.keycode("<C-x><C-u>")
+    end, { buffer = buf, silent = true, expr = true })
 end
 
 function Creator:save_current_draft()
@@ -770,6 +834,7 @@ function Creator:activate_layout(focus_context)
         image_path = self.state.image_path,
         preview_text = self.state.preview_text,
     }))
+    self:refresh_layout_prompt_contexts()
     self:render_preview()
     if not self:restore_focus_context(focus_context) then
         self:focus_default()
@@ -877,6 +942,8 @@ function Creator:apply_common_keymaps(buf)
     vim.keymap.set("n", "<Esc>", function()
         self:close()
     end, { buffer = buf, silent = true })
+
+    self:attach_prompt_context(buf)
 end
 
 ---@param action string

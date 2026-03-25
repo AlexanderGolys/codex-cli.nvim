@@ -650,6 +650,27 @@ local function render_prompt_context_highlights(buf, context)
 end
 
 ---@param buf integer
+---@param context Clodex.PromptContext.Capture?
+function M.refresh_prompt_context(buf, context)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
+  vim.bo[buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
+  configure_prompt_context_completeopt(buf)
+  prompt_context_completion[buf] = context
+  render_prompt_context_highlights(buf, context)
+end
+
+---@param buf integer
+function M.clear_prompt_context(buf)
+  prompt_context_completion[buf] = nil
+  if vim.api.nvim_buf_is_valid(buf) then
+    vim.api.nvim_buf_clear_namespace(buf, PROMPT_CONTEXT_HIGHLIGHT_NS, 0, -1)
+  end
+end
+
+---@param buf integer
 local function disable_prompt_pair_highlights(buf)
   vim.bo[buf].syntax = "off"
   vim.b[buf].matchup_matchparen_enabled = 0
@@ -921,7 +942,7 @@ function M.multiline_input(opts, on_confirm)
     if hint_win:valid() then
       hint_win:close()
     end
-    prompt_context_completion[body_buf] = nil
+    M.clear_prompt_context(body_buf)
     vim.schedule(function()
       on_confirm(value, action or submit_actions[1].value)
     end)
@@ -936,10 +957,7 @@ function M.multiline_input(opts, on_confirm)
   style_prompt_editor(title_win.win)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "prompt_footer")
-  vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
-  configure_prompt_context_completeopt(body_buf)
-  prompt_context_completion[body_buf] = prompt_context()
-  render_prompt_context_highlights(body_buf, prompt_context_completion[body_buf])
+  M.refresh_prompt_context(body_buf, prompt_context())
 
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = hint_buf,
@@ -959,7 +977,7 @@ function M.multiline_input(opts, on_confirm)
     buffer = body_buf,
     callback = function()
       resize()
-      render_prompt_context_highlights(body_buf, prompt_context())
+      M.refresh_prompt_context(body_buf, prompt_context())
     end,
   })
 
@@ -979,7 +997,7 @@ function M.multiline_input(opts, on_confirm)
   --- Starts Neovim's built-in completion popup for prompt context tokens.
   --- Keeping this native makes prompt authoring feel like ordinary insert completion.
   local function trigger_context_completion()
-    prompt_context_completion[body_buf] = prompt_context()
+    M.refresh_prompt_context(body_buf, prompt_context())
     if not body_win:valid() then
       return
     end
@@ -1116,7 +1134,7 @@ function M.multiline_input(opts, on_confirm)
   end
   vim.keymap.set("n", "&", trigger_context_completion, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "&", function()
-    prompt_context_completion[body_buf] = prompt_context()
+    M.refresh_prompt_context(body_buf, prompt_context())
     return "&" .. vim.keycode("<C-x><C-u>")
   end, {
     buffer = body_buf,
@@ -1309,7 +1327,7 @@ function M.multiline_message_input(opts, on_confirm)
     if hint_win:valid() then
       hint_win:close()
     end
-    prompt_context_completion[body_buf] = nil
+    M.clear_prompt_context(body_buf)
     vim.schedule(function()
       on_confirm(value, action or submit_actions[1].value)
     end)
@@ -1321,16 +1339,13 @@ function M.multiline_message_input(opts, on_confirm)
   disable_prompt_pair_highlights(hint_buf)
   style_prompt_editor(body_win.win)
   style_prompt_editor(hint_win.win, "prompt_footer")
-  vim.bo[body_buf].completefunc = "v:lua.require'clodex.ui.select'.prompt_context_complete"
-  configure_prompt_context_completeopt(body_buf)
-  prompt_context_completion[body_buf] = prompt_context()
-  render_prompt_context_highlights(body_buf, prompt_context_completion[body_buf])
+  M.refresh_prompt_context(body_buf, prompt_context())
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = body_buf,
     callback = function()
       resize()
-      render_prompt_context_highlights(body_buf, prompt_context())
+      M.refresh_prompt_context(body_buf, prompt_context())
     end,
   })
 
@@ -1344,7 +1359,7 @@ function M.multiline_message_input(opts, on_confirm)
   end
 
   local function trigger_context_completion()
-    prompt_context_completion[body_buf] = prompt_context()
+    M.refresh_prompt_context(body_buf, prompt_context())
     vim.api.nvim_set_current_win(body_win.win)
     vim.cmd.startinsert()
     vim.schedule(function()
@@ -1408,7 +1423,7 @@ function M.multiline_message_input(opts, on_confirm)
   end
   vim.keymap.set("n", "&", trigger_context_completion, { buffer = body_buf, silent = true })
   vim.keymap.set("i", "&", function()
-    prompt_context_completion[body_buf] = prompt_context()
+    M.refresh_prompt_context(body_buf, prompt_context())
     return "&" .. vim.keycode("<C-x><C-u>")
   end, {
     buffer = body_buf,
