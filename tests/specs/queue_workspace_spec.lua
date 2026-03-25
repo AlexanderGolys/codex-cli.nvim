@@ -1743,4 +1743,112 @@ describe("clodex.ui.queue_workspace", function()
         vim.api.nvim_win_close(workspace.footer_win, true)
     end)
 
+    it("shows implemented prompts from oldest to newest", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {}
+            end,
+            projects_for_queue_workspace = function()
+                return { project }
+            end,
+            project_details_store = {
+                get = function()
+                    return nil
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 2,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {
+                            {
+                                id = "newer",
+                                kind = "todo",
+                                title = "Newer implemented prompt",
+                                created_at = "2026-03-25T16:00:00Z",
+                            },
+                            {
+                                id = "older",
+                                kind = "todo",
+                                title = "Older implemented prompt",
+                                created_at = "2026-03-25T15:00:00Z",
+                            },
+                        },
+                        history = {},
+                    },
+                }
+            end,
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+        workspace.queue_buf = vim.api.nvim_create_buf(false, true)
+        workspace.footer_buf = vim.api.nvim_create_buf(false, true)
+        workspace.project_win = vim.api.nvim_open_win(workspace.project_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 30,
+            height = 8,
+            style = "minimal",
+        })
+        workspace.queue_win = vim.api.nvim_open_win(workspace.queue_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 32,
+            width = 50,
+            height = 12,
+            style = "minimal",
+        })
+        workspace.footer_win = vim.api.nvim_open_win(workspace.footer_buf, false, {
+            relative = "editor",
+            row = 14,
+            col = 1,
+            width = 81,
+            height = 3,
+            style = "minimal",
+        })
+
+        workspace:refresh()
+
+        local queue_lines = vim.api.nvim_buf_get_lines(workspace.queue_buf, 0, -1, false)
+        local older_index = 0
+        local newer_index = 0
+        for index, line in ipairs(queue_lines) do
+            if line == "  Older implemented prompt" then
+                older_index = index
+            elseif line == "  Newer implemented prompt" then
+                newer_index = index
+            end
+        end
+
+        assert.is_true(older_index > 0)
+        assert.is_true(newer_index > 0)
+        assert.is_true(older_index < newer_index)
+
+        vim.api.nvim_win_close(workspace.project_win, true)
+        vim.api.nvim_win_close(workspace.queue_win, true)
+        vim.api.nvim_win_close(workspace.footer_win, true)
+    end)
+
 end)

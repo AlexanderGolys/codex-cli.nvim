@@ -1653,6 +1653,13 @@ function Workspace:render_queue()
                 }
                 block:append_line(header_text, header_marks)
 
+                if queue_name == "implemented" then
+                    items = vim.deepcopy(items)
+                    table.sort(items, function(left, right)
+                        return (left.created_at or "") < (right.created_at or "")
+                    end)
+                end
+
                 for _, item in ipairs(items) do
                     rendered_items = true
                     local suffix = (queue_name == "implemented" or queue_name == "history")
