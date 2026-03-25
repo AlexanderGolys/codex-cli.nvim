@@ -445,6 +445,40 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal(body_win.win, vim.api.nvim_get_current_win())
     end)
 
+    it("removes the image preview when switching to a draft without an image", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Todo with image",
+                details = "Preview should disappear on another kind",
+                image_path = "/tmp/demo.png",
+            },
+            on_submit = function() end,
+        })
+
+        assert.is_not_nil(creator.preview_win)
+        assert.is_true(creator.preview_win:valid())
+
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.preview_win == nil and creator.state.image_path == nil
+        end)
+    end)
+
     it("defaults the target project picker to the active project", function()
         local alpha = { name = "Alpha", root = "/tmp/alpha" }
         local beta = { name = "Beta", root = "/tmp/beta" }

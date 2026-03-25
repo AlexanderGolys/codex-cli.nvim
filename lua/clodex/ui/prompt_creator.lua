@@ -274,6 +274,10 @@ function Creator:sync_state_from_draft()
     end
 
     local draft = self.drafts:get(self.state.kind, self.state.variant, CreatorRegistry.default_draft(self.state.kind, self.state.variant))
+    self.state.title = ""
+    self.state.details = ""
+    self.state.image_path = nil
+    self.state.preview_text = ""
     for key, value in pairs(draft) do
         self.state[key] = value
     end
