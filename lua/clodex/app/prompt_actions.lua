@@ -143,9 +143,9 @@ function PromptActions:resolve_project(opts)
     if opts.project_required then
         return nil
     end
-    local state = self.app:current_tab()
-    local target = self.app:resolve_target(state)
-    if target.kind == "project" then
+    local state = self.app.current_tab and self.app:current_tab() or nil
+    local target = state and self.app.resolve_target and self.app:resolve_target(state) or nil
+    if target and target.kind == "project" then
         return target.project
     end
 end
@@ -157,35 +157,10 @@ function PromptActions:pick_project(target_project, callback)
         callback(target_project)
         return
     end
-    ui.pick_project(self.app.registry:list(), { prompt = "Select project" }, function(project)
+    local projects = self.app.registry and self.app.registry.list and self.app.registry:list() or {}
+    ui.pick_project(projects, { prompt = "Select project" }, function(project)
         if project then
             callback(project)
-        end
-    end)
-end
-
----@param project Clodex.Project
----@param callback fun(project: Clodex.Project, category: Clodex.PromptCategory)
-function PromptActions:pick_category(project, callback)
-    local items = {} ---@type { label: string, detail: string, category: Clodex.PromptCategoryDef }[]
-    for _, category in ipairs(Prompt.categories.list()) do
-        if category.id ~= "notworking" then
-            items[#items + 1] = {
-                label = category.label,
-                detail = category.picker_detail or category.default_title,
-                category = category,
-            }
-        end
-    end
-    ui.pick_text(items, {
-        prompt = ("Prompt category for %s"):format(project.name),
-        snacks = {
-            preview = "none",
-            layout = { hidden = { "preview" } },
-        },
-    }, function(item)
-        if item then
-            callback(project, item.category.id)
         end
     end)
 end
@@ -194,25 +169,21 @@ end
 ---@param callback fun(project: Clodex.Project, category: Clodex.PromptCategory)
 function PromptActions:pick_target(opts, callback)
     opts = opts or {}
+    local category = Prompt.categories.is_valid(opts.category) and opts.category or "todo"
     local project = self:resolve_project(opts)
-    if project and opts.category then
-        callback(project, opts.category)
+    if project then
+        callback(project, category)
         return
     end
+
     if not project then
         self:pick_project(nil, function(selected_project)
             if not selected_project then
                 return
             end
-            if opts.category then
-                callback(selected_project, opts.category)
-                return
-            end
-            self:pick_category(selected_project, callback)
+            callback(selected_project, category)
         end)
-        return
     end
-    self:pick_category(project, callback)
 end
 
 ---@param project Clodex.Project
@@ -221,11 +192,13 @@ function PromptActions:open_creator(project, opts)
     opts = opts or {}
     local category = Prompt.categories.is_valid(opts.category) and opts.category or "todo"
     local draft = opts.initial_draft or selection_default_draft(category, opts.context)
+    local current_tab = self.app.current_tab and self.app:current_tab() or nil
+    local projects = self.app.registry and self.app.registry.list and self.app.registry:list() or nil
     return PromptCreator.open({
         app = self.app,
         project = project,
-        projects = self.app.registry:list(),
-        active_project_root = opts.active_project_root or self.app:current_tab().active_project_root,
+        projects = projects,
+        active_project_root = opts.active_project_root or current_tab and current_tab.active_project_root or nil,
         context = opts.context,
         initial_kind = category,
         initial_draft = draft,

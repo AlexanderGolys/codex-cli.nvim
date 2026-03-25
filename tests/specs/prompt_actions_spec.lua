@@ -4,6 +4,8 @@ describe("clodex.app.prompt_actions", function()
     local original_creator
     local original_notify
     local creator_calls
+    local pick_text_calls
+    local picked_project
 
     before_each(function()
         package.loaded["clodex.app.prompt_actions"] = nil
@@ -11,10 +13,16 @@ describe("clodex.app.prompt_actions", function()
         original_creator = package.loaded["clodex.ui.prompt_creator"]
         original_notify = package.loaded["clodex.util.notify"]
         creator_calls = {}
+        pick_text_calls = 0
+        picked_project = nil
 
         package.loaded["clodex.ui.select"] = {
-            pick_project = function() end,
-            pick_text = function() end,
+            pick_project = function(_projects, _opts, on_choice)
+                on_choice(picked_project)
+            end,
+            pick_text = function()
+                pick_text_calls = pick_text_calls + 1
+            end,
         }
         package.loaded["clodex.ui.prompt_creator"] = {
             open = function(opts)
@@ -199,6 +207,41 @@ describe("clodex.app.prompt_actions", function()
             implement = true,
             run_mode = "interactive",
         }, queued_opts)
+    end)
+
+    it("defaults prompt picking to todo without opening the legacy kind picker", function()
+        local resolved_project
+        local resolved_category
+        local actions = PromptActions.new({})
+        picked_project = {
+            name = "Demo",
+            root = "/tmp/demo",
+        }
+
+        actions:pick_target({}, function(project, category)
+            resolved_project = project
+            resolved_category = category
+        end)
+
+        assert.are.same(picked_project, resolved_project)
+        assert.are.equal("todo", resolved_category)
+        assert.are.equal(0, pick_text_calls)
+    end)
+
+    it("keeps explicit prompt kinds without opening the legacy kind picker", function()
+        local resolved_category
+        local actions = PromptActions.new({})
+        local project = {
+            name = "Demo",
+            root = "/tmp/demo",
+        }
+
+        actions:pick_target({ project = project, category = "bug" }, function(_, category)
+            resolved_category = category
+        end)
+
+        assert.are.equal("bug", resolved_category)
+        assert.are.equal(0, pick_text_calls)
     end)
 
     it("keeps direct execution for run now on codex", function()
