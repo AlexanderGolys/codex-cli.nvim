@@ -480,6 +480,18 @@ function Creator:preview_height()
     return math.max(self:footer_row() - self:preview_row() + 3, 8)
 end
 
+function Creator:preview_image_opts()
+    local width = math.max(self:preview_width() - 2, 1)
+    local height = math.max(self:preview_height() - 2, 1)
+    return {
+        src = self.state.image_path,
+        width = width,
+        max_width = width,
+        height = height,
+        max_height = height,
+    }
+end
+
 function Creator:project_row()
     return self:top_row()
 end
@@ -1083,7 +1095,7 @@ function Creator:render_preview()
     end
     local ok, Snacks = pcall(require, "snacks")
     if ok and Snacks.image and Snacks.image.buf then
-        Snacks.image.buf.attach(self.preview_buf, { src = self.state.image_path })
+        Snacks.image.buf.attach(self.preview_buf, self:preview_image_opts())
         return
     end
     vim.bo[self.preview_buf].modifiable = true

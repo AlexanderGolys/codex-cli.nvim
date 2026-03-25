@@ -24,6 +24,7 @@ describe("clodex.ui.prompt_creator", function()
     local original_ui_win
     local original_notify
     local original_pumvisible
+    local original_snacks
 
     before_each(function()
         package.loaded["clodex.ui.prompt_creator"] = nil
@@ -41,6 +42,7 @@ describe("clodex.ui.prompt_creator", function()
 
         original_ui_win = package.loaded["clodex.ui.win"]
         original_notify = package.loaded["clodex.util.notify"]
+        original_snacks = package.loaded["snacks"]
         original_pumvisible = vim.fn.pumvisible
         opened_windows = {}
 
@@ -135,6 +137,7 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
         package.loaded["snacks.input"] = nil
         package.loaded["snacks.picker.select"] = nil
+        package.loaded["snacks"] = original_snacks
         package.loaded["clodex.ui.win"] = original_ui_win
         package.loaded["clodex.util.notify"] = original_notify
         vim.fn.pumvisible = original_pumvisible
@@ -643,6 +646,54 @@ describe("clodex.ui.prompt_creator", function()
 
         assert.are.equal(" ★ Alpha", lines[1])
         assert.are.equal(" Beta", lines[2])
+    end)
+
+    it("limits clipboard image previews to the preview pane size", function()
+        local attached_opts
+        package.loaded["snacks"] = {
+            input = { input = function() end },
+            picker = {
+                select = function(_items, _opts, on_choice)
+                    on_choice(nil)
+                end,
+            },
+            image = {
+                buf = {
+                    attach = function(_buf, opts)
+                        attached_opts = opts
+                    end,
+                },
+            },
+        }
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Todo with image",
+                image_path = "/tmp/demo.png",
+            },
+            on_submit = function() end,
+        })
+
+        assert.is_not_nil(attached_opts)
+        assert.are.equal("/tmp/demo.png", attached_opts.src)
+        assert.are.equal(creator:preview_width() - 2, attached_opts.max_width)
+        assert.are.equal(creator:preview_height() - 2, attached_opts.max_height)
+
+        package.loaded["snacks"] = nil
     end)
 
     it("keeps the creator open when submit requests it", function()
