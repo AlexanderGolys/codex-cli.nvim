@@ -49,6 +49,16 @@ local M = {
       bg = { from = { "NormalFloat", "Normal" }, attr = "bg" },
       blend = 0,
     },
+    ClodexQueueCursorActive = {
+      fg = { from = "ClodexQueueFocusActive", attr = "bg" },
+      bg = { from = "ClodexQueueFocusActive", attr = "bg" },
+      blend = 100,
+    },
+    ClodexQueueCursorInactive = {
+      fg = { from = "ClodexQueueFocusInactive", attr = "bg" },
+      bg = { from = "ClodexQueueFocusInactive", attr = "bg" },
+      blend = 100,
+    },
     ClodexPickerProject = {
       fg = { from = { "DiagnosticError", "ErrorMsg" } },
       bold = true,
