@@ -61,6 +61,17 @@ local KNOWN_QUEUES = {
     history = true,
 }
 
+---@param items Clodex.QueueItem[]
+---@param queue_name Clodex.QueueName
+---@param item Clodex.QueueItem
+local function insert_queue_item(items, queue_name, item)
+    if queue_name == "queued" then
+        items[#items + 1] = item
+        return
+    end
+    table.insert(items, 1, item)
+end
+
 --- Returns the path to a queue file for a project.
 ---@param project_root string
 ---@param queue_name string
@@ -305,7 +316,7 @@ function Queue:add_todo(project, spec)
     })
 
     local items = self:queue(project, queue_name)
-    table.insert(items, 1, item)
+    insert_queue_item(items, queue_name, item)
     save_queue_file(project.root, queue_name, items)
     return item
 end
@@ -363,7 +374,7 @@ function Queue:put_item(project, queue_name, item, opts)
     end
     sanitize_history_metadata(moved)
 
-    table.insert(items, 1, moved)
+    insert_queue_item(items, queue_name, moved)
     save_queue_file(project.root, queue_name, items)
     return moved
 end

@@ -187,4 +187,22 @@ describe("clodex.workspace.queue", function()
         assert.are_not.equal("", summary.last_updated_at)
         assert.are_not.equal(first.updated_at, "")
     end)
+
+    it("keeps queued items in insertion order", function()
+        local first = queue:add_todo(project, {
+            title = "first queued",
+            queue = "queued",
+            kind = "todo",
+        })
+        local second = queue:add_todo(project, {
+            title = "second queued",
+            queue = "queued",
+            kind = "todo",
+        })
+
+        local queued = queue:queue(project, "queued")
+
+        assert.are.equal(first.id, queued[1].id)
+        assert.are.equal(second.id, queued[2].id)
+    end)
 end)

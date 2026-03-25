@@ -346,7 +346,7 @@ describe("clodex.app.queue_actions", function()
 
         actions:implement_queued_items(project)
 
-        assert.are.same({ second.id, first.id }, dispatched_ids)
+        assert.are.same({ first.id, second.id }, dispatched_ids)
         assert.are.equal("queued", queue:find_item(project, first.id))
         assert.are.equal("queued", queue:find_item(project, second.id))
         assert.are.same(project, remembered_project)
