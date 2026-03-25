@@ -573,6 +573,44 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal(beta.root, submitted_project.root)
     end)
 
+    it("includes the project list in the tab cycle", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        trigger_buffer_mapping(creator.layout.title_buf, "<Tab>")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.layout.body_win.win
+        end)
+
+        trigger_buffer_mapping(creator.layout.body_buf, "<Tab>")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.project_win.win
+        end)
+
+        trigger_buffer_mapping(creator.project_buf, "<Tab>")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.layout.title_win.win
+        end)
+    end)
+
     it("keeps the creator open when submit requests it", function()
         local submitted_spec
         local submitted_action

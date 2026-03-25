@@ -76,7 +76,7 @@ function Composer:open()
         self.creator:watch_window(self.body_win)
         self.creator:apply_common_keymaps(self.body_buf)
         vim.keymap.set({ "n", "i" }, "<Tab>", function()
-            self:focus_title()
+            self.creator:focus_project_list()
         end, { buffer = self.body_buf, silent = true })
         vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
             self:focus_title()
@@ -150,6 +150,10 @@ end
 
 function Composer:focus_default()
     self:focus_title()
+end
+
+function Composer:focus_last()
+    self:focus_body()
 end
 
 ---@param winid? integer

@@ -659,6 +659,16 @@ function Creator:focus_creator_default()
     end)
 end
 
+function Creator:focus_creator_last_slot()
+    vim.schedule(function()
+        if self.layout and self.layout.focus_last then
+            self.layout:focus_last()
+            return
+        end
+        self:focus_default()
+    end)
+end
+
 ---@param index integer
 function Creator:set_project_index(index)
     local project = self.projects[index]
@@ -725,6 +735,10 @@ function Creator:apply_project_keymaps()
     end, { buffer = self.project_buf, silent = true, expr = true })
     vim.keymap.set("n", "<Tab>", function()
         self:focus_creator_default()
+        return vim.keycode("<Ignore>")
+    end, { buffer = self.project_buf, silent = true, expr = true })
+    vim.keymap.set("n", "<S-Tab>", function()
+        self:focus_creator_last_slot()
         return vim.keycode("<Ignore>")
     end, { buffer = self.project_buf, silent = true, expr = true })
     vim.keymap.set("n", "<Down>", function()

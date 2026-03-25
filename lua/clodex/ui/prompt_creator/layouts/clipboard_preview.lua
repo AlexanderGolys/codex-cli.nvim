@@ -46,6 +46,9 @@ function ClipboardPreview:open()
         })
         self.creator:watch_window(self.title_win)
         self.creator:apply_first_slot_keymaps(self.title_buf)
+        vim.keymap.set({ "n", "i" }, "<Tab>", function()
+            self:focus_note()
+        end, { buffer = self.title_buf, silent = true })
     end
     if not self.note_win then
         self.note_win = ui_win.open({
@@ -72,6 +75,12 @@ function ClipboardPreview:open()
         })
         self.creator:watch_window(self.note_win)
         self.creator:apply_common_keymaps(self.note_buf)
+        vim.keymap.set({ "n", "i" }, "<Tab>", function()
+            self:focus_preview()
+        end, { buffer = self.note_buf, silent = true })
+        vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
+            self:focus_title()
+        end, { buffer = self.note_buf, silent = true })
     end
     if not self.preview_win then
         self.preview_win = ui_win.open({
@@ -98,6 +107,12 @@ function ClipboardPreview:open()
         })
         self.creator:watch_window(self.preview_win)
         self.creator:apply_common_keymaps(self.preview_buf)
+        vim.keymap.set("n", "<Tab>", function()
+            self.creator:focus_project_list()
+        end, { buffer = self.preview_buf, silent = true })
+        vim.keymap.set("n", "<S-Tab>", function()
+            self:focus_note()
+        end, { buffer = self.preview_buf, silent = true })
     end
     self:update()
 end
@@ -147,6 +162,23 @@ function ClipboardPreview:focus_default()
         vim.api.nvim_set_current_win(self.title_win.win)
         vim.cmd.startinsert()
     end
+end
+
+function ClipboardPreview:focus_note()
+    if self.note_win and self.note_win:valid() then
+        vim.api.nvim_set_current_win(self.note_win.win)
+        vim.cmd.startinsert()
+    end
+end
+
+function ClipboardPreview:focus_preview()
+    if self.preview_win and self.preview_win:valid() then
+        vim.api.nvim_set_current_win(self.preview_win.win)
+    end
+end
+
+function ClipboardPreview:focus_last()
+    self:focus_preview()
 end
 
 ---@param winid? integer
