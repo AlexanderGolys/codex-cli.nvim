@@ -1,5 +1,11 @@
 local ui_win = require("clodex.ui.win")
 
+---@param win? snacks.win
+---@return boolean
+local function prompt_win_valid(win)
+    return win ~= nil and ui_win.is_valid(win.win)
+end
+
 ---@class Clodex.PromptCreator.LayoutClipboardPreview
 ---@field creator Clodex.PromptCreator
 ---@field title_buf integer
@@ -170,7 +176,7 @@ end
 
 function ClipboardPreview:close()
     for _, win in ipairs({ self.title_win, self.preview_win }) do
-        if win and win:valid() then
+        if prompt_win_valid(win) then
             win:close()
         end
     end

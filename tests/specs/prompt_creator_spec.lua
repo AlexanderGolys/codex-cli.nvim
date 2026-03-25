@@ -66,8 +66,11 @@ describe("clodex.ui.prompt_creator", function()
                 end
                 return buf
             end,
+            is_valid = function(win)
+                return type(win) == "number" and win > 0 and vim.api.nvim_win_is_valid(win)
+            end,
             apply_theme = function(win, theme)
-                if not vim.api.nvim_win_is_valid(win) then
+                if type(win) ~= "number" or win <= 0 or not vim.api.nvim_win_is_valid(win) then
                     return
                 end
                 if theme == "prompt_editor" or theme == "prompt_footer" then
@@ -105,7 +108,7 @@ describe("clodex.ui.prompt_creator", function()
                 end
 
                 function object:valid()
-                    return vim.api.nvim_win_is_valid(self.win)
+                    return type(self.win) == "number" and self.win > 0 and vim.api.nvim_win_is_valid(self.win)
                 end
 
                 function object:update()
@@ -130,6 +133,7 @@ describe("clodex.ui.prompt_creator", function()
                 function object:close()
                     if self:valid() then
                         vim.api.nvim_win_close(self.win, true)
+                        self.win = vim.NIL
                     end
                 end
 
@@ -195,6 +199,37 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_true(footer_win:valid())
 
         vim.api.nvim_win_close(title_win.win, true)
+
+        wait_for(function()
+            return creator.footer_win == nil and creator.kind_win == nil and creator.layout.title_win == nil
+        end)
+    end)
+
+    it("closes the footer when a destroyed prompt window handle becomes vim.NIL", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local title_win = creator.layout.title_win
+
+        assert.is_true(title_win:valid())
+
+        vim.api.nvim_win_close(title_win.win, true)
+        title_win.win = vim.NIL
 
         wait_for(function()
             return creator.footer_win == nil and creator.kind_win == nil and creator.layout.title_win == nil

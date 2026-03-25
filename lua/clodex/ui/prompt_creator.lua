@@ -75,6 +75,19 @@ local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
 
+---@param win? snacks.win
+---@return boolean
+local function prompt_win_valid(win)
+    return win ~= nil and ui_win.is_valid(win.win)
+end
+
+---@param win? snacks.win
+local function close_prompt_win(win)
+    if prompt_win_valid(win) and win.close then
+        win:close()
+    end
+end
+
 local function prompt_buffer(preset)
     return ui_win.create_buffer({
         preset = preset,
@@ -1113,7 +1126,7 @@ end
 
 ---@param win? snacks.win
 function Creator:watch_window(win)
-    if not win or not win.valid or not win:valid() then
+    if not prompt_win_valid(win) then
         return
     end
 
@@ -1459,9 +1472,7 @@ function Creator:close(clear_layout)
         self.layout:close()
     end
     for _, win in ipairs({ self.project_win, self.kind_win, self.variant_win, self.footer_win, self.preview_win }) do
-        if win and win.valid and win:valid() then
-            win:close()
-        end
+        close_prompt_win(win)
     end
     self.project_win = nil
     self.kind_win = nil

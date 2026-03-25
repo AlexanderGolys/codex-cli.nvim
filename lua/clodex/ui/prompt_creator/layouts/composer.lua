@@ -1,5 +1,11 @@
 local ui_win = require("clodex.ui.win")
 
+---@param win? snacks.win
+---@return boolean
+local function prompt_win_valid(win)
+    return win ~= nil and ui_win.is_valid(win.win)
+end
+
 ---@class Clodex.PromptCreator.LayoutComposer
 ---@field creator Clodex.PromptCreator
 ---@field title_buf integer
@@ -195,10 +201,10 @@ function Composer:focus_slot(slot, insert_mode)
 end
 
 function Composer:close()
-    if self.title_win and self.title_win:valid() then
+    if prompt_win_valid(self.title_win) then
         self.title_win:close()
     end
-    if self.body_win and self.body_win:valid() then
+    if prompt_win_valid(self.body_win) then
         self.body_win:close()
     end
     self.title_win = nil
