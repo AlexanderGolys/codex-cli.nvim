@@ -16,6 +16,7 @@ describe("clodex.ui.prompt_creator", function()
     local opened_windows
     local original_ui_win
     local original_notify
+    local original_pumvisible
 
     before_each(function()
         package.loaded["clodex.ui.prompt_creator"] = nil
@@ -25,6 +26,7 @@ describe("clodex.ui.prompt_creator", function()
 
         original_ui_win = package.loaded["clodex.ui.win"]
         original_notify = package.loaded["clodex.util.notify"]
+        original_pumvisible = vim.fn.pumvisible
         opened_windows = {}
 
         package.loaded["clodex.ui.win"] = {
@@ -118,6 +120,7 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
         package.loaded["clodex.ui.win"] = original_ui_win
         package.loaded["clodex.util.notify"] = original_notify
+        vim.fn.pumvisible = original_pumvisible
     end)
 
     it("closes the footer when a prompt editor window is destroyed", function()
@@ -262,5 +265,42 @@ describe("clodex.ui.prompt_creator", function()
         wait_for(function()
             return creator.state.variant == "clipboard_error"
         end)
+    end)
+
+    it("keeps completion popup navigation in the details field", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "bug",
+            on_submit = function() end,
+        })
+
+        local body_win = creator.layout.body_win
+
+        vim.api.nvim_set_current_win(body_win.win)
+        vim.api.nvim_win_set_cursor(body_win.win, { 1, 0 })
+        vim.cmd.startinsert()
+        vim.fn.pumvisible = function()
+            return 1
+        end
+
+        vim.api.nvim_input(vim.keycode("<Up>"))
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == body_win.win
+        end)
+
+        assert.are.equal(body_win.win, vim.api.nvim_get_current_win())
     end)
 end)

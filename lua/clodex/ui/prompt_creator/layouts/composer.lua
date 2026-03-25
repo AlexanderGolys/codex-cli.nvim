@@ -82,7 +82,7 @@ function Composer:open()
             self:focus_title()
         end, { buffer = self.body_buf, silent = true })
         vim.keymap.set({ "n", "i" }, "<Up>", function()
-            if vim.api.nvim_win_get_cursor(self.body_win.win)[1] <= 1 then
+            if self:should_focus_title_from_body() then
                 vim.schedule(function()
                     self:focus_title()
                 end)
@@ -92,6 +92,17 @@ function Composer:open()
         end, { buffer = self.body_buf, silent = true, expr = true })
     end
     self:update()
+end
+
+---@return boolean
+function Composer:should_focus_title_from_body()
+    if not self.body_win or not self.body_win:valid() then
+        return false
+    end
+    if vim.fn.pumvisible() == 1 then
+        return false
+    end
+    return vim.api.nvim_win_get_cursor(self.body_win.win)[1] <= 1
 end
 
 function Composer:update()
