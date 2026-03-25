@@ -503,8 +503,9 @@ end
 ---@param buf integer
 ---@param labels { label: string, hl_group: string, active_hl_group: string }[]
 ---@param active_index integer
+---@param total_width integer
 ---@return { start_col: integer, end_col: integer, index: integer }[]
-function Creator:render_tab_line(buf, labels, active_index)
+function Creator:render_tab_line(buf, labels, active_index, total_width)
     local parts = {} ---@type string[]
     local marks = {} ---@type Clodex.Extmark[]
     local spans = {} ---@type { start_col: integer, end_col: integer, index: integer }[]
@@ -534,8 +535,22 @@ function Creator:render_tab_line(buf, labels, active_index)
         col = end_col
     end
 
+    local line = table.concat(parts)
+    local pad = math.max(math.floor((total_width - vim.fn.strdisplaywidth(line)) / 2), 0)
+    if pad > 0 then
+        line = string.rep(" ", pad) .. line
+        for _, span in ipairs(spans) do
+            span.start_col = span.start_col + pad
+            span.end_col = span.end_col + pad
+        end
+        for _, mark in ipairs(marks) do
+            mark.start_pos[2] = mark.start_pos[2] + pad
+            mark.end_pos[2] = mark.end_pos[2] + pad
+        end
+    end
+
     vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { table.concat(parts) })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { line })
     vim.bo[buf].modifiable = false
     vim.api.nvim_buf_clear_namespace(buf, TAB_NS, 0, -1)
     for _, mark in ipairs(marks) do
@@ -815,7 +830,7 @@ function Creator:render_kind_tabs()
             active_hl_group = Prompt.title_group(kind.id) .. "Active",
         }
     end
-    self.kind_tab_spans = self:render_tab_line(self.kind_buf, labels, self.kind_index)
+    self.kind_tab_spans = self:render_tab_line(self.kind_buf, labels, self.kind_index, self:content_width())
 end
 
 function Creator:render_variant_tabs()
@@ -845,14 +860,12 @@ function Creator:render_variant_tabs()
             active_hl_group = "ClodexPromptSourceTabActive",
         }
     end
-    self.variant_tab_spans = self:render_tab_line(self.variant_buf, labels, self.variant_index)
+    self.variant_tab_spans = self:render_tab_line(self.variant_buf, labels, self.variant_index, self:content_width())
     if not self.variant_win then
         self.variant_win = ui_win.open({
             buf = self.variant_buf,
             enter = false,
-            border = "rounded",
-            title = " Source ",
-            title_pos = "center",
+            border = "none",
             width = function()
                 return self:content_width()
             end,
@@ -996,9 +1009,7 @@ function Creator:ensure_shell_windows()
         self.kind_win = ui_win.open({
             buf = self.kind_buf,
             enter = false,
-            border = "rounded",
-            title = " Prompt Creator ",
-            title_pos = "center",
+            border = "none",
             width = function()
                 return self:content_width()
             end,

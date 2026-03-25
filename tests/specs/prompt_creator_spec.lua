@@ -200,6 +200,33 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_true(vim.tbl_contains(groups, "ClodexPromptBugTitle"))
     end)
 
+    it("centers tab rows and removes tab borders", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "bug",
+            on_submit = function() end,
+        })
+
+        local kind_line = vim.api.nvim_buf_get_lines(creator.kind_buf, 0, 1, false)[1]
+
+        assert.are.equal("none", creator.kind_win.opts.border)
+        assert.are.equal("none", creator.variant_win.opts.border)
+        assert.is_truthy(kind_line:match("^%s+"))
+        assert.is_truthy(kind_line:match("%s+$"))
+    end)
+
     it("starts new prompts with a blank title field", function()
         creator = Creator.open({
             app = {
