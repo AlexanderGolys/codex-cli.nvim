@@ -234,4 +234,53 @@ describe("clodex.app.prompt_actions", function()
             run_mode = "exec",
         }, queued_opts)
     end)
+
+    it("keeps the prompt creator open after run now", function()
+        local queued_project
+        local queued_spec
+        local queued_opts
+        local actions = PromptActions.new({
+            config = {
+                get = function()
+                    return { backend = "codex" }
+                end,
+            },
+            queue_actions = {
+                add_project_todo = function(_, project, spec, opts)
+                    queued_project = project
+                    queued_spec = spec
+                    queued_opts = opts
+                    return { id = "queued-item" }
+                end,
+            },
+            queue_workspace = {
+                prompt_title_width = function()
+                    return 80
+                end,
+            },
+        })
+        local project = {
+            name = "Demo",
+            root = "/tmp/demo",
+        }
+
+        actions:open_creator(project)
+
+        local result = creator_calls[1].on_submit({
+            title = "Fix parser",
+            details = "Use &file",
+        }, "exec")
+
+        assert.are.same(project, queued_project)
+        assert.are.same({
+            title = "Fix parser",
+            details = "Use &file",
+        }, queued_spec)
+        assert.are.same({
+            queue = "queued",
+            implement = true,
+            run_mode = "exec",
+        }, queued_opts)
+        assert.is_false(result)
+    end)
 end)

@@ -303,4 +303,49 @@ describe("clodex.ui.prompt_creator", function()
 
         assert.are.equal(body_win.win, vim.api.nvim_get_current_win())
     end)
+
+    it("keeps the creator open when submit requests it", function()
+        local submitted_spec
+        local submitted_action
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Keep prompt",
+                details = "Preserve footer",
+            },
+            on_submit = function(spec, action)
+                submitted_spec = spec
+                submitted_action = action
+                return false
+            end,
+        })
+
+        creator:submit("exec")
+
+        wait_for(function()
+            return submitted_action == "exec"
+                and submitted_spec ~= nil
+                and creator.footer_win ~= nil
+                and creator.footer_win:valid()
+                and creator.layout.title_win ~= nil
+                and creator.layout.title_win:valid()
+        end)
+
+        assert.are.equal("Keep prompt", submitted_spec.title)
+        assert.are.equal("Preserve footer", submitted_spec.details)
+    end)
 end)

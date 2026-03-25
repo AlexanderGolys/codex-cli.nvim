@@ -840,8 +840,13 @@ function Creator:submit(action)
         notify.warn("Prompt title is required")
         return
     end
+
+    local result = self.on_submit(spec, action)
+    if result == false then
+        return
+    end
+
     self:close()
-    self.on_submit(spec, action)
 end
 
 ---@param clear_layout? boolean
