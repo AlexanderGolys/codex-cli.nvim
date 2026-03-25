@@ -697,7 +697,7 @@ local function prompt_editor_hint_lines(actions)
   end
 
   return {
-    ("  <CR>/<Down> details   <Tab> switch fields   <Up>/<S-Tab> title   %s"):format(
+    ("  <CR>/↓ details   <Tab> switch fields   ↑/<S-Tab> title   %s"):format(
       table.concat(action_chunks, "   ")
     ),
     "  <C-v> paste   & context   <C-x>/x quick prompt   q / Esc cancel",

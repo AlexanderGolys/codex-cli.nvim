@@ -86,6 +86,26 @@ describe("clodex.ui.select", function()
         }
 
         package.loaded["clodex.ui.win"] = {
+            create_buffer = function(opts)
+                local buf = vim.api.nvim_create_buf(false, true)
+                local preset = opts and opts.preset or "scratch"
+                if preset == "markdown" then
+                    vim.bo[buf].filetype = "markdown"
+                    vim.bo[buf].modifiable = true
+                elseif preset == "text" then
+                    vim.bo[buf].modifiable = true
+                else
+                    vim.bo[buf].modifiable = false
+                end
+                vim.bo[buf].buftype = "nofile"
+                vim.bo[buf].bufhidden = "wipe"
+                vim.bo[buf].swapfile = false
+                for key, value in pairs(opts and opts.bo or {}) do
+                    vim.bo[buf][key] = value
+                end
+                return buf
+            end,
+            apply_theme = function() end,
             open = function(opts)
                 local row = type(opts.row) == "function" and opts.row() or opts.row or 0
                 local col = type(opts.col) == "function" and opts.col() or opts.col or 0
@@ -215,6 +235,24 @@ describe("clodex.ui.select", function()
             local cursor = vim.api.nvim_win_get_cursor(body_window.win)
             return vim.api.nvim_get_current_win() == body_window.win and cursor[1] == 1
         end)
+    end)
+
+    it("renders arrow icons in multiline footer hints", function()
+        select.multiline_input({
+            prompt = "Test prompt",
+            default = "Test title\n\nfirst line",
+        }, function() end)
+
+        wait_for(function()
+            return #opened_windows == 3
+        end)
+
+        local hint_lines = vim.api.nvim_buf_get_lines(opened_windows[3].buf, 0, -1, false)
+
+        assert.are.equal(
+            "  <CR>/↓ details   <Tab> switch fields   ↑/<S-Tab> title   <C-s> save   <C-q> queue",
+            hint_lines[1]
+        )
     end)
 
     it("re-focuses select pickers on the list window after creation", function()
@@ -349,7 +387,7 @@ describe("clodex.ui.select", function()
         assert.is_true(#items > 0)
         assert.are.equal("&file", items[1].abbr)
         assert.are.equal("&file", items[1].word)
-        assert.matches("^@{.+}$", items[1].info)
+        assert.matches("^@.+$", items[1].info)
     end)
 
     it("expands prompt context tokens only when the prompt is submitted", function()
@@ -386,10 +424,7 @@ describe("clodex.ui.select", function()
             return submitted ~= nil
         end)
 
-        assert.are.equal(
-            'Title\n\n@{example.lua}\n\n"value" under the cursor in @{example.lua}: line 3',
-            submitted
-        )
+        assert.are.equal('Title\n\n@example.lua\n\n"value" under the cursor in @example.lua: line 3', submitted)
     end)
 
     it("highlights only valid prompt context tokens in the details buffer", function()
