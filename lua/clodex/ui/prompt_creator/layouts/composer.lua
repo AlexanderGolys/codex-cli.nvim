@@ -14,8 +14,8 @@ Composer.__index = Composer
 function Composer.new(creator)
     return setmetatable({
         creator = creator,
-        title_buf = ui_win.create_buffer({ preset = "text" }),
-        body_buf = ui_win.create_buffer({ preset = "markdown" }),
+        title_buf = ui_win.create_buffer({ preset = "text", bo = { bufhidden = "hide" } }),
+        body_buf = ui_win.create_buffer({ preset = "markdown", bo = { bufhidden = "hide" } }),
     }, Composer)
 end
 

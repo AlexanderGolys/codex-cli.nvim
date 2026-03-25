@@ -14,8 +14,8 @@ ClipboardPreview.__index = ClipboardPreview
 function ClipboardPreview.new(creator)
     return setmetatable({
         creator = creator,
-        title_buf = ui_win.create_buffer({ preset = "text" }),
-        preview_buf = ui_win.create_buffer({ preset = "markdown" }),
+        title_buf = ui_win.create_buffer({ preset = "text", bo = { bufhidden = "hide" } }),
+        preview_buf = ui_win.create_buffer({ preset = "markdown", bo = { bufhidden = "hide" } }),
     }, ClipboardPreview)
 end
 

@@ -74,6 +74,13 @@ local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
 
+local function prompt_buffer(preset)
+    return ui_win.create_buffer({
+        preset = preset,
+        bo = { bufhidden = "hide" },
+    })
+end
+
 local PROMPT_THEME_WINDOW_FIELDS = {
     { name = "project_win" },
     { name = "kind_win" },
@@ -275,9 +282,9 @@ function Creator.new(opts)
             preview_text = "",
         },
         drafts = DraftStore.new(),
-        project_buf = ui_win.create_buffer({ preset = "scratch" }),
-        kind_buf = ui_win.create_buffer({ preset = "scratch" }),
-        footer_buf = ui_win.create_buffer({ preset = "scratch" }),
+        project_buf = prompt_buffer("scratch"),
+        kind_buf = prompt_buffer("scratch"),
+        footer_buf = prompt_buffer("scratch"),
         close_watchers = {},
         is_closing = false,
         suppress_close_events = false,
@@ -920,7 +927,7 @@ function Creator:render_variant_tabs()
         return
     end
 
-    self.variant_buf = self.variant_buf or ui_win.create_buffer({ preset = "scratch" })
+    self.variant_buf = self.variant_buf or prompt_buffer("scratch")
     if not vim.b[self.variant_buf].clodex_prompt_keymaps_applied then
         self:apply_shell_keymaps(self.variant_buf)
         vim.b[self.variant_buf].clodex_prompt_keymaps_applied = true
@@ -1172,7 +1179,7 @@ function Creator:render_preview()
         return
     end
 
-    self.preview_buf = self.preview_buf or ui_win.create_buffer({ preset = "scratch" })
+    self.preview_buf = self.preview_buf or prompt_buffer("scratch")
     if not self.preview_win then
         self.preview_win = ui_win.open({
             buf = self.preview_buf,

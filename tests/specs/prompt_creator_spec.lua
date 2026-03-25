@@ -61,6 +61,9 @@ describe("clodex.ui.prompt_creator", function()
                 vim.bo[buf].buftype = "nofile"
                 vim.bo[buf].bufhidden = "wipe"
                 vim.bo[buf].swapfile = false
+                for key, value in pairs(opts and opts.bo or {}) do
+                    vim.bo[buf][key] = value
+                end
                 return buf
             end,
             open = function(opts)
@@ -249,6 +252,31 @@ describe("clodex.ui.prompt_creator", function()
         local title = vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1]
 
         assert.are.equal("", title)
+    end)
+
+    it("keeps prompt creator buffers hidden instead of wiping them", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.are.equal("hide", vim.bo[creator.project_buf].bufhidden)
+        assert.are.equal("hide", vim.bo[creator.footer_buf].bufhidden)
+        assert.are.equal("hide", vim.bo[creator.layout.title_buf].bufhidden)
+        assert.are.equal("hide", vim.bo[creator.layout.body_buf].bufhidden)
     end)
 
     it("highlights footer keymaps", function()
