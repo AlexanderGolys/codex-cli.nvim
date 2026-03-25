@@ -995,4 +995,78 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal("Keep prompt", submitted_spec.title)
         assert.are.equal("Preserve footer", submitted_spec.details)
     end)
+
+    it("closes the creator after a successful queued submit keymap", function()
+        local submitted_action
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Queue prompt",
+                details = "Close on queue",
+            },
+            on_submit = function(_, action)
+                submitted_action = action
+                return { id = "queued-item" }
+            end,
+        })
+
+        trigger_buffer_mapping(creator.layout.title_buf, "<C-q>", "i")
+
+        wait_for(function()
+            return submitted_action == "queue"
+                and creator.footer_win == nil
+                and creator.layout.title_win == nil
+        end)
+    end)
+
+    it("closes the creator after a successful run-now submit keymap", function()
+        local submitted_action
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Run prompt",
+                details = "Close on exec",
+            },
+            on_submit = function(_, action)
+                submitted_action = action
+                return { id = "queued-item" }
+            end,
+        })
+
+        trigger_buffer_mapping(creator.layout.title_buf, "<C-e>", "i")
+
+        wait_for(function()
+            return submitted_action == "exec"
+                and creator.footer_win == nil
+                and creator.layout.title_win == nil
+        end)
+    end)
 end)
