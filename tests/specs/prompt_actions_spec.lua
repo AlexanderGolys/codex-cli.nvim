@@ -235,7 +235,7 @@ describe("clodex.app.prompt_actions", function()
         }, queued_opts)
     end)
 
-    it("keeps the prompt creator open after run now", function()
+    it("closes the prompt creator after run now succeeds", function()
         local queued_project
         local queued_spec
         local queued_opts
@@ -281,6 +281,6 @@ describe("clodex.app.prompt_actions", function()
             implement = true,
             run_mode = "exec",
         }, queued_opts)
-        assert.is_false(result)
+        assert.are.same({ id = "queued-item" }, result)
     end)
 end)

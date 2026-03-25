@@ -231,11 +231,7 @@ function PromptActions:open_creator(project, opts)
         mode = opts.mode or "new",
         lock_kind = opts.lock_kind == true,
         on_submit = opts.on_submit or function(spec, action)
-            local result = self:submit_prompt(project, spec, action)
-            if action == "exec" then
-                return false
-            end
-            return result
+            return self:submit_prompt(project, spec, action)
         end,
     })
 end
