@@ -35,9 +35,6 @@ function M.build_spec(state)
         if preview ~= "" then
             parts[#parts + 1] = ("Bug message:\n```\n%s\n```"):format(preview)
         end
-        if details then
-            parts[#parts + 1] = details
-        end
         parts[#parts + 1] = "Explain the cause, implement a fix if needed, and mention any follow-up validation that should be run."
         return {
             title = title or "Investigate runtime error",

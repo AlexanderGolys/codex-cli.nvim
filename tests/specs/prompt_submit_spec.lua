@@ -28,7 +28,7 @@ describe("clodex.prompt.submit", function()
         assert.are.equal('Inspect "value" under the cursor in @lua/demo.lua: line 7', spec.details)
     end)
 
-    it("builds clipboard-error bug prompts from preview text and comment", function()
+    it("builds clipboard-error bug prompts from preview text and uses the comment as the title", function()
         local spec = Submit.build_spec({
             kind = "bug",
             variant = "clipboard_error",
@@ -39,7 +39,7 @@ describe("clodex.prompt.submit", function()
 
         assert.are.equal("Investigate save crash", spec.title)
         assert.matches("Traceback: boom", spec.details)
-        assert.matches("It happens after pressing save", spec.details)
+        assert.not_matches("It happens after pressing save", spec.details)
     end)
 
     it("adds clipboard image references to any prompt kind", function()

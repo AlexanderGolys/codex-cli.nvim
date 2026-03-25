@@ -560,6 +560,10 @@ describe("clodex.ui.prompt_creator", function()
         wait_for(function()
             return creator.state.variant == "clipboard_error"
         end)
+
+        assert.is_nil(creator.layout.note_win)
+        assert.are.equal(" Comment ", creator.layout.title_win.opts.title)
+        assert.are.same({ creator.layout.title_buf, creator.layout.preview_buf }, creator.layout:buffers())
     end)
 
     it("keeps completion popup navigation in the details field", function()
