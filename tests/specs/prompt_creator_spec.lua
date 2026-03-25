@@ -180,6 +180,30 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_true(vim.tbl_contains(groups, "ClodexPromptBugTitle"))
     end)
 
+    it("starts new prompts with a blank title field", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local title = vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1]
+
+        assert.are.equal("", title)
+    end)
+
     it("changes kind tabs from the footer and keeps normal-mode focus in the editor", function()
         creator = Creator.open({
             app = {

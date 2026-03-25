@@ -185,6 +185,7 @@ end
 function Creator:sync_state_from_draft()
     self.state.kind = self:kind()
     local creator = CreatorRegistry.get(self.state.kind)
+    local kind_default_title = KindRegistry.get(self.state.kind).default_title or ""
     local variants = self:variants()
     if #variants == 0 then
         self.variant_index = 1
@@ -198,6 +199,9 @@ function Creator:sync_state_from_draft()
     local draft = self.drafts:get(self.state.kind, self.state.variant, CreatorRegistry.default_draft(self.state.kind, self.state.variant))
     for key, value in pairs(draft) do
         self.state[key] = value
+    end
+    if self.mode == "new" and self.state.title == kind_default_title then
+        self.state.title = ""
     end
     self.state.project = self.project
     self.state.context = self.context
@@ -733,7 +737,12 @@ function Creator:activate_layout(focus_context)
     end
     self.layout = layout_modules[layout_id].new(self)
     self.layout:open()
-    self.layout:set_draft(self.drafts:get(self.state.kind, self.state.variant, self.state))
+    self.layout:set_draft(vim.tbl_extend("force", self.drafts:get(self.state.kind, self.state.variant, self.state), {
+        title = self.state.title,
+        details = self.state.details,
+        image_path = self.state.image_path,
+        preview_text = self.state.preview_text,
+    }))
     self:render_preview()
     if not self:restore_focus_context(focus_context) then
         self:focus_default()
