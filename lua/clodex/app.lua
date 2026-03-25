@@ -447,6 +447,7 @@ function App:setup_autocmds()
             self:refresh_bookmarks_for_buffer(buf)
             self:refresh_views()
             reconnect_terminal_on_enter(self.config:get(), buf)
+            TerminalUi.refresh_chrome(vim.api.nvim_get_current_win())
         end,
     })
 

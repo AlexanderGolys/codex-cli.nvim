@@ -114,6 +114,36 @@ local function clodex_terminal_window(win)
 end
 
 ---@param win integer
+---@param name string
+---@return string
+local function win_option(win, name)
+    return vim.api.nvim_get_option_value(name, { scope = "local", win = win }) or ""
+end
+
+---@param win integer
+---@param name string
+---@param value string
+local function set_win_option(win, name, value)
+    vim.api.nvim_set_option_value(name, value, { scope = "local", win = win })
+end
+
+---@param win integer
+local function clear_window_chrome(win)
+    if not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+    if win_option(win, "statusline") == STATUSLINE_EXPR then
+        set_win_option(win, "statusline", "")
+    end
+    if win_option(win, "winbar") == WINBAR_EXPR then
+        set_win_option(win, "winbar", "")
+    end
+    if win_option(win, "winhl"):find(STATUSLINE_HL_PREFIX, 1, true) ~= nil then
+        set_win_option(win, "winhl", "")
+    end
+end
+
+---@param win integer
 local function apply_terminal_window_highlights(win)
     local active, inactive = ensure_terminal_statusline_highlights(win)
     vim.wo[win].winhl = table.concat({
@@ -126,13 +156,15 @@ end
 function M.apply_window(win)
     local target = win
     if not clodex_terminal_window(target) then
+        clear_window_chrome(target)
         return
     end
     if is_opencode_backend() then
+        clear_window_chrome(target)
         return
     end
-    vim.wo[target].statusline = STATUSLINE_EXPR
-    vim.wo[target].winbar = WINBAR_EXPR
+    set_win_option(target, "statusline", STATUSLINE_EXPR)
+    set_win_option(target, "winbar", WINBAR_EXPR)
     apply_terminal_window_highlights(target)
 end
 
@@ -161,17 +193,13 @@ function M.refresh_chrome(win)
     if type(target) ~= "number" or not vim.api.nvim_win_is_valid(target) then
         target = current_window()
     end
-    if clodex_terminal_window(target) then
-        M.apply_window(target)
-        pcall(vim.cmd.redrawstatus)
-    end
+    M.apply_window(target)
+    pcall(vim.cmd.redrawstatus)
 end
 
 function M.refresh_all_chrome()
     for _, win in ipairs(vim.api.nvim_list_wins()) do
-        if clodex_terminal_window(win) then
-            M.apply_window(win)
-        end
+        M.apply_window(win)
     end
 end
 

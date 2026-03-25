@@ -266,4 +266,60 @@ describe("clodex.terminal.session", function()
         vim.api.nvim_win_set_buf(win, original_buf)
         package.loaded["clodex.app"] = app_module
     end)
+
+    it("clears terminal chrome after leaving a terminal buffer", function()
+        local terminal_buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[terminal_buf].filetype = "clodex_terminal"
+        vim.api.nvim_buf_set_lines(terminal_buf, 0, -1, false, { "Codex ready" })
+
+        local normal_buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[normal_buf].filetype = "markdown"
+
+        local session = Session.new({
+            key = "project:/tmp/demo",
+            kind = "project",
+            cwd = "/tmp/demo",
+            title = "Clodex: Demo",
+            cmd = { "codex" },
+        })
+        session.buf = terminal_buf
+
+        local app_module = package.loaded["clodex.app"]
+        package.loaded["clodex.app"] = {
+            instance = function()
+                return {
+                    config = {
+                        get = function()
+                            return { backend = "codex" }
+                        end,
+                    },
+                    terminals = {
+                        session_by_buf = function(_, target_buf)
+                            if target_buf == terminal_buf then
+                                return session
+                            end
+                        end,
+                    },
+                }
+            end,
+        }
+
+        local win = vim.api.nvim_get_current_win()
+        local original_buf = vim.api.nvim_win_get_buf(win)
+        vim.api.nvim_win_set_buf(win, terminal_buf)
+        TerminalUi.apply_window(win)
+
+        assert.are.equal("%!v:lua.require('clodex.terminal.ui').statusline()", vim.api.nvim_get_option_value("statusline", { scope = "local", win = win }))
+        assert.are.equal("%!v:lua.require('clodex.terminal.ui').winbar()", vim.api.nvim_get_option_value("winbar", { scope = "local", win = win }))
+
+        vim.api.nvim_win_set_buf(win, normal_buf)
+        TerminalUi.refresh_chrome(win)
+
+        assert.are.equal("", vim.api.nvim_get_option_value("statusline", { scope = "local", win = win }))
+        assert.are.equal("", vim.api.nvim_get_option_value("winbar", { scope = "local", win = win }))
+        assert.are.equal("", vim.api.nvim_get_option_value("winhl", { scope = "local", win = win }))
+
+        vim.api.nvim_win_set_buf(win, original_buf)
+        package.loaded["clodex.app"] = app_module
+    end)
 end)
