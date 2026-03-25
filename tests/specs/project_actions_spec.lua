@@ -5,17 +5,23 @@ describe("clodex.app.project_actions", function()
     local original_markdown_preview
     local original_notify
     local original_edit
+    local original_snacks
     local picked_opts
+    local picked_text_items
     local warned_messages
     local error_messages
+    local icon_picker_opts
 
     before_each(function()
         package.loaded["clodex.app.project_actions"] = nil
         original_select = package.loaded["clodex.ui.select"]
         original_markdown_preview = package.loaded["clodex.ui.markdown_preview"]
         original_notify = package.loaded["clodex.util.notify"]
+        original_snacks = package.loaded["snacks"]
         original_edit = vim.cmd.edit
         picked_opts = nil
+        picked_text_items = nil
+        icon_picker_opts = nil
         warned_messages = {}
         error_messages = {}
         package.loaded["clodex.ui.select"] = {
@@ -26,6 +32,18 @@ describe("clodex.app.project_actions", function()
                     root = "/tmp/beta",
                 })
             end,
+            pick_text = function(items, _opts, on_choice)
+                picked_text_items = items
+                on_choice(items[1])
+            end,
+        }
+        package.loaded["snacks"] = {
+            picker = {
+                icons = function(opts)
+                    icon_picker_opts = opts
+                    opts.confirm({ close = function() end }, { icon = "★" })
+                end,
+            },
         }
         package.loaded["clodex.ui.markdown_preview"] = {
             new = function()
@@ -49,6 +67,7 @@ describe("clodex.app.project_actions", function()
         package.loaded["clodex.ui.select"] = original_select
         package.loaded["clodex.ui.markdown_preview"] = original_markdown_preview
         package.loaded["clodex.util.notify"] = original_notify
+        package.loaded["snacks"] = original_snacks
         vim.cmd.edit = original_edit
     end)
 
@@ -273,10 +292,75 @@ describe("clodex.app.project_actions", function()
         actions:set_backend("opencode")
 
         assert.are.equal("opencode", values.backend)
-        assert.are.equal(vim.fn.expand("~/.config/opencode/skills"), values.prompt_execution.skills_dir)
+        assert.are.equal("/tmp/codex-skills", values.prompt_execution.skills_dir)
         assert.are.same(values, update_values)
         assert.are.equal(1, refresh_count)
         assert.are.same({ "Switched Clodex backend to OpenCode" }, notified_messages)
+    end)
+
+    it("opens the icon picker and stores the selected project icon", function()
+        local stored_icon
+        local touched = 0
+        local refreshed = 0
+        local actions = ProjectActions.new({
+            project_details_store = {
+                get_icon = function()
+                    return nil
+                end,
+                set_icon = function(_, _, icon)
+                    stored_icon = icon
+                end,
+                touch_activity = function()
+                    touched = touched + 1
+                end,
+            },
+            refresh_views = function()
+                refreshed = refreshed + 1
+            end,
+        })
+        local project = { name = "Demo", root = "/tmp/demo" }
+
+        actions:pick_project_icon(project)
+
+        assert.are.equal("Set icon", picked_text_items[1].label)
+        assert.are.equal("★", stored_icon)
+        assert.is_not_nil(icon_picker_opts)
+        assert.are.equal(1, touched)
+        assert.are.equal(1, refreshed)
+    end)
+
+    it("removes the selected project icon from the same action menu", function()
+        local stored_icon = "★"
+        local touched = 0
+        local refreshed = 0
+        package.loaded["clodex.ui.select"].pick_text = function(items, _opts, on_choice)
+            picked_text_items = items
+            on_choice(items[2])
+        end
+        local actions = ProjectActions.new({
+            project_details_store = {
+                get_icon = function()
+                    return stored_icon
+                end,
+                set_icon = function(_, _, icon)
+                    stored_icon = icon
+                end,
+                touch_activity = function()
+                    touched = touched + 1
+                end,
+            },
+            refresh_views = function()
+                refreshed = refreshed + 1
+            end,
+        })
+
+        actions:pick_project_icon({ name = "Demo", root = "/tmp/demo" })
+
+        assert.are.equal("Change icon", picked_text_items[1].label)
+        assert.are.equal("Remove icon", picked_text_items[2].label)
+        assert.is_nil(stored_icon)
+        assert.are.equal(1, touched)
+        assert.are.equal(1, refreshed)
     end)
 
 end)

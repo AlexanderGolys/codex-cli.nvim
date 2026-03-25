@@ -72,6 +72,7 @@ describe("clodex.ui.queue_workspace footer", function()
         local project_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
         assert.are.equal("/: filter by project text", project_lines[2])
         assert.are.equal(2, #project_lines)
+        assert.is_truthy(project_lines[1]:find("I: set icon", 1, true))
 
         workspace.project_search = "lua"
         workspace:render_footer()

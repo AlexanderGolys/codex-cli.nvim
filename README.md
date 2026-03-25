@@ -184,6 +184,8 @@ Queued execution uses project-local skills under `.clodex/skills/` and the bundl
 
 The unified prompt creator keeps footer actions visible at all times. A target-project picker now stays docked on the left and defaults to the active project for the current tab; use `Up`/`Down` there to change the target, `Right` to jump back into the editor, and `Left` or `Shift-Tab` from the first input to move back to the project list. Use `</>` to switch prompt kinds, `[/]` to switch bug-source tabs, `Ctrl-V` to replace the attached clipboard image, and `Ctrl-S`, `Ctrl-Q`, `Ctrl-E`, or `Ctrl-L` to plan, queue, run immediately, or send straight to the live project chat. Attached clipboard images are previewed in a separate pane docked to the right of the creator. Closing the queue workspace also clears any project or prompt filters so the next open starts from the full list again. Immediate direct execution currently works only with the Codex backend.
 
+In the queue workspace project panel, press `I` to set, change, or remove a custom project icon through `snacks.picker.icons()`. The chosen icon is then shown next to that project in left-side project lists.
+
 ## Project files
 
 Clodex keeps durable project data inside each repository:

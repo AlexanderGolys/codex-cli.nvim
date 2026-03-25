@@ -18,6 +18,7 @@ local language_profile = LanguageProfile.new()
 ---@field avg_lines_per_file? number
 ---@field remote_name? string
 ---@field last_file_modified_at? integer
+---@field project_icon? string
 ---@field languages Clodex.ProjectDetails.LanguageStat[]
 
 --- Defines the Clodex.ProjectDetails.Metadata type for this module.
@@ -158,13 +159,23 @@ local function normalize_snapshot(snapshot)
     return nil
   end
 
-  return {
-    file_count = tonumber(snapshot.file_count) or 0,
-    avg_lines_per_file = tonumber(snapshot.avg_lines_per_file) or nil,
-    remote_name = type(snapshot.remote_name) == "string" and snapshot.remote_name or nil,
-    last_file_modified_at = tonumber(snapshot.last_file_modified_at) or nil,
-    languages = type(snapshot.languages) == "table" and vim.deepcopy(snapshot.languages) or {},
-  }
+    return {
+      file_count = tonumber(snapshot.file_count) or 0,
+      avg_lines_per_file = tonumber(snapshot.avg_lines_per_file) or nil,
+      remote_name = type(snapshot.remote_name) == "string" and snapshot.remote_name or nil,
+      last_file_modified_at = tonumber(snapshot.last_file_modified_at) or nil,
+      project_icon = type(snapshot.project_icon) == "string" and vim.trim(snapshot.project_icon) ~= ""
+        and snapshot.project_icon or nil,
+      languages = type(snapshot.languages) == "table" and vim.deepcopy(snapshot.languages) or {},
+    }
+end
+
+---@param self Clodex.ProjectDetails
+---@param project Clodex.Project
+---@return Clodex.ProjectDetails.Metadata, Clodex.ProjectDetails.Snapshot?
+local function load_metadata_snapshot(self, project)
+  local metadata = read_metadata(self.config, project.root)
+  return metadata, normalize_snapshot(metadata.snapshot)
 end
 
 ---@param self Clodex.ProjectDetails
@@ -213,6 +224,26 @@ end
 ---@param timestamp? integer
 function Details:touch_activity(project, timestamp)
   return project, timestamp
+end
+
+---@param project Clodex.Project
+---@return string?
+function Details:get_icon(project)
+  local snapshot = self:get_cached(project)
+  return snapshot and snapshot.project_icon or nil
+end
+
+---@param project Clodex.Project
+---@param icon? string
+function Details:set_icon(project, icon)
+  local metadata, snapshot = load_metadata_snapshot(self, project)
+  snapshot = snapshot or self:compute(project)
+  icon = type(icon) == "string" and vim.trim(icon) or ""
+  snapshot.project_icon = icon ~= "" and icon or nil
+  metadata.captured_at = os.time()
+  metadata.snapshot = vim.deepcopy(snapshot)
+  write_metadata(self.config, project.root, metadata)
+  cache_snapshot(self, project.root, snapshot, metadata.captured_at)
 end
 
 --- Removes a project details item and normalizes dependent state.
@@ -344,8 +375,9 @@ function Details:get(project)
     return vim.deepcopy(cached.snapshot)
   end
 
+  local metadata, existing = load_metadata_snapshot(self, project)
   local snapshot = self:compute(project)
-  local metadata = read_metadata(self.config, project.root)
+  snapshot.project_icon = existing and existing.project_icon or nil
   metadata.captured_at = now
   metadata.snapshot = vim.deepcopy(snapshot)
   write_metadata(self.config, project.root, metadata)

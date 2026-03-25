@@ -6,6 +6,22 @@ local notify = require("clodex.util.notify")
 local MarkdownPreview = require("clodex.ui.markdown_preview")
 local ui = require("clodex.ui.select")
 
+local function current_project_icon(self, project)
+    local details = self.app.project_details_store
+    if not details or not details.get_icon then
+        return nil
+    end
+    return details:get_icon(project)
+end
+
+local function set_project_icon(self, project, icon)
+    local details = self.app.project_details_store
+    if not details or not details.set_icon then
+        return
+    end
+    details:set_icon(project, icon)
+end
+
 --- Coordinates project-scoped actions for registry entries and tab focus.
 --- Project creation, selection, deletion, and terminal lifecycle are routed through this module.
 ---@class Clodex.AppProjectActions
@@ -109,6 +125,81 @@ function ProjectActions.new(app)
         app = app,
         cheatsheet_preview = MarkdownPreview.new("clodex-project-cheatsheet"),
     }, ProjectActions)
+end
+
+---@param project Clodex.Project?
+---@param on_done? fun(icon?: string)
+function ProjectActions:pick_project_icon(project, on_done)
+    project = ensure_project(project)
+    if not project then
+        return
+    end
+
+    local current_icon = current_project_icon(self, project)
+    local actions = {
+        {
+            label = current_icon and "Change icon" or "Set icon",
+            detail = current_icon and ("Current icon: %s"):format(current_icon) or "Choose a custom project icon",
+            value = "pick",
+            icon = current_icon,
+        },
+    }
+    if current_icon then
+        actions[#actions + 1] = {
+            label = "Remove icon",
+            detail = "Clear the custom project icon",
+            value = "remove",
+        }
+    end
+
+    ui.pick_text(actions, {
+        prompt = ("Project icon for %s"):format(project.name),
+        snacks = {
+            preview = "none",
+            layout = { hidden = { "preview" } },
+        },
+    }, function(choice)
+        if not choice then
+            return
+        end
+        if choice.value == "remove" then
+            set_project_icon(self, project, nil)
+            self.app.project_details_store:touch_activity(project)
+            self.app:refresh_views()
+            notify.notify(("Removed custom icon for %s"):format(project.name))
+            if on_done then
+                on_done(nil)
+            end
+            return
+        end
+
+        local ok, Snacks = pcall(require, "snacks")
+        if not ok or not Snacks.picker or not Snacks.picker.icons then
+            notify.error("snacks.nvim icon picker is unavailable")
+            return
+        end
+
+        Snacks.picker.icons({
+            title = ("Icon for %s"):format(project.name),
+            confirm = function(picker, item)
+                picker:close()
+                if not item then
+                    return
+                end
+                local icon = item.icon or item.data or item.text
+                if type(icon) ~= "string" or vim.trim(icon) == "" then
+                    return
+                end
+                set_project_icon(self, project, icon)
+                self.app.project_details_store:touch_activity(project)
+                self.app:refresh_views()
+                notify.notify(("Updated icon for %s to %s"):format(project.name, icon))
+                if on_done then
+                    on_done(icon)
+                end
+            end,
+        })
+    end)
 end
 
 ---@param self Clodex.AppProjectActions
@@ -559,7 +650,6 @@ function ProjectActions:set_backend(backend)
     end
 
     values.backend = Backend.normalize(next_backend)
-    values.prompt_execution.skills_dir = Backend.default_skills_dir(values.backend)
     self.app.terminals:update_config(values)
     self.app.state_preview:update_config(values)
     self.app.execution:update_config(values)

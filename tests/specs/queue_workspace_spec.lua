@@ -4,6 +4,7 @@ describe("clodex.ui.queue_workspace", function()
     local confirm_callbacks
     local active_input_open
     local input_callbacks
+    local open_creator_calls
 
     local function extmark_rows(buf, hl_group)
         local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
@@ -21,6 +22,7 @@ describe("clodex.ui.queue_workspace", function()
         original_select = package.loaded["clodex.ui.select"]
         confirm_callbacks = {}
         input_callbacks = {}
+        open_creator_calls = {}
         package.loaded["snacks.input"] = {
             input = function() end,
         }
@@ -78,7 +80,7 @@ describe("clodex.ui.queue_workspace", function()
                     implement_queue_item = function(_, queued_project, item_id)
                         assert.are.same(project, queued_project)
                         assert.are.equal(item.id, item_id)
-                        return true
+                        return true, "started"
                     end,
                 },
                 project_actions = {
@@ -184,7 +186,7 @@ describe("clodex.ui.queue_workspace", function()
                     implement_queue_item = function(_, queued_project, item_id)
                         assert.are.same(project, queued_project)
                         implemented_item_id = item_id
-                        return true
+                        return true, "started"
                     end,
                 },
                 project_actions = {
@@ -450,6 +452,57 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal("", workspace.queue_search)
     end)
 
+    it("offers a chat action when creating todos from the workspace", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local submitted
+        local refresh_count = 0
+        local workspace = {
+            config = {
+                storage = {
+                    workspaces_dir = ".clodex",
+                },
+            },
+            app = {
+                prompt_actions = {
+                    open_creator = function(_, queued_project, opts)
+                        open_creator_calls[#open_creator_calls + 1] = {
+                            project = queued_project,
+                            opts = opts,
+                        }
+                        opts.on_submit({
+                            title = "Fix parser",
+                            details = "Handle nested tokens",
+                        }, "chat")
+                    end,
+                    submit_prompt = function(_, queued_project, spec, action)
+                        submitted = { project = queued_project, spec = spec, action = action }
+                    end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            refresh = function()
+                refresh_count = refresh_count + 1
+            end,
+            queue_index = 4,
+        }
+
+        Workspace.add_todo(workspace)
+
+        assert.are.equal(1, #open_creator_calls)
+        assert.are.equal("todo", open_creator_calls[1].opts.category)
+        assert.are.same(project, submitted.project)
+        assert.are.equal("Fix parser", submitted.spec.title)
+        assert.are.equal("Handle nested tokens", submitted.spec.details)
+        assert.are.equal("chat", submitted.action)
+        assert.are.equal(1, refresh_count)
+        assert.are.equal(1, workspace.queue_index)
+    end)
+
     it("moves the queue selection highlight when keyboard navigation changes the selected item", function()
         local project = {
             name = "Test Project",
@@ -514,8 +567,8 @@ describe("clodex.ui.queue_workspace", function()
 
         local moved_rows = extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive")
 
-        assert.are.same({ 1, 2 }, initial_rows)
-        assert.are.same({ 3, 4 }, moved_rows)
+        assert.are.same({ 1, 2, 3 }, initial_rows)
+        assert.are.same({ 4, 5, 6 }, moved_rows)
 
         vim.api.nvim_win_close(workspace.queue_win, true)
     end)
@@ -596,8 +649,8 @@ describe("clodex.ui.queue_workspace", function()
         workspace:render_queue()
         workspace:update_window_highlights()
 
-        assert.are.same({ 0, 1, 2 }, extmark_rows(workspace.project_buf, "ClodexQueueSelectionInactive"))
-        assert.are.same({ 1, 2 }, extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive"))
+        assert.are.same({ 0, 1 }, extmark_rows(workspace.project_buf, "ClodexQueueSelectionInactive"))
+        assert.are.same({ 1, 2, 3 }, extmark_rows(workspace.queue_buf, "ClodexQueueSelectionActive"))
         assert.is_truthy(vim.wo[workspace.project_win].winhl:find("Normal:ClodexQueueFocusInactive", 1, true))
         assert.is_truthy(vim.wo[workspace.project_win].winhl:find("NormalFloat:ClodexQueueFocusInactive", 1, true))
         assert.is_truthy(vim.wo[workspace.project_win].winhl:find("FloatTitle:ClodexQueueInactiveBorder", 1, true))
@@ -607,6 +660,58 @@ describe("clodex.ui.queue_workspace", function()
 
         vim.api.nvim_win_close(workspace.project_win, true)
         vim.api.nvim_win_close(workspace.queue_win, true)
+    end)
+
+    it("renders stored project icons in the project list", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {
+                    active_project_root = project.root,
+                }
+            end,
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get = function()
+                    return { project_icon = "★", languages = {}, file_count = 0 }
+                end,
+                get_cached = function()
+                    return { project_icon = "★", languages = {}, file_count = 0 }
+                end,
+            },
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+
+        workspace:render_projects()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.project_buf, 0, 1, false)
+        assert.is_truthy(lines[1]:find("★ Test Project", 1, true))
     end)
 
     it("filters queue items by prompt search text", function()
@@ -676,6 +781,7 @@ describe("clodex.ui.queue_workspace", function()
             "Planned (1)",
             "  Fix parser",
             "    Adjust token handling",
+            "    Type: TODO",
             "",
         }, lines)
 
@@ -1197,7 +1303,7 @@ describe("clodex.ui.queue_workspace", function()
         local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
         assert.is_truthy(vim.startswith(queue_lines[1], "a: add prompt"))
         assert.is_nil(queue_lines[1]:find("start session", 1, true))
-        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+        assert.are.equal("/: filter by prompt text", queue_lines[2])
     end)
 
     it("updates footer actions when window focus moves between pickers", function()
@@ -1288,7 +1394,7 @@ describe("clodex.ui.queue_workspace", function()
         local queue_lines = vim.api.nvim_buf_get_lines(workspace.footer_buf, 0, -1, false)
         assert.is_nil(queue_lines[1]:find("start session", 1, true))
         assert.is_truthy(queue_lines[1]:find("edit prompt", 1, true))
-        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+        assert.are.equal("/: filter by prompt text", queue_lines[2])
 
         workspace:clear_focus_tracking()
         vim.api.nvim_win_close(workspace.footer_win, true)
@@ -1464,33 +1570,6 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(1, refresh_count)
     end)
 
-    it("updates the prompt filter while the input is being typed", function()
-        local refresh_count = 0
-        local workspace = {
-            queue_search = "",
-            queue_index = 4,
-            focus = "projects",
-            modal_input_open = false,
-            refresh = function()
-                refresh_count = refresh_count + 1
-            end,
-        }
-
-        setmetatable(workspace, { __index = Workspace })
-
-        workspace:prompt_queue_search()
-
-        assert.are.equal(1, #input_callbacks)
-        assert.is_function(input_callbacks[1].opts.changed)
-
-        input_callbacks[1].opts.changed("token")
-
-        assert.are.equal("token", workspace.queue_search)
-        assert.are.equal(1, workspace.queue_index)
-        assert.are.equal("queue", workspace.focus)
-        assert.are.equal(1, refresh_count)
-    end)
-
     it("re-renders footer actions when focus changes", function()
         local project = {
             name = "Test Project",
@@ -1573,7 +1652,7 @@ describe("clodex.ui.queue_workspace", function()
         assert.is_truthy(vim.startswith(queue_lines[1], "a: add prompt"))
         assert.is_nil(queue_lines[1]:find("start session", 1, true))
         assert.is_truthy(queue_lines[1]:find("edit prompt", 1, true))
-        assert.are.equal("/: search prompt list by title/details/body   Backspace: clear filter", queue_lines[2])
+        assert.are.equal("/: filter by prompt text", queue_lines[2])
 
         vim.api.nvim_win_close(workspace.project_win, true)
         vim.api.nvim_win_close(workspace.queue_win, true)

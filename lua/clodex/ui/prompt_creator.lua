@@ -407,7 +407,9 @@ end
 function Creator:project_list_width()
     local width = 18
     for _, project in ipairs(self.projects) do
-        width = math.max(width, vim.fn.strdisplaywidth(project.name) + 2)
+        local details = self.app.project_details_store and self.app.project_details_store:get_cached(project) or nil
+        local icon = details and details.project_icon and (details.project_icon .. " ") or ""
+        width = math.max(width, vim.fn.strdisplaywidth(icon .. project.name) + 2)
     end
     return math.min(width, 28)
 end
@@ -700,7 +702,9 @@ function Creator:render_project_list()
 
     self.project_line_map = {}
     for index, project in ipairs(self.projects) do
-        local line = " " .. project.name
+        local details = self.app.project_details_store and self.app.project_details_store:get_cached(project) or nil
+        local icon = details and details.project_icon and (details.project_icon .. " ") or ""
+        local line = " " .. icon .. project.name
         lines[#lines + 1] = line
         self.project_line_map[#lines] = index
         marks[#marks + 1] = Extmark.inline(

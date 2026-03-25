@@ -1,9 +1,8 @@
-local ui = require("clodex.ui.select")
 local Extmark = require("clodex.ui.extmark")
-local PromptAssets = require("clodex.prompt.assets")
 local Prompt = require("clodex.prompt")
 local PromptContext = require("clodex.prompt.context")
 local TextBlock = require("clodex.ui.text_block")
+local ui = require("clodex.ui.select")
 local ui_win = require("clodex.ui.win")
 local notify = require("clodex.util.notify")
 
@@ -82,7 +81,7 @@ local PROJECT_DETAIL_LABELS = {
     TIMESTAMP_ICON,
 }
 local PROJECT_RUNNING_ICON = "󰚩 "
-local PROJECT_STOPPED_ICON = "󱙻 "
+local PROJECT_STOPPED_ICON = "󱙺 "
 local GITHUB_ICON = ""
 local COMMIT_ICON = "󰜘 "
 local COMMIT_HIGHLIGHT = "SnacksPickerGitCommit"
@@ -259,15 +258,29 @@ local function project_title_prefix(summary)
     return summary.session_running and PROJECT_RUNNING_ICON or PROJECT_STOPPED_ICON
 end
 
+---@param details? Clodex.ProjectDetails.Snapshot
+---@return string
+local function project_name_prefix(details)
+    if details and type(details.project_icon) == "string" and details.project_icon ~= "" then
+        return details.project_icon .. " "
+    end
+    return ""
+end
+
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
+---@param details? Clodex.ProjectDetails.Snapshot
 ---@param max_width integer
 ---@return string, { start_col: integer, end_col: integer, hl_group: string }[]
-local function project_title_text(project, summary, max_width)
+local function project_title_text(project, summary, details, max_width)
     local prefix = project_title_prefix(summary)
+    local name_prefix = project_name_prefix(details)
     local suffix, spans = project_count_suffix(summary)
-    local name_width = math.max(max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(suffix), 1)
-    return truncate_display(prefix .. truncate_display(project.name, name_width) .. suffix, max_width), spans
+    local name_width = math.max(
+        max_width - vim.fn.strdisplaywidth(prefix) - vim.fn.strdisplaywidth(name_prefix) - vim.fn.strdisplaywidth(suffix),
+        1
+    )
+    return truncate_display(prefix .. name_prefix .. truncate_display(project.name, name_width) .. suffix, max_width), spans
 end
 
 ---@param projects Clodex.Project[]
@@ -307,10 +320,11 @@ end
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
 ---@return integer
-local function project_title_width(project, summary)
+local function project_title_width(project, summary, details)
     local prefix = project_title_prefix(summary)
     local suffix = project_count_suffix(summary)
-    return vim.fn.strdisplaywidth(prefix) + vim.fn.strdisplaywidth(project.name) + vim.fn.strdisplaywidth(suffix)
+    return vim.fn.strdisplaywidth(prefix) + vim.fn.strdisplaywidth(project_name_prefix(details))
+        + vim.fn.strdisplaywidth(project.name) + vim.fn.strdisplaywidth(suffix)
 end
 
 ---@param self Clodex.QueueWorkspace
@@ -332,7 +346,7 @@ local function project_target_width(self)
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
         local details = self.app.project_details_store:get_cached(project)
-        width = math.max(width, project_title_width(project, summary) + PROJECT_LAYOUT_PADDING)
+        width = math.max(width, project_title_width(project, summary, details) + PROJECT_LAYOUT_PADDING)
 
         for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
             width = math.max(width, vim.fn.strdisplaywidth(detail) + PROJECT_LAYOUT_PADDING)
@@ -367,6 +381,18 @@ local function prompt_queue_label(queue_name)
     return QUEUE_LABELS[queue_name] or queue_name
 end
 
+---@param value any
+---@return string
+local function search_text(value)
+    if type(value) == "string" then
+        return value
+    end
+    if value == nil then
+        return ""
+    end
+    return vim.inspect(value)
+end
+
 ---@param item Clodex.QueueItem
 ---@param queue_name Clodex.QueueName
 ---@param query string
@@ -378,9 +404,9 @@ local function queue_item_matches_search(item, queue_name, query)
 
     local text = table
         .concat({
-            item.title or "",
-            item.details or "",
-            item.prompt or "",
+            search_text(item.title),
+            search_text(item.details),
+            search_text(item.prompt),
             prompt_queue_label(queue_name),
         }, "\n")
         :lower()
@@ -547,7 +573,7 @@ local function footer_actions(focus, project_search, queue_search)
         return {
             title = " Project Actions ",
             lines = {
-                "s: set current project   t: open in new tab   A: start session   X: stop session   a: add prompt/project   D: delete project",
+                "s: set current project   I: set icon   t: open in new tab   A: start session   X: stop session   a: add prompt/project   D: delete project",
                 "/: filter by project text" .. project_clear_filter,
             },
         }
@@ -1152,6 +1178,9 @@ function Workspace:attach_keymaps()
     map(self.project_buf, "s", function()
         self:set_current_project()
     end)
+    map(self.project_buf, "I", function()
+        self:pick_selected_project_icon()
+    end)
     map(self.project_buf, "t", function()
         self:open_selected_project_in_new_tab()
     end)
@@ -1509,7 +1538,7 @@ function Workspace:render_projects()
         local summary = self.app:queue_summary(project)
         local details = project.root == selected_root and self.app.project_details_store:get(project)
             or self.app.project_details_store:get_cached(project)
-        local title, count_spans = project_title_text(project, summary, max_width)
+        local title, count_spans = project_title_text(project, summary, details, max_width)
         local count_suffix = project_count_suffix(summary)
         self.project_rows[#self.project_rows + 1] = {
             kind = "item",
@@ -1788,6 +1817,17 @@ function Workspace:open_selected_project_in_new_tab()
     end)
 end
 
+function Workspace:pick_selected_project_icon()
+    local project = self:selected_project()
+    if not project then
+        notify.warn("No project selected")
+        return
+    end
+    self.app.project_actions:pick_project_icon(project, function()
+        self:refresh()
+    end)
+end
+
 --- Pins the selected project as the current project for the active tab.
 --- This reuses the normal project-target routing so terminal and preview state stay in sync.
 function Workspace:set_current_project()
@@ -1825,37 +1865,16 @@ function Workspace:add_todo()
         return
     end
 
-    ui.multiline_input({
-        prompt = ("Todo prompt for %s"):format(project.name),
+    self.app.prompt_actions:open_creator(project, {
+        category = "todo",
         context = PromptContext.capture({ project = project }),
-        paste_image = function()
-            local image_path =
-                PromptAssets.save_clipboard_image(self.config.storage.workspaces_dir, project.root, "todo")
-            if not image_path then
-                return nil
-            end
-            return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
+        active_project_root = project.root,
+        on_submit = function(spec, action, selected_project)
+            self.app.prompt_actions:submit_prompt(selected_project or project, spec, action)
+            self.queue_index = 1
+            self:refresh()
         end,
-        submit_actions = {
-            { value = "save",  label = "plan",    key = "<C-s>" },
-            { value = "queue", label = "queue",   key = "<C-q>" },
-            { value = "exec",  label = "run now", key = "<C-e>" },
-        },
-    }, function(body, action)
-        local spec = body and Prompt.parse(body) or nil
-        if not spec then
-            return
-        end
-        local queue_opts = action == "exec" and { queue = "queued", implement = true, run_mode = "exec" }
-            or action == "queue" and { queue = "queued" }
-            or nil
-        self.app.queue_actions:add_project_todo(project, {
-            title = spec.title,
-            details = spec.details,
-        }, queue_opts)
-        self.queue_index = 1
-        self:refresh()
-    end)
+    })
 end
 
 function Workspace:edit_queue_item()
@@ -1866,29 +1885,28 @@ function Workspace:edit_queue_item()
         return
     end
 
-    ui.multiline_input({
-        prompt = ("Edit prompt for %s"):format(project.name),
-        default = Prompt.render(item.title, item.details),
+    self.app.prompt_actions:open_creator(project, {
+        category = Prompt.categories.is_valid(item.kind) and item.kind or "todo",
         context = PromptContext.capture({ project = project }),
-        paste_image = function()
-            local image_path =
-                PromptAssets.save_clipboard_image(self.config.storage.workspaces_dir, project.root, item.kind)
-            if not image_path then
-                return nil
-            end
-            return ("Use the saved clipboard image at `%s` as an additional visual reference."):format(image_path)
+        active_project_root = project.root,
+        mode = "edit",
+        lock_kind = true,
+        submit_actions = {
+            { value = "save", label = "save", key = "<C-s>" },
+        },
+        initial_draft = {
+            title = item.title,
+            details = item.details,
+            image_path = item.image_path,
+        },
+        on_submit = function(spec)
+            self.app.queue_actions:edit_queue_item(project, item.id, {
+                title = spec.title,
+                details = spec.details,
+            })
+            self:refresh()
         end,
-    }, function(body)
-        local spec = body and Prompt.parse(body) or nil
-        if not spec then
-            return
-        end
-        self.app.queue_actions:edit_queue_item(project, item.id, {
-            title = spec.title,
-            details = spec.details,
-        })
-        self:refresh()
-    end)
+    })
 end
 
 function Workspace:implement_queue_item()
@@ -2174,22 +2192,17 @@ function Workspace:clear_project_search()
 end
 
 function Workspace:prompt_queue_search()
-    local function apply_search(value)
-        self.queue_search = vim.trim(value or "")
-        self.queue_index = 1
-        self.focus = "queue"
-        self:refresh()
-    end
-
     open_workspace_input(self, {
         prompt = "Prompt filter",
         default = self.queue_search,
-        changed = apply_search,
     }, function(value)
         if value == nil then
             return
         end
-        apply_search(value)
+        self.queue_search = vim.trim(value)
+        self.queue_index = 1
+        self.focus = "queue"
+        self:refresh()
     end)
 end
 
