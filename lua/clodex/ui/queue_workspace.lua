@@ -2154,17 +2154,22 @@ function Workspace:clear_project_search()
 end
 
 function Workspace:prompt_queue_search()
+    local function apply_search(value)
+        self.queue_search = vim.trim(value or "")
+        self.queue_index = 1
+        self.focus = "queue"
+        self:refresh()
+    end
+
     open_workspace_input(self, {
         prompt = "Prompt filter",
         default = self.queue_search,
+        changed = apply_search,
     }, function(value)
         if value == nil then
             return
         end
-        self.queue_search = vim.trim(value)
-        self.queue_index = 1
-        self.focus = "queue"
-        self:refresh()
+        apply_search(value)
     end)
 end
 
