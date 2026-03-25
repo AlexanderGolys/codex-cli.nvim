@@ -67,7 +67,9 @@ local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
 
 local FOOTER_KEY_LABELS = {
-    { row = 0, text = "</>" },
+    { row = 0, text = "Left/Right" },
+    { row = 0, text = "h/l" },
+    { row = 0, text = "Ctrl-Left/Right" },
     { row = 0, text = "[/]" },
     { row = 0, text = "Ctrl-V" },
     { row = 1, text = "Ctrl-S" },
@@ -543,7 +545,7 @@ end
 
 function Creator:render_footer()
     local lines = {
-        "</>: prev/next kind   [/]: prev/next source   Ctrl-V: replace clipboard image",
+        "Left/Right or h/l: kind   Ctrl-Left/Right: kind (insert)   [/]: source   Ctrl-V: image",
         "Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
     }
     local marks = {} ---@type Clodex.Extmark[]
@@ -837,10 +839,22 @@ end
 
 ---@param buf integer
 function Creator:apply_common_keymaps(buf)
-    vim.keymap.set("n", ">", function()
+    vim.keymap.set("n", "<Right>", function()
         self:switch_kind(1)
     end, { buffer = buf, silent = true })
-    vim.keymap.set("n", "<", function()
+    vim.keymap.set("n", "l", function()
+        self:switch_kind(1)
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("n", "<Left>", function()
+        self:switch_kind(-1)
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("n", "h", function()
+        self:switch_kind(-1)
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("i", "<C-Right>", function()
+        self:switch_kind(1)
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("i", "<C-Left>", function()
         self:switch_kind(-1)
     end, { buffer = buf, silent = true })
     vim.keymap.set("n", "]", function()

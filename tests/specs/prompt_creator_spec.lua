@@ -260,14 +260,47 @@ describe("clodex.ui.prompt_creator", function()
         end)
 
         local footer_maps = vim.api.nvim_buf_get_keymap(creator.footer_buf, "n")
-        local has_footer_switch = false
+        local footer_insert_maps = vim.api.nvim_buf_get_keymap(creator.footer_buf, "i")
+        local has_right_switch = false
+        local has_left_switch = false
+        local has_h_switch = false
+        local has_l_switch = false
+        local has_old_left_switch = false
+        local has_old_right_switch = false
+        local has_insert_left_switch = false
+        local has_insert_right_switch = false
+
         for _, map in ipairs(footer_maps) do
-            if map.lhs == ">" then
-                has_footer_switch = true
-                break
+            if map.lhs == "<Right>" then
+                has_right_switch = true
+            elseif map.lhs == "<Left>" then
+                has_left_switch = true
+            elseif map.lhs == "h" then
+                has_h_switch = true
+            elseif map.lhs == "l" then
+                has_l_switch = true
+            elseif map.lhs == ">" then
+                has_old_right_switch = true
+            elseif map.lhs == "<" then
+                has_old_left_switch = true
             end
         end
-        assert.is_true(has_footer_switch)
+        for _, map in ipairs(footer_insert_maps) do
+            if map.lhs == "<C-Left>" then
+                has_insert_left_switch = true
+            elseif map.lhs == "<C-Right>" then
+                has_insert_right_switch = true
+            end
+        end
+
+        assert.is_true(has_right_switch)
+        assert.is_true(has_left_switch)
+        assert.is_true(has_h_switch)
+        assert.is_true(has_l_switch)
+        assert.is_true(has_insert_left_switch)
+        assert.is_true(has_insert_right_switch)
+        assert.is_false(has_old_left_switch)
+        assert.is_false(has_old_right_switch)
 
         vim.api.nvim_set_current_win(creator.footer_win.win)
         creator:switch_kind(1)
