@@ -74,17 +74,26 @@ local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
 
+local PROMPT_THEME_WINDOW_FIELDS = {
+    { name = "project_win" },
+    { name = "kind_win" },
+    { name = "footer_win" },
+    { name = "variant_win" },
+    { name = "preview_win" },
+    { name = "layout", slots = { "title_win", "body_win", "preview_win" } },
+}
+
 local function footer_lines(insert_mode)
     if insert_mode then
         return {
             "Tab/Shift-Tab: move focus   Ctrl-V: image",
-            "Ctrl-Left/Right: kind   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
+            "Ctrl-←/→: kind   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
         }
     end
 
     return {
-        "Left/Right or h/l: kind   Up/Down or j/k: project   [/]: source   Ctrl-V: image",
-        "Ctrl-Left/Right: kind (insert)   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
+        "←/→ or h/l: kind   ↑/↓ or j/k: project   [/]: source   Ctrl-V: image",
+        "Ctrl-←/→: kind (insert)   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
     }
 end
 
@@ -93,7 +102,7 @@ local function footer_key_labels(insert_mode)
         return {
             { row = 0, text = "Tab/Shift-Tab" },
             { row = 0, text = "Ctrl-V" },
-            { row = 1, text = "Ctrl-Left/Right" },
+            { row = 1, text = "Ctrl-←/→" },
             { row = 1, text = "Ctrl-S" },
             { row = 1, text = "Ctrl-Q" },
             { row = 1, text = "Ctrl-E" },
@@ -103,19 +112,46 @@ local function footer_key_labels(insert_mode)
     end
 
     return {
-        { row = 0, text = "Left/Right" },
+        { row = 0, text = "←/→" },
         { row = 0, text = "h/l" },
-        { row = 0, text = "Up/Down" },
+        { row = 0, text = "↑/↓" },
         { row = 0, text = "j/k" },
         { row = 0, text = "[/]" },
         { row = 0, text = "Ctrl-V" },
-        { row = 1, text = "Ctrl-Left/Right" },
+        { row = 1, text = "Ctrl-←/→" },
         { row = 1, text = "Ctrl-S" },
         { row = 1, text = "Ctrl-Q" },
         { row = 1, text = "Ctrl-E" },
         { row = 1, text = "Ctrl-L" },
         { row = 1, text = "q" },
     }
+end
+
+---@param winid integer
+---@param mappings table<string, string>
+local function update_winhl(winid, mappings)
+    if winid == 0 or not vim.api.nvim_win_is_valid(winid) then
+        return
+    end
+
+    local winhl = vim.wo[winid].winhl or ""
+    local fields = {}
+    for part in winhl:gmatch("[^,]+") do
+        local source, target = part:match("^([^:]+):(.+)$")
+        if source and target then
+            fields[source] = target
+        end
+    end
+    for source, target in pairs(mappings) do
+        fields[source] = target
+    end
+
+    local parts = {}
+    for source, target in pairs(fields) do
+        parts[#parts + 1] = ("%s:%s"):format(source, target)
+    end
+    table.sort(parts)
+    vim.wo[winid].winhl = table.concat(parts, ",")
 end
 
 ---@param context? Clodex.PromptContext.Capture
@@ -926,11 +962,12 @@ function Creator:render_footer()
     local insert_mode = self:in_insert_mode()
     local lines = footer_lines(insert_mode)
     local marks = {} ---@type Clodex.Extmark[]
+    local key_hl = Prompt.title_group(self.state.kind)
 
     for _, key in ipairs(footer_key_labels(insert_mode)) do
         local start_col = lines[key.row + 1]:find(key.text, 1, true)
         if start_col then
-            marks[#marks + 1] = Extmark.inline(key.row, start_col - 1, start_col - 1 + #key.text, "ClodexPromptEditorKey")
+            marks[#marks + 1] = Extmark.inline(key.row, start_col - 1, start_col - 1 + #key.text, key_hl)
         end
     end
 
@@ -940,6 +977,33 @@ function Creator:render_footer()
     vim.api.nvim_buf_clear_namespace(self.footer_buf, FOOTER_NS, 0, -1)
     for _, mark in ipairs(marks) do
         mark:place(self.footer_buf, FOOTER_NS)
+    end
+end
+
+function Creator:apply_prompt_theme()
+    local prompt_hl = Prompt.title_group(self.state.kind)
+
+    for _, field in ipairs(PROMPT_THEME_WINDOW_FIELDS) do
+        if field.slots then
+            local container = self[field.name]
+            for _, slot in ipairs(field.slots) do
+                local win = container and container[slot]
+                if win and win.valid and win:valid() then
+                    update_winhl(win.win, {
+                        FloatBorder = prompt_hl,
+                        FloatTitle = prompt_hl,
+                    })
+                end
+            end
+        else
+            local win = self[field.name]
+            if win and win.valid and win:valid() then
+                update_winhl(win.win, {
+                    FloatBorder = prompt_hl,
+                    FloatTitle = prompt_hl,
+                })
+            end
+        end
     end
 end
 
@@ -1185,6 +1249,7 @@ end
 
 function Creator:refresh()
     self:ensure_shell_windows()
+    self:apply_prompt_theme()
     self:render_project_list()
     self:render_kind_tabs()
     self:render_variant_tabs()

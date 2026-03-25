@@ -272,7 +272,35 @@ describe("clodex.ui.prompt_creator", function()
 
         local groups = extmark_groups(creator.footer_buf)
 
-        assert.is_true(vim.tbl_contains(groups, "ClodexPromptEditorKey"))
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptTodoTitle"))
+    end)
+
+    it("renders arrow icons in footer hints", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local lines = vim.api.nvim_buf_get_lines(creator.footer_buf, 0, -1, false)
+
+        assert.is_truthy(lines[1]:find("←/→", 1, true))
+        assert.is_truthy(lines[1]:find("↑/↓", 1, true))
+        assert.is_truthy(lines[2]:find("Ctrl-←/→", 1, true))
+        assert.is_nil(lines[1]:find("Left/Right", 1, true))
+        assert.is_nil(lines[1]:find("Up/Down", 1, true))
     end)
 
     it("hides normal-mode navigation hints while editing in insert mode", function()
@@ -302,8 +330,41 @@ describe("clodex.ui.prompt_creator", function()
         local lines = vim.api.nvim_buf_get_lines(creator.footer_buf, 0, -1, false)
 
         assert.is_truthy(lines[1]:find("Tab/Shift%-Tab", 1))
-        assert.is_nil(lines[1]:find("Left/Right", 1, true))
-        assert.is_nil(lines[1]:find("Up/Down", 1, true))
+        assert.is_truthy(lines[2]:find("Ctrl-←/→", 1, true))
+        assert.is_nil(lines[1]:find("←/→", 1, true))
+        assert.is_nil(lines[1]:find("↑/↓", 1, true))
+    end)
+
+    it("matches prompt border and footer keymap colors to the active kind", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
+        assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptTodoTitle"))
+
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.state.kind == "bug"
+        end)
+
+        assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptBugTitle", 1, true))
+        assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptBugTitle"))
     end)
 
     it("supports context token highlighting and completion in the composer body", function()
