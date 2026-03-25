@@ -63,7 +63,19 @@ local DEFAULT_SUBMIT_ACTIONS = {
 }
 
 local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
+local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
+
+local FOOTER_KEY_LABELS = {
+    { row = 0, text = "</>" },
+    { row = 0, text = "[/]" },
+    { row = 0, text = "Ctrl-V" },
+    { row = 1, text = "Ctrl-S" },
+    { row = 1, text = "Ctrl-Q" },
+    { row = 1, text = "Ctrl-E" },
+    { row = 1, text = "Ctrl-L" },
+    { row = 1, text = "q" },
+}
 
 local function read_bug_message_register()
     for _, register in ipairs({ "+", '"', "*" }) do
@@ -534,9 +546,22 @@ function Creator:render_footer()
         "</>: prev/next kind   [/]: prev/next source   Ctrl-V: replace clipboard image",
         "Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
     }
+    local marks = {} ---@type Clodex.Extmark[]
+
+    for _, key in ipairs(FOOTER_KEY_LABELS) do
+        local start_col = lines[key.row + 1]:find(key.text, 1, true)
+        if start_col then
+            marks[#marks + 1] = Extmark.inline(key.row, start_col - 1, start_col - 1 + #key.text, "ClodexPromptEditorKey")
+        end
+    end
+
     vim.bo[self.footer_buf].modifiable = true
     vim.api.nvim_buf_set_lines(self.footer_buf, 0, -1, false, lines)
     vim.bo[self.footer_buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(self.footer_buf, FOOTER_NS, 0, -1)
+    for _, mark in ipairs(marks) do
+        mark:place(self.footer_buf, FOOTER_NS)
+    end
 end
 
 ---@param column integer

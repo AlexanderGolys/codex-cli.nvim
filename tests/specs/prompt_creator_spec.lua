@@ -204,6 +204,30 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal("", title)
     end)
 
+    it("highlights footer keymaps", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local groups = extmark_groups(creator.footer_buf)
+
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptEditorKey"))
+    end)
+
     it("changes kind tabs from the footer and keeps normal-mode focus in the editor", function()
         creator = Creator.open({
             app = {
