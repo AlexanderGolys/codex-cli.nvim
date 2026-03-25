@@ -149,6 +149,46 @@ function ClipboardPreview:focus_default()
     end
 end
 
+---@param winid? integer
+---@return string?
+function ClipboardPreview:focused_slot(winid)
+    winid = winid or vim.api.nvim_get_current_win()
+    if self.title_win and self.title_win:valid() and winid == self.title_win.win then
+        return "title"
+    end
+    if self.note_win and self.note_win:valid() and winid == self.note_win.win then
+        return "body"
+    end
+    if self.preview_win and self.preview_win:valid() and winid == self.preview_win.win then
+        return "preview"
+    end
+end
+
+---@param slot? string
+---@param insert_mode? boolean
+---@return boolean
+function ClipboardPreview:focus_slot(slot, insert_mode)
+    if slot == "preview" and self.preview_win and self.preview_win:valid() then
+        vim.api.nvim_set_current_win(self.preview_win.win)
+        return true
+    end
+    if slot == "body" and self.note_win and self.note_win:valid() then
+        vim.api.nvim_set_current_win(self.note_win.win)
+        if insert_mode then
+            vim.cmd.startinsert()
+        end
+        return true
+    end
+    if self.title_win and self.title_win:valid() then
+        vim.api.nvim_set_current_win(self.title_win.win)
+        if insert_mode then
+            vim.cmd.startinsert()
+        end
+        return true
+    end
+    return false
+end
+
 function ClipboardPreview:close()
     for _, win in ipairs({ self.title_win, self.note_win, self.preview_win }) do
         if win and win:valid() then

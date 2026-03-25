@@ -69,10 +69,6 @@ local M = {
       fg = { from = "DiagnosticError", adjust = 0.18 },
       bold = true,
     },
-    ClodexPromptVisualTitle = {
-      fg = { from = "Special" },
-      bold = true,
-    },
     ClodexPromptFreeformTitle = {
       fg = { from = { "Normal", "NormalFloat" } },
       bold = true,
@@ -90,6 +86,51 @@ local M = {
     },
     ClodexPromptExplainTitle = {
       fg = { from = "Type" },
+      bold = true,
+    },
+    ClodexPromptTodoTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptTodoTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptBugTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptBugTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptNotWorkingTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptNotWorkingTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptFreeformTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptFreeformTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptRefactorTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptRefactorTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptIdeaTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptIdeaTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptExplainTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptExplainTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptSourceTab = {
+      fg = { from = { "Comment", "Normal" } },
+      bg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bold = true,
+    },
+    ClodexPromptSourceTabActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = { "Comment", "Normal" }, attr = "fg" },
       bold = true,
     },
     ClodexPromptPreviewText = {

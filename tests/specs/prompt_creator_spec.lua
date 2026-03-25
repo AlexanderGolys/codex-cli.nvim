@@ -2,6 +2,14 @@ local function wait_for(predicate)
     assert(vim.wait(1000, predicate, 10), "timed out waiting for prompt creator state")
 end
 
+local function extmark_groups(buf)
+    local groups = {}
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
+        groups[#groups + 1] = mark[4].hl_group
+    end
+    return groups
+end
+
 describe("clodex.ui.prompt_creator", function()
     local Creator
     local creator
@@ -141,6 +149,118 @@ describe("clodex.ui.prompt_creator", function()
 
         wait_for(function()
             return creator.footer_win == nil and creator.kind_win == nil and creator.layout.title_win == nil
+        end)
+    end)
+
+    it("renders active and inactive tab highlights", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local groups = extmark_groups(creator.kind_buf)
+
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptTodoTitleActive"))
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptBugTitle"))
+    end)
+
+    it("changes kind tabs from the footer and keeps normal-mode focus in the editor", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        vim.api.nvim_set_current_win(creator.layout.body_win.win)
+        vim.cmd.stopinsert()
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.state.kind == "bug"
+                and creator.layout.body_win
+                and creator.layout.body_win:valid()
+                and vim.api.nvim_get_current_win() == creator.layout.body_win.win
+                and vim.api.nvim_get_mode().mode == "n"
+        end)
+
+        local footer_maps = vim.api.nvim_buf_get_keymap(creator.footer_buf, "n")
+        local has_footer_switch = false
+        for _, map in ipairs(footer_maps) do
+            if map.lhs == ">" then
+                has_footer_switch = true
+                break
+            end
+        end
+        assert.is_true(has_footer_switch)
+
+        vim.api.nvim_set_current_win(creator.footer_win.win)
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.state.kind == "freeform"
+                and vim.api.nvim_get_current_win() == creator.footer_win.win
+        end)
+    end)
+
+    it("changes tabs by mouse hit testing", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "bug",
+            on_submit = function() end,
+        })
+
+        creator:activate_kind_tab_at(creator.kind_tab_spans[3].start_col + 1)
+
+        wait_for(function()
+            return creator.state.kind == "freeform"
+        end)
+
+        creator:switch_kind(-1)
+        wait_for(function()
+            return creator.state.kind == "bug"
+        end)
+
+        creator:activate_variant_tab_at(creator.variant_tab_spans[2].start_col + 1)
+
+        wait_for(function()
+            return creator.state.variant == "clipboard_error"
         end)
     end)
 end)

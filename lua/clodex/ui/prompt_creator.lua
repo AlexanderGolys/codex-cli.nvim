@@ -1,10 +1,10 @@
 local PromptAssets = require("clodex.prompt.assets")
-local PromptContext = require("clodex.prompt.context")
 local CreatorRegistry = require("clodex.prompt.creator_registry")
 local DraftStore = require("clodex.prompt.draft_store")
 local KindRegistry = require("clodex.prompt.kind_registry")
+local Prompt = require("clodex.prompt")
 local PromptSubmit = require("clodex.prompt.submit")
-local fs = require("clodex.util.fs")
+local Extmark = require("clodex.ui.extmark")
 local notify = require("clodex.util.notify")
 local ui_win = require("clodex.ui.win")
 
@@ -49,6 +49,9 @@ local layout_modules = {
 ---@field preview_win? snacks.win
 ---@field close_watchers table<integer, integer>
 ---@field is_closing boolean
+---@field suppress_close_events boolean
+---@field kind_tab_spans { start_col: integer, end_col: integer, index: integer }[]
+---@field variant_tab_spans { start_col: integer, end_col: integer, index: integer }[]
 local Creator = {}
 Creator.__index = Creator
 
@@ -58,6 +61,9 @@ local DEFAULT_SUBMIT_ACTIONS = {
     { value = "exec", label = "run now", key = "<C-e>" },
     { value = "chat", label = "chat", key = "<C-l>" },
 }
+
+local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
+local TAB_PADDING = 1
 
 local function read_bug_message_register()
     for _, register in ipairs({ "+", '"', "*" }) do
@@ -133,6 +139,9 @@ function Creator.new(opts)
         footer_buf = ui_win.create_buffer({ preset = "scratch" }),
         close_watchers = {},
         is_closing = false,
+        suppress_close_events = false,
+        kind_tab_spans = {},
+        variant_tab_spans = {},
     }, Creator)
 
     self:prime_drafts(opts.initial_draft)
@@ -304,35 +313,192 @@ function Creator:preview_height()
     return math.max(self:footer_row() - self:preview_row() + 3, 8)
 end
 
+---@param buf integer
+---@param labels { label: string, hl_group: string, active_hl_group: string }[]
+---@param active_index integer
+---@return { start_col: integer, end_col: integer, index: integer }[]
+function Creator:render_tab_line(buf, labels, active_index)
+    local parts = {} ---@type string[]
+    local marks = {} ---@type Clodex.Extmark[]
+    local spans = {} ---@type { start_col: integer, end_col: integer, index: integer }[]
+    local col = 0
+
+    for index, entry in ipairs(labels) do
+        if index > 1 then
+            parts[#parts + 1] = " "
+            col = col + 1
+        end
+
+        local text = string.rep(" ", TAB_PADDING) .. entry.label .. string.rep(" ", TAB_PADDING)
+        local start_col = col
+        local end_col = start_col + #text
+        parts[#parts + 1] = text
+        marks[#marks + 1] = Extmark.inline(
+            0,
+            start_col,
+            end_col,
+            index == active_index and entry.active_hl_group or entry.hl_group
+        )
+        spans[#spans + 1] = {
+            start_col = start_col,
+            end_col = end_col,
+            index = index,
+        }
+        col = end_col
+    end
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { table.concat(parts) })
+    vim.bo[buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(buf, TAB_NS, 0, -1)
+    for _, mark in ipairs(marks) do
+        mark:place(buf, TAB_NS)
+    end
+    return spans
+end
+
+---@param spans { start_col: integer, end_col: integer, index: integer }[]
+---@param column integer
+---@return integer?
+local function tab_index_at_column(spans, column)
+    local col = math.max((tonumber(column) or 1) - 1, 0)
+    for _, span in ipairs(spans) do
+        if col >= span.start_col and col < span.end_col then
+            return span.index
+        end
+    end
+end
+
+---@return boolean
+function Creator:in_insert_mode()
+    return vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+end
+
+---@return { area: string, slot?: string, insert: boolean }?
+function Creator:capture_focus_context()
+    local current_win = vim.api.nvim_get_current_win()
+    if self.layout and self.layout.focused_slot then
+        local slot = self.layout:focused_slot(current_win)
+        if slot then
+            return {
+                area = "layout",
+                slot = slot,
+                insert = self:in_insert_mode(),
+            }
+        end
+    end
+
+    local candidates = {
+        kind = self.kind_win,
+        variant = self.variant_win,
+        footer = self.footer_win,
+        preview = self.preview_win,
+    }
+    for area, win in pairs(candidates) do
+        if win and win:valid() and current_win == win.win then
+            return {
+                area = area,
+                insert = false,
+            }
+        end
+    end
+end
+
+---@param context { area: string, slot?: string, insert: boolean }?
+---@return boolean
+function Creator:restore_focus_context(context)
+    if not context then
+        return false
+    end
+
+    if context.area == "layout" and self.layout and self.layout.focus_slot and self.layout:focus_slot(context.slot, context.insert) then
+        return true
+    end
+
+    local win = nil ---@type snacks.win?
+    if context.area == "kind" then
+        win = self.kind_win
+    elseif context.area == "variant" then
+        win = self.variant_win
+    elseif context.area == "footer" then
+        win = self.footer_win
+    elseif context.area == "preview" then
+        win = self.preview_win
+    end
+
+    if not win or not win:valid() then
+        return false
+    end
+
+    vim.api.nvim_set_current_win(win.win)
+    return true
+end
+
+function Creator:focus_default()
+    if self.layout and self.layout.focus_default then
+        self.layout:focus_default()
+    end
+end
+
+---@param fn fun()
+function Creator:without_close_watchers(fn)
+    self.suppress_close_events = true
+    local ok, result = pcall(fn)
+    self.suppress_close_events = false
+    if not ok then
+        error(result)
+    end
+    return result
+end
+
+function Creator:apply_shell_keymaps(buf)
+    self:apply_common_keymaps(buf)
+    vim.keymap.set("n", "<LeftMouse>", function()
+        self:click_kind_tab()
+        self:click_variant_tab()
+    end, { buffer = buf, silent = true })
+end
+
 function Creator:render_kind_tabs()
     local labels = {}
-    for index, kind in ipairs(self.kinds) do
-        labels[#labels + 1] = index == self.kind_index and ("[" .. kind.label .. "]") or kind.label
+    for _, kind in ipairs(self.kinds) do
+        labels[#labels + 1] = {
+            label = kind.label,
+            hl_group = Prompt.title_group(kind.id),
+            active_hl_group = Prompt.title_group(kind.id) .. "Active",
+        }
     end
-    vim.bo[self.kind_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(self.kind_buf, 0, -1, false, { table.concat(labels, "  ") })
-    vim.bo[self.kind_buf].modifiable = false
+    self.kind_tab_spans = self:render_tab_line(self.kind_buf, labels, self.kind_index)
 end
 
 function Creator:render_variant_tabs()
     local variants = self:variants()
     if #variants == 0 then
         if self.variant_win and self.variant_win:valid() then
-            self.variant_win:close()
+            self:without_close_watchers(function()
+                self.variant_win:close()
+            end)
         end
         self.variant_win = nil
         self.variant_buf = nil
+        self.variant_tab_spans = {}
         return
     end
 
     self.variant_buf = self.variant_buf or ui_win.create_buffer({ preset = "scratch" })
-    local labels = {}
-    for index, variant in ipairs(variants) do
-        labels[#labels + 1] = index == self.variant_index and ("[" .. variant.label .. "]") or variant.label
+    if not vim.b[self.variant_buf].clodex_prompt_keymaps_applied then
+        self:apply_shell_keymaps(self.variant_buf)
+        vim.b[self.variant_buf].clodex_prompt_keymaps_applied = true
     end
-    vim.bo[self.variant_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(self.variant_buf, 0, -1, false, { table.concat(labels, "  ") })
-    vim.bo[self.variant_buf].modifiable = false
+    local labels = {}
+    for _, variant in ipairs(variants) do
+        labels[#labels + 1] = {
+            label = variant.label,
+            hl_group = "ClodexPromptSourceTab",
+            active_hl_group = "ClodexPromptSourceTabActive",
+        }
+    end
+    self.variant_tab_spans = self:render_tab_line(self.variant_buf, labels, self.variant_index)
     if not self.variant_win then
         self.variant_win = ui_win.open({
             buf = self.variant_buf,
@@ -369,6 +535,40 @@ function Creator:render_footer()
     vim.bo[self.footer_buf].modifiable = false
 end
 
+---@param column integer
+function Creator:activate_kind_tab_at(column)
+    local index = tab_index_at_column(self.kind_tab_spans, column)
+    if not index or index == self.kind_index then
+        return
+    end
+    self:switch_kind(index - self.kind_index)
+end
+
+---@param column integer
+function Creator:activate_variant_tab_at(column)
+    local index = tab_index_at_column(self.variant_tab_spans, column)
+    if not index or index == self.variant_index then
+        return
+    end
+    self:switch_variant(index - self.variant_index)
+end
+
+function Creator:click_kind_tab()
+    local mouse = vim.fn.getmousepos()
+    if not self.kind_win or not self.kind_win:valid() or mouse.winid ~= self.kind_win.win then
+        return
+    end
+    self:activate_kind_tab_at(mouse.column)
+end
+
+function Creator:click_variant_tab()
+    local mouse = vim.fn.getmousepos()
+    if not self.variant_win or not self.variant_win:valid() or mouse.winid ~= self.variant_win.win then
+        return
+    end
+    self:activate_variant_tab_at(mouse.column)
+end
+
 ---@param win? snacks.win
 function Creator:watch_window(win)
     if not win or not win.valid or not win:valid() then
@@ -385,6 +585,9 @@ function Creator:watch_window(win)
         once = true,
         callback = function()
             self.close_watchers[winid] = nil
+            if self.suppress_close_events then
+                return
+            end
             self:close()
         end,
     })
@@ -419,6 +622,10 @@ function Creator:ensure_shell_windows()
             theme = "prompt_footer",
         })
         self:watch_window(self.kind_win)
+        if not vim.b[self.kind_buf].clodex_prompt_keymaps_applied then
+            self:apply_shell_keymaps(self.kind_buf)
+            vim.b[self.kind_buf].clodex_prompt_keymaps_applied = true
+        end
     else
         self.kind_win:update()
     end
@@ -443,6 +650,10 @@ function Creator:ensure_shell_windows()
             theme = "prompt_footer",
         })
         self:watch_window(self.footer_win)
+        if not vim.b[self.footer_buf].clodex_prompt_keymaps_applied then
+            self:apply_common_keymaps(self.footer_buf)
+            vim.b[self.footer_buf].clodex_prompt_keymaps_applied = true
+        end
     else
         self.footer_win:update()
     end
@@ -451,7 +662,9 @@ end
 function Creator:render_preview()
     if not self.state.image_path then
         if self.preview_win and self.preview_win:valid() then
-            self.preview_win:close()
+            self:without_close_watchers(function()
+                self.preview_win:close()
+            end)
         end
         self.preview_win = nil
         self.preview_buf = nil
@@ -482,6 +695,10 @@ function Creator:render_preview()
             theme = "prompt_footer",
         })
         self:watch_window(self.preview_win)
+        if not vim.b[self.preview_buf].clodex_prompt_keymaps_applied then
+            self:apply_common_keymaps(self.preview_buf)
+            vim.b[self.preview_buf].clodex_prompt_keymaps_applied = true
+        end
     else
         self.preview_win:update()
     end
@@ -499,9 +716,12 @@ function Creator:render_preview()
     vim.bo[self.preview_buf].modifiable = false
 end
 
-function Creator:activate_layout()
+---@param focus_context? { area: string, slot?: string, insert: boolean }
+function Creator:activate_layout(focus_context)
     if self.layout and self.layout.close then
-        self.layout:close()
+        self:without_close_watchers(function()
+            self.layout:close()
+        end)
     end
     local creator = CreatorRegistry.get(self.state.kind)
     local layout_id = creator.layout
@@ -515,7 +735,9 @@ function Creator:activate_layout()
     self.layout:open()
     self.layout:set_draft(self.drafts:get(self.state.kind, self.state.variant, self.state))
     self:render_preview()
-    self.layout:focus_default()
+    if not self:restore_focus_context(focus_context) then
+        self:focus_default()
+    end
 end
 
 function Creator:refresh()
@@ -553,13 +775,15 @@ function Creator:switch_kind(delta)
     if self.lock_kind then
         return
     end
+    local focus_context = self:capture_focus_context()
     self:save_current_draft()
     local count = #self.kinds
     self.kind_index = ((self.kind_index - 1 + delta) % count) + 1
     self.variant_index = 1
     self:sync_state_from_draft()
-    self:activate_layout()
+    self:activate_layout(focus_context)
     self:refresh()
+    self:restore_focus_context(focus_context)
 end
 
 ---@param delta integer
@@ -568,11 +792,13 @@ function Creator:switch_variant(delta)
     if #variants == 0 then
         return
     end
+    local focus_context = self:capture_focus_context()
     self:save_current_draft()
     self.variant_index = ((self.variant_index - 1 + delta) % #variants) + 1
     self:sync_state_from_draft()
-    self:activate_layout()
+    self:activate_layout(focus_context)
     self:refresh()
+    self:restore_focus_context(focus_context)
 end
 
 ---@param buf integer

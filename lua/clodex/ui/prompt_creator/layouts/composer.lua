@@ -141,6 +141,39 @@ function Composer:focus_default()
     self:focus_title()
 end
 
+---@param winid? integer
+---@return string?
+function Composer:focused_slot(winid)
+    winid = winid or vim.api.nvim_get_current_win()
+    if self.title_win and self.title_win:valid() and winid == self.title_win.win then
+        return "title"
+    end
+    if self.body_win and self.body_win:valid() and winid == self.body_win.win then
+        return "body"
+    end
+end
+
+---@param slot? string
+---@param insert_mode? boolean
+---@return boolean
+function Composer:focus_slot(slot, insert_mode)
+    if slot == "body" and self.body_win and self.body_win:valid() then
+        vim.api.nvim_set_current_win(self.body_win.win)
+        if insert_mode then
+            vim.cmd.startinsert()
+        end
+        return true
+    end
+    if self.title_win and self.title_win:valid() then
+        vim.api.nvim_set_current_win(self.title_win.win)
+        if insert_mode then
+            vim.cmd.startinsert()
+        end
+        return true
+    end
+    return false
+end
+
 function Composer:close()
     if self.title_win and self.title_win:valid() then
         self.title_win:close()
