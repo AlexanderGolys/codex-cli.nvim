@@ -142,6 +142,35 @@ describe("clodex.app.queue_actions", function()
         assert.are.same({}, moved.history_commits)
     end)
 
+    it("coerces non-string rewind fields before trimming them", function()
+        local item = queue:add_todo(project, {
+            title = "fix prompt flow",
+            details = "return to queued",
+            queue = "queued",
+            kind = "todo",
+        })
+        queue:advance(project, item.id)
+        local timer = vim.uv.new_timer()
+        queue:update_implemented_item(project, item.id, {
+            summary = timer,
+            completed_at = "2026-01-01T00:00:00Z",
+        })
+
+        actions:rewind_queue_item(project, item.id, {
+            queue = "implemented",
+            mark_not_working = true,
+            note = timer,
+        })
+
+        local queue_name, _, moved = queue:find_item(project, item.id)
+        timer:close()
+
+        assert.are.equal("queued", queue_name)
+        assert.are.equal("notworking", moved.kind)
+        assert.is_true(moved.details:find("## User Note") ~= nil)
+        assert.is_true(moved.details:find("uv_timer") ~= nil)
+    end)
+
     it("moves a history item to another project when the source queue is specified", function()
         local item = queue:add_todo(project, {
             title = "share prompt",

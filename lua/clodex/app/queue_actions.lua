@@ -36,6 +36,18 @@ local PREVIOUS_QUEUE = {
     history = "implemented",
 }
 
+---@param value any
+---@return string
+local function trimmed_text(value)
+    if value == nil then
+        return ""
+    end
+    if type(value) == "string" then
+        return vim.trim(value)
+    end
+    return vim.trim(tostring(value))
+end
+
 ---@param item Clodex.QueueItem
 ---@param opts Clodex.AppQueueActions.RewindOpts
 ---@param project_root? string
@@ -48,11 +60,11 @@ local function rewind_item_spec(item, opts, project_root)
 
     local sections = {} ---@type string[]
 
-    local original_title = vim.trim(moved.title or "")
-    local original_details = vim.trim(moved.details or "")
-    local note = vim.trim(opts.note or "")
+    local original_title = trimmed_text(moved.title)
+    local original_details = trimmed_text(moved.details)
+    local note = trimmed_text(opts.note)
     local commits = moved.history_commits or {}
-    local commit_summary = vim.trim(moved.history_summary or "")
+    local commit_summary = trimmed_text(moved.history_summary)
 
     local header =
         "A previously implemented feature or fix is not working as expected. The original implementation needs to be investigated and fixed."
