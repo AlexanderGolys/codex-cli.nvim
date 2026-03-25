@@ -275,6 +275,37 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_true(vim.tbl_contains(groups, "ClodexPromptEditorKey"))
     end)
 
+    it("hides normal-mode navigation hints while editing in insert mode", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        creator.in_insert_mode = function()
+            return true
+        end
+        creator:render_footer()
+
+        local lines = vim.api.nvim_buf_get_lines(creator.footer_buf, 0, -1, false)
+
+        assert.is_truthy(lines[1]:find("Tab/Shift%-Tab", 1))
+        assert.is_nil(lines[1]:find("Left/Right", 1, true))
+        assert.is_nil(lines[1]:find("Up/Down", 1, true))
+    end)
+
     it("supports context token highlighting and completion in the composer body", function()
         creator = Creator.open({
             app = {
@@ -399,6 +430,38 @@ describe("clodex.ui.prompt_creator", function()
             return creator.state.kind == "freeform"
                 and vim.api.nvim_get_current_win() == creator.footer_win.win
         end)
+    end)
+
+    it("does not bind insert-mode letters or arrows to project switching", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local title_insert_maps = vim.api.nvim_buf_get_keymap(creator.layout.title_buf, "i")
+        local body_insert_maps = vim.api.nvim_buf_get_keymap(creator.layout.body_buf, "i")
+
+        for _, map in ipairs(title_insert_maps) do
+            assert.are_not.equal("<Left>", map.lhs)
+            assert.are_not.equal("h", map.lhs)
+            assert.are_not.equal("<Down>", map.lhs)
+        end
+        for _, map in ipairs(body_insert_maps) do
+            assert.are_not.equal("<Up>", map.lhs)
+        end
     end)
 
     it("changes tabs by mouse hit testing", function()

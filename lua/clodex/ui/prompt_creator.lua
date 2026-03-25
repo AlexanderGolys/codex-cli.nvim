@@ -74,20 +74,49 @@ local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
 
-local FOOTER_KEY_LABELS = {
-    { row = 0, text = "Left/Right" },
-    { row = 0, text = "h/l" },
-    { row = 0, text = "Up/Down" },
-    { row = 0, text = "j/k" },
-    { row = 0, text = "[/]" },
-    { row = 0, text = "Ctrl-V" },
-    { row = 1, text = "Ctrl-Left/Right" },
-    { row = 1, text = "Ctrl-S" },
-    { row = 1, text = "Ctrl-Q" },
-    { row = 1, text = "Ctrl-E" },
-    { row = 1, text = "Ctrl-L" },
-    { row = 1, text = "q" },
-}
+local function footer_lines(insert_mode)
+    if insert_mode then
+        return {
+            "Tab/Shift-Tab: move focus   Ctrl-V: image",
+            "Ctrl-Left/Right: kind   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
+        }
+    end
+
+    return {
+        "Left/Right or h/l: kind   Up/Down or j/k: project   [/]: source   Ctrl-V: image",
+        "Ctrl-Left/Right: kind (insert)   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
+    }
+end
+
+local function footer_key_labels(insert_mode)
+    if insert_mode then
+        return {
+            { row = 0, text = "Tab/Shift-Tab" },
+            { row = 0, text = "Ctrl-V" },
+            { row = 1, text = "Ctrl-Left/Right" },
+            { row = 1, text = "Ctrl-S" },
+            { row = 1, text = "Ctrl-Q" },
+            { row = 1, text = "Ctrl-E" },
+            { row = 1, text = "Ctrl-L" },
+            { row = 1, text = "q" },
+        }
+    end
+
+    return {
+        { row = 0, text = "Left/Right" },
+        { row = 0, text = "h/l" },
+        { row = 0, text = "Up/Down" },
+        { row = 0, text = "j/k" },
+        { row = 0, text = "[/]" },
+        { row = 0, text = "Ctrl-V" },
+        { row = 1, text = "Ctrl-Left/Right" },
+        { row = 1, text = "Ctrl-S" },
+        { row = 1, text = "Ctrl-Q" },
+        { row = 1, text = "Ctrl-E" },
+        { row = 1, text = "Ctrl-L" },
+        { row = 1, text = "q" },
+    }
+end
 
 ---@param context? Clodex.PromptContext.Capture
 ---@param project Clodex.Project
@@ -346,6 +375,14 @@ function Creator:attach_prompt_context(buf)
         buffer = buf,
         callback = function()
             ui_select.clear_prompt_context(buf)
+        end,
+    })
+    vim.api.nvim_create_autocmd({ "InsertEnter", "InsertLeave" }, {
+        buffer = buf,
+        callback = function()
+            if self.footer_buf and vim.api.nvim_buf_is_valid(self.footer_buf) then
+                self:render_footer()
+            end
         end,
     })
     vim.keymap.set("n", "&", function()
@@ -807,11 +844,11 @@ end
 ---@param buf integer
 function Creator:apply_first_slot_keymaps(buf)
     self:apply_common_keymaps(buf)
-    vim.keymap.set({ "n", "i" }, "<Left>", function()
+    vim.keymap.set("n", "<Left>", function()
         self:focus_project_list()
         return vim.keycode("<Ignore>")
     end, { buffer = buf, silent = true, expr = true })
-    vim.keymap.set({ "n", "i" }, "h", function()
+    vim.keymap.set("n", "h", function()
         self:focus_project_list()
         return vim.keycode("<Ignore>")
     end, { buffer = buf, silent = true, expr = true })
@@ -886,13 +923,11 @@ function Creator:render_variant_tabs()
 end
 
 function Creator:render_footer()
-    local lines = {
-        "Left/Right or h/l: kind   Up/Down or j/k: project   [/]: source   Ctrl-V: image",
-        "Ctrl-Left/Right: kind (insert)   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
-    }
+    local insert_mode = self:in_insert_mode()
+    local lines = footer_lines(insert_mode)
     local marks = {} ---@type Clodex.Extmark[]
 
-    for _, key in ipairs(FOOTER_KEY_LABELS) do
+    for _, key in ipairs(footer_key_labels(insert_mode)) do
         local start_col = lines[key.row + 1]:find(key.text, 1, true)
         if start_col then
             marks[#marks + 1] = Extmark.inline(key.row, start_col - 1, start_col - 1 + #key.text, "ClodexPromptEditorKey")
