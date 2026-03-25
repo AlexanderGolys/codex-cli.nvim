@@ -55,6 +55,7 @@ local kinds = {
         label = "Idea",
         highlight = "idea_title",
         default_title = "Explore an idea",
+        commit_policy = "skip",
     },
     {
         id = "ask",

@@ -35,12 +35,10 @@ describe("clodex.workspace.execution", function()
         local content = file:read("*a")
         file:close()
 
-        assert.matches("prompt kind is `ask`, do not create a commit", content)
-        assert.matches("create a focused git commit", content)
-        assert.matches("branch%-and%-PR flow", content)
-        assert.matches("use its queue tools instead of ad%-hoc JSON editing", content)
-        assert.matches("queue_complete_current", content)
-        assert.matches("%.clodex/implemented%.json", content)
+        assert.matches("Use the `clodex` MCP server as the primary queue interface", content)
+        assert.matches("Call `get_task`", content)
+        assert.matches("Call `close_task`", content)
+        assert.matches("fall back to editing `%.clodex/%*%.json` queue files directly", content)
         assert.matches("%$prompt%-nvim%-clodex", content)
 
         fs.remove(root)
@@ -58,12 +56,12 @@ describe("clodex.workspace.execution", function()
         file:close()
 
         assert.are_not.equal("stale", content)
-        assert.matches("Repeat until `%.clodex/queued%.json` is empty", content)
+        assert.matches("If `close_task` returns `status = done`, stop", content)
 
         fs.remove(root)
     end)
 
-    it("renders queue prompts with item id and kind-aware commit policy", function()
+    it("renders queue prompts with MCP task-loop instructions", function()
         local root = temp_dir()
         local project = {
             name = "Demo",
@@ -72,11 +70,6 @@ describe("clodex.workspace.execution", function()
         fs.ensure_dir(project.root)
         local execution = new_execution(fs.join(root, "skills"))
 
-        local ask_prompt = execution:dispatch_prompt(project, {
-            id = "ask-1",
-            kind = "ask",
-            prompt = "Explain the behavior",
-        })
         local todo_prompt = execution:dispatch_prompt(project, {
             id = "todo-1",
             kind = "todo",
@@ -88,50 +81,21 @@ describe("clodex.workspace.execution", function()
             prompt = "Fix the traceback",
             completion_target = "history",
         })
-        local freeform_prompt = execution:dispatch_prompt(project, {
-            id = "freeform-1",
-            kind = "freeform",
-            prompt = "Talk to the agent about the current state",
+        local idea_prompt = execution:dispatch_prompt(project, {
+            id = "idea-1",
+            kind = "idea",
+            prompt = "Plan the feature",
         })
 
-        assert.matches("Current queue item id: `ask%-1`", ask_prompt)
-        assert.matches("Current prompt kind: `ask`", ask_prompt)
-        assert.matches("Commit policy for this prompt: `skip`", ask_prompt)
-        assert.matches("Git workflow mode for this prompt: `commit`", ask_prompt)
-        assert.matches("%$prompt%-nvim%-clodex", ask_prompt)
-
-        assert.matches("Current queue item id: `todo%-1`", todo_prompt)
-        assert.matches("Current prompt kind: `todo`", todo_prompt)
-        assert.matches("Commit policy for this prompt: `required`", todo_prompt)
-        assert.matches("Git workflow mode for this prompt: `commit`", todo_prompt)
+        assert.matches("current queued item id is `todo%-1`", todo_prompt)
+        assert.matches("calling `get_task`", todo_prompt)
+        assert.matches("call `close_task` with `success`, `comment`, and `commit_id`", todo_prompt)
         assert.matches("%$prompt%-nvim%-clodex", todo_prompt)
 
-        assert.matches("Completion destination for this prompt: `history`", bug_prompt)
-        assert.matches("Current prompt kind: `freeform`", freeform_prompt)
-        assert.matches("Commit policy for this prompt: `optional`", freeform_prompt)
-        assert.matches("Completion destination for this prompt: `agent_decides`", freeform_prompt)
-
-        fs.remove(root)
-    end)
-
-    it("renders the branch-pr workflow mode into queue prompts", function()
-        local root = temp_dir()
-        local project = {
-            name = "Demo",
-            root = fs.join(root, "project"),
-        }
-        fs.ensure_dir(project.root)
-        local execution = new_execution(fs.join(root, "skills"), {
-            git_workflow = "branch_pr",
-        })
-
-        local prompt = execution:dispatch_prompt(project, {
-            id = "todo-branch-1",
-            kind = "todo",
-            prompt = "Implement the feature",
-        })
-
-        assert.matches("Git workflow mode for this prompt: `branch_pr`", prompt)
+        assert.matches("close directly to `history`", bug_prompt)
+        assert.matches("generating follow%-up prompts only", idea_prompt)
+        assert.matches("Do not change code or create a git commit", idea_prompt)
+        assert.matches("commit_id = \"\"", idea_prompt)
 
         fs.remove(root)
     end)

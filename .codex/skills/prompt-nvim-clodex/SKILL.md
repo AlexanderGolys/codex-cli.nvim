@@ -8,39 +8,21 @@ Keep the original intent, but do not preserve clearly accidental misspellings, d
 
 Use this skill when a prompt includes `$prompt-nvim-clodex`, or when you are doing normal project work inside a repository managed by clodex.nvim and need to record the outcome in that project's local queue history.
 
-When the prompt provides a queue item id and prompt kind before the skill call:
+When the prompt provides a queue item id or tells you to use the Clodex queued-work MCP loop:
 
-1. Finish the requested work first.
-2. Before any commit, update relevant `README.md` content and agent/context files so they describe the current behavior, workflow, and user-facing changes introduced by the prompt.
-3. If the prompt kind is `ask`, do not create a commit for this queue item.
-4. If the prompt kind is `freeform`, decide whether a commit is warranted based on the work you actually did. Create a focused git commit only when the result meaningfully changed project files and would be useful to preserve in git history. If the project root is not a git repository, skip the commit step and leave `history_commits` unset.
-5. For any other prompt kind, create a focused git commit before you update the queue item when the project root is git-backed. If the project root is not a git repository, skip the commit step and leave `history_commits` unset.
-6. If the prompt also says `Git workflow mode for this prompt: branch_pr`, use a dedicated branch-and-PR flow for that prompt:
-   - create or reuse a branch dedicated to the queue item, such as `clodex/<queue-item-id>-<slug>`
-   - avoid doing the work on `main`, `master`, or another shared branch when you can switch safely
-   - after the focused commit is ready, push the branch and open a pull request with `gh pr create`
-   - record the commit normally in queue metadata; the PR URL can stay in the final response
-   - if the repository state makes switching branches unsafe, report that blocker instead of forcing the branch workflow
-7. When the `clodex` MCP server is available in the session, use its queue tools instead of ad-hoc JSON editing or one-off Python scripts:
-   - use `queue_complete_current` to record `summary`, `commit`/`commits`, and optional `completion_target`
-   - use `queue_fail_current` if the active item must return to `queued`
-8. If the MCP server is unavailable, fall back to updating the project-local queue files directly from the current repository root under `.clodex/`:
-   - `.clodex/planned.json`
-   - `.clodex/queued.json`
-   - `.clodex/implemented.json`
-   - `.clodex/history.json`
-9. Update queue state only after the implementation work is complete.
-10. If the prompt also says `Completion destination for this prompt: history`, skip the implemented-review stop and move the completed item directly into `.clodex/history.json` after recording its completion metadata.
-11. If the prompt also says `Completion destination for this prompt: agent_decides` and the prompt kind is `freeform`, decide whether the finished result belongs in `.clodex/implemented.json` or `.clodex/history.json`. Use `history` when the prompt is fully resolved by the conversation itself, and `implemented` when it produced an intermediate or reviewable outcome that should remain in the implemented lane first.
-12. Find the queue item with the provided id in `.clodex/queued.json`, `.clodex/implemented.json`, or `.clodex/history.json`.
-13. If it is still in `.clodex/queued.json`, remove it from there and add the same item to the front of `.clodex/implemented.json` without changing its `id`, unless the prompt explicitly requires direct completion to history or you decided to move a `freeform` prompt directly to history.
-14. If it is already in `.clodex/implemented.json`, update it in place.
-15. If it is already in `.clodex/history.json`, update it in place instead of duplicating it.
-16. Set `history_summary`, `history_commits` (array of commit ids) when commits exist, `history_completed_at`, and refresh `updated_at`.
-17. Preserve `execution_instructions` on queued items. Do not show or rewrite that hidden field unless the task explicitly requires it.
-18. After updating the current item, inspect `.clodex/queued.json`. If another queued item remains, continue immediately with the next queued item and repeat this workflow.
-19. Each next queued item already includes the same hidden execution instructions, so rely on the current prompt's instructions again instead of trying to remember the whole loop from earlier in the session.
-20. Repeat until `.clodex/queued.json` is empty. Do not start prompts that are only in `.clodex/planned.json` or `.clodex/implemented.json`.
+1. Use the `clodex` MCP server as the primary queue interface.
+2. Call `get_task` for the current repository root to claim or resume the active queued task.
+3. If `get_task` returns `status = done`, stop; the queue is exhausted.
+4. Otherwise, implement the returned `work_prompt`.
+5. Before any successful close, update relevant `README.md` content and agent/context files so they describe the current behavior, workflow, and user-facing changes introduced by the work.
+6. For the current commit-based workflow, a successful close usually requires a focused git commit and a closure payload with `success`, `comment`, and `commit_id`.
+   - Exception: `idea` prompts are planning-only. They should generate follow-up prompts or plans without changing code and should close with an empty `commit_id`.
+7. Call `close_task` after the work is finished:
+   - on success, use `success = true`, a short completion comment, and the new `commit_id`
+   - on failure or blocker, use `success = false` and provide the blocker note in `comment`
+8. If `close_task` returns another task, continue immediately with that task in the same loop.
+9. If `close_task` returns `status = done`, stop; queued work is finished.
+10. Only fall back to editing `.clodex/*.json` queue files directly when the `clodex` MCP server is unavailable in the session.
 
 # Manual History
 

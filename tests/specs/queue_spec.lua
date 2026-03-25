@@ -205,4 +205,11 @@ describe("clodex.workspace.queue", function()
         assert.are.equal(first.id, queued[1].id)
         assert.are.equal(second.id, queued[2].id)
     end)
+
+    it("marks idea prompts as non-commit work", function()
+        local Prompt = require("clodex.prompt")
+
+        assert.is_false(Prompt.categories.requires_commit("idea"))
+        assert.are.equal("skip", Prompt.categories.commit_policy("idea"))
+    end)
 end)

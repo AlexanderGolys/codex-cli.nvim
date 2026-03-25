@@ -16,15 +16,6 @@ local function trim(value)
     return vim.trim(value or "")
 end
 
----@param config Clodex.Config.Values
----@return Clodex.Config.GitWorkflowMode
-local function git_workflow(config)
-    if config.prompt_execution.git_workflow == "branch_pr" then
-        return "branch_pr"
-    end
-    return "commit"
-end
-
 local function is_absolute_path(path)
     path = fs.normalize(path)
     return vim.startswith(path, "/") or path:match("^%a:[/\\]") ~= nil
@@ -90,20 +81,17 @@ end
 ---@param _config Clodex.Config.Values
 ---@return string[]
 local function completion_instruction_lines(item, _config)
-    local prompt_kind = Prompt.categories.get(item.kind).id
-    local commit_policy = Prompt.categories.commit_policy(item.kind)
-    local workflow = git_workflow(_config)
     local lines = {
-        ("Current queue item id: `%s`"):format(item.id),
-        ("Current prompt kind: `%s`"):format(prompt_kind),
-        ("Commit policy for this prompt: `%s`"):format(commit_policy),
-        ("Git workflow mode for this prompt: `%s`"):format(workflow),
+        "Use the clodex MCP task loop for queued work in this repository.",
+        ("Start by calling `get_task` for this repository root to claim or resume the active queued task. The current queued item id is `%s`."):format(item.id),
+        item.kind == "idea"
+                and "Implement the returned `work_prompt` by generating follow-up prompts only. Do not change code or create a git commit for this kind; then call `close_task` with `success`, `comment`, and `commit_id = \"\"`."
+            or "Implement the returned `work_prompt`, create the required git commit for a successful result, then call `close_task` with `success`, `comment`, and `commit_id`.",
+        "If the task is blocked or unfinished, call `close_task` with `success = false` and use `comment` as the failure note that should be appended before retrying.",
+        "Keep using the same loop until `get_task` or `close_task` returns `status = done`.",
     }
-    if prompt_kind == "freeform" then
-        lines[#lines + 1] = "Completion destination for this prompt: `agent_decides`"
-    end
     if item.completion_target == "history" then
-        lines[#lines + 1] = "Completion destination for this prompt: `history`"
+        lines[#lines + 1] = "This task should close directly to `history` when completed successfully."
     end
     return lines
 end
@@ -113,7 +101,7 @@ end
 local function prompt_prefix_lines(item)
     local lines = {} ---@type string[]
     if item.image_path and fs.is_file(item.image_path) then
-        lines[#lines + 1] = ("Primary visual reference: `%s`"):format(item.image_path)
+        lines[#lines + 1] = ("Attached clipboard image: `%s`"):format(item.image_path)
         lines[#lines + 1] = "Use that local image file as part of the implementation context."
         lines[#lines + 1] = ""
     end

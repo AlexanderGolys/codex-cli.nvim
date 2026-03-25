@@ -1,435 +1,161 @@
 # clodex.nvim
--- @@@clodex.readme
 
-Project-aware [Codex CLI](https://platform.openai.com/docs/codex) integration for Neovim.
-`clodex.nvim` turns Codex into a persistent editor workflow instead of a disposable shell command. It manages long-lived terminal-buffer sessions for Codex/OpenCode, keeps project context attached to tabs, and adds a queue-driven prompt workspace for staging, dispatching, and tracking implementation tasks directly from Neovim.
+Project-aware Codex/OpenCode workflows for Neovim.
 
-The plugin is intentionally Neovim-first rather than agent-first. It keeps the classic Codex CLI experience inside Neovim, then uses Neovim's own context to make prompt authoring faster and more structured. The editor resolves things like files, lines, selections, and diagnostics into plain prompt text before the prompt is sent, so the plugin can stay focused on helping Neovim use AI well instead of centering the whole workflow around agent management.
+`clodex.nvim` keeps one persistent terminal session per registered project, one shared free session outside projects, and a project-local `.clodex/` workspace for queued prompts, notes, bookmarks, and execution metadata.
 
-The plugin is built around a few core ideas:
+## What it does
 
-- one persistent terminal session per registered project
-- one shared free session outside projects
-- tab-local active project state
-- queued prompts that move through `planned`, `queued`, `implemented`, and `history`
-- prompt execution receipts so queued work can be completed asynchronously and tracked back in the editor
-
-## Philosophy
-
-The core idea behind `clodex.nvim` is simple:
-
-- keep Codex CLI as the execution engine
-- keep Neovim as the place where prompt context is gathered and shaped
-- keep prompts portable by converting editor state into ordinary text before dispatch
-- treat agent workflow features as optional extensions, not the center of gravity
-
-That means the plugin is not primarily about teaching agents how to operate Neovim. Instead, Neovim does the editor-specific work up front and hands Codex normal prompt text that is easy to reuse anywhere.
-
-Examples of that model:
-- a file reference becomes something like `@{lua/clodex/ui/select.lua}`
-- a line reference becomes something like `@{lua/clodex/ui/select.lua}: line 42`
-- diagnostics become plain text produced by the editor, with enough explanation for the agent to act on them without knowing anything about Neovim
-This keeps the system composable. The plugin stays focused on being a strong CLI wrapper with editor-native ergonomics, and if richer agent workflow features become useful later they can be added from that Neovim-first foundation.
-
-## Status
-The plugin is functional today and already covers the main terminal, project, and queue workflows. Its direction is intentionally conservative: better prompt generation, better editor integration, and better queue/session ergonomics, without turning the plugin into a separate agent platform.
-
-## What The Plugin Does
-### Persistent Codex terminals
-Instead of spawning a fresh shell every time, the plugin reuses Codex terminals
-- registered projects get stable project sessions keyed by project root
-- non-project work uses a single shared free session rooted at `session.free_root`
-- project sessions always start in `project.root`, and the free session always starts in `session.free_root`
-- terminal visibility is tab-local, but the backing session is persistent
-- when a hidden session asks for input or permission, Clodex can surface that live terminal in a float on the current tab so the agent does not stall unnoticed
-
-This is useful when you want Codex to keep conversational context while you move around the editor.
-
-### Project-aware behavior
-
-Projects are simple records:
-
-- `name`: display label
-- `root`: absolute project root
-
-The plugin uses those records to:
-
-- decide which Codex session should open
-- route queued prompts to the correct project
-- show project summaries in the workspace UI
-- expose project state in statusline integrations
-
-Tabs can pin an active project explicitly, so different tabs can stay focused on different repositories. When a tab has no active project, Clodex opens the shared free session first and only then offers to set the current file/cwd project as the tab's active project.
-
-When opening a project README or workspace target, Clodex keeps the current buffer in place if it has unsaved changes instead of forcing an `:edit` that would fail with `E37`.
-
-### Queue-driven prompt workflow
-
-Each project keeps four queue files on disk under `.clodex/`:
-
-- `planned`: captured ideas, bugs, or tasks that are not ready to run yet
-- `queued`: ready to dispatch to Codex
-- `implemented`: work that has been dispatched and completed, but is waiting for human verification
-- `history`: verified work with execution metadata
-
-Every queue item stores:
-
-- category/kind
-- title
-- optional details
-- rendered prompt text
-- timestamps
-- optional image path for visual prompts
-- optional completion summary, commits, and completion time in implemented/history
-
-This lets you treat Codex work more like a lightweight implementation backlog than an ad-hoc chat window.
-
-### Editor-powered prompt generation
-
-Prompt generation is a first-class part of the plugin.
-
-The goal is not to expose Neovim concepts directly to agents. The goal is to let Neovim use its own knowledge of the current editing state to generate better prompts automatically.
-
-In practice, that means editor state such as:
-
-- current file
-- current line
-- visual selection
-- visible buffer region
-- word under cursor
-- current diagnostics
-- buffer diagnostics
-- project diagnostics
-
-can be turned into prompt-ready text before dispatch. The resulting prompt stays readable and portable, and the agent only sees ordinary text and file references rather than editor-specific commands or abstractions.
-
-### Prompt categories
-
-The plugin supports several prompt categories out of the box:
-
-- `todo`
-- `bug`
-- `visual`
-- `adjustment`
-- `refactor`
-- `idea`
-- `ask`
-- `library`
-
-These categories control default titles, visual highlighting, and some specialized behavior:
-
-- `bug` can pull in screenshot context
-- `visual` can save a clipboard image into prompt assets
-- multiline prompt editors can paste a clipboard image into the prompt body with `Ctrl-V`
-- `bug` can build a message-based investigation directly from the clipboard/register contents and only asks you for an optional comment
-- `library` lets you instantiate a saved prompt template
-
-### Queue-file prompt execution
-
-Queued prompts are dispatched with a queue-state update contract. The plugin writes instructions into the prompt that tell Codex to finish the work, use kind-aware completion rules, and prefer the local `clodex` MCP queue tools for completion metadata updates when they are available. If the MCP server is unavailable, the same instructions fall back to updating the project-local `.clodex/queued.json`, `.clodex/implemented.json`, and `.clodex/history.json` files directly. Items in `planned` remain staged and are not started automatically. The plugin moves dispatched items from `queued` to `implemented`, and the agent records execution metadata on that implemented item before optionally moving it to `history`.
-
-That gives you:
-
-- asynchronous completion tracking
-- per-item summaries during implementation and after verification
-- commit attribution
-- completion timestamps
-- a clean handoff between Neovim state and Codex execution
-
-## Main Features
-
-- Toggle a Clodex terminal with `:Clodex cli`.
-- Keep one persistent session per project root.
-- Keep one free non-project session outside registered projects.
-- Track active projects per tabpage.
-- Show a floating runtime-state preview of live session/tab/target state without trying to infer or persist a session's current task.
-- Open a queue workspace with project summaries and prompt history, focused on repository facts, queue contents, and stable session presence instead of inferred live task state.
-- Add prompts from categories or saved prompt templates.
-- Use editor state to make prompt generation semi-automatic while keeping prompts agent-friendly.
-- Target prompt creation either at the tab's active project or directly at the project that owns the current file.
-- Dispatch the next queued prompt or all queued prompts for a project.
-- Poll queue-file changes and update implemented prompts with completion metadata.
-- Surface hidden sessions that are waiting for user input in a focused floating terminal.
-- Move, copy, rewind, edit, and delete queue items.
-- Preserve session state across Vim sessions.
-- Open a project's `TODO.md` or shared dictionary without leaving the current window.
-- Expose a small `lualine` helper for current-project display.
+- Keeps long-lived terminal buffers for `codex` or `opencode` instead of spawning disposable shells.
+- Tracks the active project per tab while reusing the same backing session for the same project root.
+- Stores queue state per project in `.clodex/{planned,queued,implemented,history}.json`.
+- Builds prompts from editor context such as the current file, line, selection, and diagnostics.
+- Opens a queue workspace for moving, editing, dispatching, and reviewing prompts.
+- Surfaces hidden sessions that are waiting for user input in a floating terminal.
+- Ships a local Rust MCP helper in `rust/clodex-mcp/` for queue-aware prompt completion.
 
 ## Requirements
 
-- Neovim 0.10+ recommended
-- [snacks.nvim](https://github.com/folke/snacks.nvim)
-- Codex CLI or OpenCode CLI installed for the configured backend
+- Neovim 0.10+
+- `snacks.nvim`
+- `codex` and/or `opencode`
+- `cargo` if you want to build the bundled MCP helper
 
 ## Installation
 
-Example with `lazy.nvim`:
+With `lazy.nvim`:
 
 ```lua
 {
-  "AlexanderGolys/clodex.nvim",
-  build = "cargo build --release --manifest-path rust/clodex-mcp/Cargo.toml",
-  dependencies = {
-    "folke/snacks.nvim",
-  },
-  opts = {
-    codex_cmd = { "codex" },
-  },
+    "AlexanderGolys/clodex.nvim",
+    build = "cargo build --release --manifest-path rust/clodex-mcp/Cargo.toml",
+    dependencies = {
+        "folke/snacks.nvim",
+    },
+    opts = {},
 }
 ```
 
-The `build` step compiles the local Rust MCP helper at `rust/clodex-mcp/`.
-Clodex expects that helper to be available and enables it automatically for supported sessions when the binary exists.
-Set `opts.mcp.enabled = false` only if you explicitly want to opt out.
-
-Example with `lazy.nvim` and a few common overrides:
-
-```lua
-{
-  "AlexanderGolys/clodex.nvim",
-  dependencies = {
-    "folke/snacks.nvim",
-  },
-  opts = {
-    backend = "opencode",
-    terminal = {
-      provider = "term",
-    },
-    keymaps = {
-      toggle = { lhs = "<leader>pt" },
-      queue_workspace = { lhs = "<leader>pq" },
-      backend_toggle = { lhs = "<leader>pb" },
-    },
-    prompt_execution = {
-      git_workflow = "branch_pr",
-    },
-  },
-}
-```
-
-Minimal manual setup:
+Minimal setup:
 
 ```lua
 require("clodex").setup()
 ```
 
-## Configuration
-
-Current defaults:
+## Default config
 
 ```lua
 require("clodex").setup({
-  backend = "codex",
-  codex_cmd = { "codex" },
-  opencode_cmd = { "opencode" },
-  storage = {
-    projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
-    workspaces_dir = ".clodex",
-    session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
-  },
-  terminal = {
-    provider = "snacks",
-    win = {
-      position = "right",
-      width = 0.35,
+    backend = "codex",
+    codex_cmd = { "codex" },
+    opencode_cmd = { "opencode" },
+    storage = {
+        projects_file = vim.fn.stdpath("data") .. "/clodex/projects.json",
+        workspaces_dir = ".clodex",
+        session_state_dir = vim.fn.stdpath("data") .. "/clodex/session-state",
+        history_file = vim.fn.stdpath("data") .. "/clodex/history.md",
     },
-    start_insert = true,
-    blocked_input = {
-      enabled = true,
-      poll_ms = 1000,
-      win = {
-        position = "float",
-        width = 0.72,
-        height = 0.8,
-        border = "rounded",
-      },
+    terminal = {
+        provider = "snacks",
+        win = {
+            position = "right",
+            width = 0.4,
+        },
+        start_insert = true,
+        prefer_native_statusline = true,
+        blocked_input = {
+            enabled = true,
+            poll_ms = 1000,
+            win = {
+                position = "float",
+                width = 0.72,
+                height = 0.8,
+                border = "rounded",
+            },
+        },
     },
-  },
-  project_detection = {
-    auto_suggest_git_root = false,
-  },
-  state_preview = {
-    min_width = 36,
-    max_width = 72,
-    max_height = 0,
-    row = 1,
-    col = 2,
-    winblend = 18,
-  },
-  queue_workspace = {
-    width = 0.88,
-    height = 0.78,
-    project_width = 0.32,
-    footer_height = 4,
-    preview_max_lines = 5,
-    fold_preview = true,
-    date_format = "%H:%M %d.%m.%Y",
-  },
-  bug_prompt = {
-    screenshot_dir = nil,
-  },
-  highlights = {
-    groups = {
-      -- custom highlight specs
+    project_detection = {
+        auto_suggest_git_root = false,
     },
-  },
-  prompt_execution = {
-    receipts_dir = ".clodex/prompt-executions",
-    poll_ms = 5000,
-    skills_dir = ".clodex/skills",
-    skill_name = "prompt-nvim-clodex",
-    git_workflow = "commit",
-  },
-  mcp = {
-    enabled = true,
-    cmd = {},
-  },
-  session = {
-    persist_current_project = true,
-    free_root = vim.fn.expand("~"),
-  },
-  keymaps = {
-    toggle = { lhs = "<leader>pt" },
-    queue_workspace = { lhs = "<leader>pq" },
-    state_preview = { lhs = "<leader>ps" },
-    mini_state_preview = { lhs = "<leader>pS" },
-    backend_toggle = { lhs = "<leader>pb" },
-  },
+    state_preview = {
+        min_width = 36,
+        max_width = 72,
+        max_height = 0,
+        row = 1,
+        col = 2,
+        winblend = 18,
+        mini = {
+            width = 42,
+            height = 11,
+            col = 2,
+            winblend = 28,
+        },
+    },
+    queue_workspace = {
+        width = 1,
+        height = 1,
+        project_width = 0.3,
+        footer_height = 3,
+        preview_max_lines = 5,
+        fold_preview = true,
+        date_format = "ago",
+    },
+    bug_prompt = {
+        screenshot_dir = nil,
+    },
+    prompt_execution = {
+        receipts_dir = ".clodex/prompt-executions",
+        poll_ms = 5000,
+        skills_dir = ".clodex/skills",
+        skill_name = "prompt-nvim-clodex",
+        git_workflow = "commit",
+    },
+    mcp = {
+        enabled = true,
+        cmd = {},
+        runtime_dir = vim.fn.stdpath("data") .. "/clodex/mcp",
+    },
+    session = {
+        persist_current_project = true,
+        free_root = vim.fn.expand("~"),
+    },
+    keymaps = {
+        toggle = { lhs = "<leader>pt" },
+        queue_workspace = { lhs = "<leader>pq" },
+        state_preview = { lhs = "<leader>ps" },
+        mini_state_preview = { lhs = "<leader>pS" },
+        backend_toggle = { lhs = "<leader>pb" },
+    },
 })
 ```
 
-### Important configuration notes
+## Prompt kinds
 
-`keymaps`
+- `todo`
+- `bug`
+- `freeform`
+- `refactor`
+- `idea`
+- `ask`
+- `library`
+- `notworking`
 
-- Defaults now accept legacy string values (`"<leader>pt"`) or table-based setters:
-  - `toggle`: runs `:Clodex cli`
-  - `queue_workspace`: runs `:Clodex`
-  - `state_preview`: runs `:ClodexDebug panel`
-  - `mini_state_preview`: runs `:ClodexDebug mini`
-  - `backend_toggle`: runs `:Clodex backend`
-  - `lhs` (string): key sequence.
-  - `enabled` (boolean): set to `false` to disable.
-  - `mode` (string|string[]): keymap mode(s).
-  - Neovim keymap option keys (for example `silent`, `noremap`, `nowait`, `expr`).
-- Example:
-  ```lua
-  keymaps = {
-      toggle = { lhs = "<leader>pt", mode = "n", silent = true },
-      queue_workspace = { lhs = "<leader>pq", enabled = false },
-      state_preview = "<leader>ps", -- legacy style remains supported
-  },
-  ```
+Legacy queue items using `adjustment` and `explain` are still accepted and mapped to `freeform` and `ask` behavior.
 
-`backend`
-
-- Selects the interactive CLI backend.
-- Supported values are `codex` and `opencode`.
-- Default is `codex`.
-
-`codex_cmd`
-
-- Command used to start Codex terminals.
-- Default is `codex`.
-
-`opencode_cmd`
-
-- Command used to start OpenCode terminals when `backend = "opencode"`.
-- Default is `opencode`.
-
-`terminal.provider`
-
-- Chooses how Clodex starts the interactive terminal job.
-- Supported values are `snacks` and `term`.
-- `snacks` uses `snacks.terminal`; `term` uses Neovim's built-in terminal via `termopen()` while keeping the same Clodex session/window workflow.
-- Default is `snacks`.
-- OpenCode sessions always use the native `term` path internally so full-screen CLI redraws are sized from the real Clodex window instead of a hidden bootstrap float.
-
-`terminal.blocked_input`
-
-- Watches running sessions for `question` and `permission` waits that are not currently shown in the active tab.
-- When enabled, Clodex opens the same live terminal buffer in a floating window on the current tab so you can answer immediately instead of hunting for the stalled session.
-- `poll_ms` controls how often that watcher checks hidden sessions.
-- `win` is passed to the floating `snacks.win` instance used for the surfaced terminal.
-- Set `enabled = false` to disable the popup entirely.
-
-`storage.projects_file`
-
-- JSON file containing the registered project list.
-- This remains global by default so the plugin can keep one shared registry of known projects.
-
-`project_detection.auto_suggest_git_root`
-
-- Defaults to `false`.
-- Clodex does not add or suggest projects automatically during normal terminal toggles.
-- Projects should only be registered through explicit user actions such as `:ClodexProject add`.
-
-`storage.workspaces_dir`
-
-- Queue data and prompt assets are stored under each project's own root here.
-- Relative paths are resolved per project, so the default becomes `<project>/.clodex`.
-- Older data from the former global storage root is migrated into the project-local location on access.
-
-`storage.session_state_dir`
-
-- Session persistence snapshots are stored here.
-- Neovim-only project details remain global under `stdpath("data")/clodex/project-details`.
-
-`session.free_root`
-
-- Root/cwd for the single shared free session.
-- Defaults to `~`.
-- Tabs without an active project always resolve to this free target instead of inventing per-buffer free sessions from random directories.
-
-`prompt_execution.receipts_dir`
-
-- Project-local execution artifacts are written under each project's local `.clodex/prompt-executions` directory by default.
-- Relative paths are resolved per project, so the default becomes `<project>/.clodex/prompt-executions`.
-- Older receipt files from the former global storage root are still recognized for compatibility with legacy in-flight jobs.
-
-`prompt_execution.skills_dir`
-
-- Project-local synced skill root.
-- The default is `.clodex/skills`, and Clodex syncs checked-in workflow skills into `<project>/.clodex/skills/`.
-- Clodex also mirrors those skills into `<project>/.agents/skills/` and `<project>/.opencode/skills/` so both backends see the same project-local workflow skills.
-- Set this to an empty string to disable synced skill mode and fall back to inline `$prompt` instructions.
-- Queued prompt dispatch still ends with `$prompt-nvim-clodex` instead of inlining the full queue-file update instructions every time.
-
-`prompt_execution.git_workflow`
-
-- Controls how queued prompts that produce git changes should finish their git workflow.
-- `commit` is the default and keeps the current behavior: the agent creates a focused commit when the prompt kind requires one.
-- `branch_pr` tells the synced prompt skill to use a dedicated branch for that queue item, push it, and open a pull request with `gh` after the commit is ready.
-- `ask` prompts still skip commits entirely, and `freeform` prompts still decide based on whether a commit is warranted.
-
-`mcp.enabled`
-
-- Defaults to `true`.
-- Clodex automatically writes persistent plugin-managed MCP config under its runtime directory and launches both Codex and OpenCode against that shared config.
-- The bundled `clodex-mcp` helper now speaks both header-framed stdio MCP and newline-delimited stdio MCP so OpenCode can attach cleanly without the startup timeout shown in its MCP status panel.
-- If a running session still uses an older backend or MCP environment, Clodex restarts that session on the next access so the generated MCP config is actually applied.
-- This avoids manual user config edits while keeping MCP setup stable across reopened TUIs.
-- Set this to `false` only to opt out explicitly.
-
-`highlights.groups`
-
-- Preferred way to customize prompt/workspace highlight groups.
+`idea` prompts are planning-only: they should generate follow-up prompts or implementation plans without changing repository code.
 
 ## Commands
-
-Core commands:
 
 - `:Clodex` or `:Clodex panel`
 - `:Clodex cli`
 - `:Clodex history`
-- `:Clodex backend`
+- `:Clodex backend [codex|opencode]`
 - `:Clodex header`
 - `:ClodexDebug panel`
 - `:ClodexDebug mini`
 - `:ClodexDebug reload`
-- `:ClodexProject add [name]?`
+- `:ClodexProject add [name]`
 - `:ClodexProject readme`
-- `:ClodexProject todo` is not exposed as a user command; use the Lua API helper if you want to open/create `TODO.md` programmatically.
 - `:ClodexProject dictionary`
 - `:ClodexProject cheatsheet`
 - `:ClodexProject cheatsheet-panel`
@@ -438,102 +164,45 @@ Core commands:
 - `:ClodexProject note-add`
 - `:ClodexProject bookmarks`
 - `:ClodexProject bookmark-add`
+- `:ClodexTodo [for|project]`
+- `:ClodexTodo bug [for|project]`
+- `:ClodexTodo implement [for|project]`
+- `:ClodexTodo all [for|project]`
+- `:ClodexPrompt [kind] [for|project]`
+- `:ClodexPromptFile [kind]`
 
-Queue and prompt commands:
+Use `:'<,'>ClodexPrompt ...` from visual mode to seed prompt context from the selected range.
 
-- `:ClodexTodo [add]? [for]? [project]?`
-- `:ClodexTodo bug [for]? [project]?`
-- `:ClodexTodo implement [for]? [project]?`
-- `:ClodexTodo all [for]? [project]?`
-- `:ClodexPrompt [kind]? [for]? [project]?`
-- `:ClodexPromptFile [kind]?`
-- `:ClodexPrompt refactor`
-- `:ClodexPrompt bug for`
-- `:ClodexPrompt ask demo-project`
-- `:ClodexPromptFile ask`
-- Run `:'<,'>ClodexPrompt ...` from visual mode to open the prompt composer with the selected range already referenced in the prompt body.
-- `:ClodexPromptFile` targets the registered project that owns the currently focused file instead of the tab's active project.
+## Queue workflow
 
+- `planned`: captured work not ready to run yet
+- `queued`: ready to dispatch
+- `implemented`: dispatched and finished, waiting for review unless completion goes straight to history
+- `history`: verified or directly completed work with summary/commit metadata
 
-## Queue Workspace
+Queued execution uses project-local skills under `.clodex/skills/` and the bundled `prompt-nvim-clodex` workflow instructions. When the MCP helper is available, queued work runs through the local `get_task` / `close_task` loop so the agent can keep claiming the next queued item until the project queue is exhausted; otherwise it falls back to editing the same `.clodex/*.json` files directly.
 
-The queue workspace is the main control surface for prompt management.
+The unified prompt creator keeps footer actions visible at all times. A target-project picker now stays docked on the left and defaults to the active project for the current tab; use `Up`/`Down` there to change the target, `Right` to jump back into the editor, and `Left` or `Shift-Tab` from the first input to move back to the project list. Use `</>` to switch prompt kinds, `[/]` to switch bug-source tabs, `Ctrl-V` to replace the attached clipboard image, and `Ctrl-S`, `Ctrl-Q`, `Ctrl-E`, or `Ctrl-L` to plan, queue, run immediately, or send straight to the live project chat. Attached clipboard images are previewed in a separate pane docked to the right of the creator. Closing the queue workspace also clears any project or prompt filters so the next open starts from the full list again. Immediate direct execution currently works only with the Codex backend.
 
-The left pane shows:
+## Project files
 
-- known projects
-- whether a Codex session is running
-- queue counts for `planned`, `queued`, `implemented`, and `history`
-- project detail snapshots such as file counts, dominant languages, git remote, and last repository file update
-- project details render as one compact icon-based summary line so language icons stay visible before lower-priority metadata
+Clodex keeps durable project data inside each repository:
 
-The right pane shows:
+- `.clodex/planned.json`
+- `.clodex/queued.json`
+- `.clodex/implemented.json`
+- `.clodex/history.json`
+- `.clodex/skills/`
+- `.clodex/PROJECT_DICTIONARY.md`
+- `.clodex/cheatsheet.md`
+- `.clodex/notes/`
+- `.clodex/bookmarks.json`
 
-- prompts grouped by queue
-- category-colored titles
-- prompt previews
-- explicit prompt type metadata
-- implementation/history metadata for completed items
+Global plugin state stays under `stdpath("data")/clodex/`, including the project registry, session snapshots, MCP runtime config, and the optional history markdown log.
 
-Common workspace actions:
+## Public API
 
-- activate/deactivate a project Codex session
-- open the selected project workspace
-- add prompts
-- edit prompts
-- move prompts between queues
-- dispatch queued prompts
-- copy or move prompts between projects
-- delete prompts or whole projects
-
-Confirmation pickers from the workspace open as focused modal overlays above the main panels, so destructive actions stay keyboard-accessible instead of leaving focus behind on the workspace panes.
-
-## How Prompt Execution Works
-
-When a queued item is dispatched:
-
-1. Clodex ensures the target project session is running.
-2. It renders the queue item into a normal prompt plus hidden completion instructions.
-3. If synced prompt skills are enabled, it appends `$prompt-nvim-clodex`.
-4. The backend does the work, follows kind-aware commit rules, and updates the project-local queue files.
-5. If more items remain in `queued`, execution continues with the next one; `planned` stays untouched.
-6. Neovim polls queue-file revisions and refreshes the matching item in the UI.
-
-The workspace deliberately avoids showing inferred per-session "currently running task" metadata. In practice that information was noisy, easy to mis-detect, and less useful than simple repository facts plus queue contents.
-
-If that interactive session later stops on a follow-up question or permission prompt while hidden, Clodex can reopen that exact terminal as a float in the current tab so you can unblock it without switching workspace context.
-
-### Implemented Item Metadata
-
-Implemented/history items are updated in place with:
-
-- `history_summary`
-- `history_commits`
-- `history_completed_at`
-
-Those values are used to populate the implemented/history views and to make completion status visible inside Neovim.
-
-## Prompt Library
-
-The built-in prompt library currently ships with reusable templates such as:
-
-- `fix-diagnostics`
-- `explain-current-file`
-- `refactor-selection`
-- `review-current-file`
-- `simplify-selection`
-- `improve-documentation`
-- `map-project-architecture`
-- `plan-project-work`
-- `review-plan-against-code`
-
-These are plain prompt blueprints that become normal queue items. When Clodex already knows the dominant project language, library entries can bias their guidance toward that language's conventions.
-
-## Public Lua API
-
-Public entrypoints live in [`lua/clodex/init.lua`](/home/flux/nvim-plugins/clodex.nvim/lua/clodex/init.lua).
-
-Main functions:
+Main entrypoints live in `lua/clodex/init.lua`:
 
 - `require("clodex").setup(opts)`
 - `require("clodex").toggle()`
@@ -547,16 +216,16 @@ Main functions:
 - `require("clodex").clear_active_project()`
 - `require("clodex").open_queue_workspace()`
 - `require("clodex").open_history()`
-- `require("clodex").open_project_readme_file(project?)`
-- `require("clodex").open_project_todo_file(project?)`
-- `require("clodex").open_project_dictionary_file(project?)`
-- `require("clodex").open_project_cheatsheet_file(project?)`
-- `require("clodex").toggle_project_cheatsheet_preview(project?)`
-- `require("clodex").add_project_cheatsheet_item(project?)`
-- `require("clodex").open_project_notes_picker(project?)`
-- `require("clodex").create_project_note(project?)`
-- `require("clodex").add_project_bookmark(project?)`
-- `require("clodex").open_project_bookmarks_picker(project?)`
+- `require("clodex").open_project_readme_file(project)`
+- `require("clodex").open_project_todo_file(project)`
+- `require("clodex").open_project_dictionary_file(project)`
+- `require("clodex").open_project_cheatsheet_file(project)`
+- `require("clodex").toggle_project_cheatsheet_preview(project)`
+- `require("clodex").add_project_cheatsheet_item(project)`
+- `require("clodex").open_project_notes_picker(project)`
+- `require("clodex").create_project_note(project)`
+- `require("clodex").add_project_bookmark(project)`
+- `require("clodex").open_project_bookmarks_picker(project)`
 - `require("clodex").add_todo(opts)`
 - `require("clodex").add_bug_todo(opts)`
 - `require("clodex").add_prompt(opts)`
@@ -564,204 +233,32 @@ Main functions:
 - `require("clodex").add_prompt_for_current_file_project(opts)`
 - `require("clodex").implement_next_queued_item(opts)`
 - `require("clodex").implement_all_queued_items(opts)`
-- `require("clodex").debug_reload()`
 
-Statusline helper:
+Statusline helpers:
 
 - `require("clodex").lualine.project(opts)`
 - `require("clodex").lualine.project_name(opts)`
 
-Example:
-
-```lua
-sections = {
-  lualine_x = {
-    function()
-      return require("clodex").lualine.project_name({
-        include_detected = true,
-        prefix = "Clodex:",
-      })
-    end,
-  },
-}
-```
-
-Terminal statusline note:
-
-- Clodex sets its intended local `statusline` and `winbar` for `clodex_terminal` buffers when that filetype is created.
-- When `lualine.nvim` is already loaded, Clodex automatically excludes `clodex_terminal` from lualine's statusline and winbar targets so the native mirrored Codex CLI line stays visible in terminal buffers.
-- If you prefer your own statusline in Codex terminal buffers, disable that behavior in `setup()`:
-
-```lua
-require("clodex").setup({
-  terminal = {
-    prefer_native_statusline = false,
-  },
-})
-```
-
-- If you manage lualine manually and want the equivalent explicit rule, exclude `clodex_terminal` from lualine yourself:
-
-```lua
-require("lualine").setup({
-    options = {
-      disabled_filetypes = {
-        statusline = { "clodex_terminal" },
-        winbar = { "clodex_terminal" },
-      },
-    },
-})
-```
-
-## Architecture
-
-The codebase is intentionally split by responsibility:
-
-```text
-lua/clodex/
-  init.lua
-  app.lua
-  commands.lua
-  config.lua
-  lualine.lua
-  project/
-  prompt/
-  session/
-  tab/
-  terminal/
-  ui/
-  util/
-  workspace/
-plugin/
-  clodex.lua
-```
-
-Important modules:
-
-- `app.lua`: top-level orchestration and user-facing behavior
-- `terminal/`: terminal session lifecycle and window management
-- `project/`: registry, detection, metadata, and project picking
-- `workspace/`: queued prompts, queue-file storage, and execution receipts
-- `ui/`: floating windows, prompt workspace rendering, and selection helpers
-- `config.lua`: defaults, merging, and highlight application
-
-## API And Runtime Model
-
-From an integration standpoint, the plugin uses:
-
-- Neovim Lua APIs for buffers, windows, timers, extmarks, user commands, and autocommands
-- `snacks.nvim` for terminal window construction and UI primitives
-- filesystem JSON storage for projects and queue state
-- Codex CLI or OpenCode CLI as the interactive execution backend
-
-The runtime loop is straightforward:
-
-- Neovim owns editor state and UI
-- Neovim can turn editor state into plain prompt text before dispatch
-- the plugin derives project/session intent from that state
-- Codex CLI runs in a persistent terminal buffer
-- queued prompt execution writes receipts back to disk
-- the plugin polls those receipts and updates editor-visible state
-
-## Notes
-
-- Queue and history data live per project under `.clodex/`.
-- Session persistence snapshots stay global under `stdpath("data")/clodex/session-state`.
-- The built-in MCP helper is optional at install time but expected for the full queue workflow.
-- more refined prompt authoring flows for visual and diagnostic tasks
-
 ## Development
 
-Useful checks while developing:
+Useful checks:
 
 ```bash
 nvim --headless "+lua require('clodex').setup()" +qa
 nvim --headless "+lua print(vim.inspect(require('clodex')))" +qa
+nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/specs/config_spec.lua" +qa
+bash bin/clodex-nvim-test
 ```
 
-Testing with Plenary:
-
-```bash
-bin/clodex-nvim-test
-```
-
-The test suite expects Plenary to be discoverable in the same runtime environment as this repository (or globally available in your `runtimepath`).
-
-If task context getting lost between branches, use the local task switch helper:
-
-```bash
-cd /home/flux/nvim-plugins/clodex.nvim
-private/taskctl/taskctl start "Fix broken todo registration"
-private/taskctl/taskctl status
-private/taskctl/taskctl list
-private/taskctl/taskctl done
-```
-
-You can install this helper as a global command in your `$HOME/.local/bin`:
-
-```bash
-ln -sfn "$(pwd)/private/taskctl/taskctl" "$HOME/.local/bin/taskctl"
-```
-
-It keeps a local branch ledger in `.clodex/task-memory` so you can resume the exact task branch later even after switching to another task.
-
-If you want a separate local git workflow, keep it in your personal dotfiles or shell scripts and wire it to your own Neovim keymaps. The plugin stays focused on Codex/project workflow only.
-
-This plugin intentionally does **not** provide:
-
-- branch creation/switching helpers
-- commit helpers
-- PR/rebase/review helpers
-- lazygit or GitHub command integrations
-
-Use your preferred local tooling for Git operations and keep that outside this plugin.
-
-Fresh, minimal Neovim instance for this plugin only:
-
-```bash
-./bin/clodex-nvim-minimal
-```
-
-That launcher uses a clean, isolated `XDG_*` directory and loads dependencies via `lazy.nvim`:
-
-- `clodex.nvim` from this repo
-- `snacks.nvim`
-- `catppuccin` (colorscheme)
-- `nvim-treesitter`
-
-`lazy.nvim` is also bootstrapped only inside this isolated data root (no fallback to your main Neovim lazy cache), so first launch from a fresh environment will install dependencies locally and keep them separated.
-
-Install it as a global TUI command (`clodex-nvim`) available from any directory:
-
-```bash
-./bin/install-clodex-nvim-tui
-hash -r
-clodex-nvim .
-```
-
-That command acts like `nvim` with a different `-u`-style config and forwards all CLI arguments.
-
-Code placement policy:
-
-- Plugin runtime code that is shipped/public: `lua/`, `plugin/`, and this README/docs.
-- Private/local launcher artifacts (local Lua bootstrap, local launcher scripts, cached local test state): keep outside tracked plugin code and add to local ignore rules (already configured for this repo).
-- If you add another local helper for a private workflow, put it under your local ignore area and avoid loading it in the plugin runtime path.
-
-Testing guidelines:
-
-- Every new feature should ship with at least one new spec in [`tests/specs`](/home/flux/nvim-plugins/clodex.nvim/tests/specs), and the full suite should be run before merge.
-- If a bug is reported and fixed, add a regression spec that reproduces the bug and fails on the old behavior, then passes after the fix.
-- Prefer keeping one focused spec file per public module area (`workspace`, `prompt`, `config`, `util`) and naming specs by behavior (`queue transitions`, `config merge`, `context tokens`).
-- Update this section when test tooling, required env vars, or plugin dependencies change so contributors always have a reliable command list.
-
-Manual validation:
-
-1. Register a project and open `:Clodex`.
-2. Add prompts and move one into `queued`.
-3. Dispatch it with `:ClodexTodo implement`.
-4. Confirm the prompt is sent to the project session.
-5. Confirm Codex creates a focused commit, updates the implemented item metadata in the `.clodex` queue files, and shows the prompt type plus commit metadata in the main panel preview.
+Core runtime code lives under `lua/clodex/` and `plugin/clodex.lua`. The bundled MCP helper lives under `rust/clodex-mcp/`. Tests live under `tests/specs/`.
 
 ## License
 
-MIT. See [`LICENSE`](/home/flux/nvim-plugins/clodex.nvim/LICENSE).
+MIT. See `LICENSE`.
+
+ &&&ClodexPromptTodoTitleActive&&&  TODO  &&&  &&&DiagnosticVirtualTextWarn&&&Prompt title
+a&&&Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+    sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+ &&&ClodexPromptTodoTitleActive&&&  TODO  &&&  &&&@constructor&&&Prompt title&&&
+    Lorem ipsum dolor sit amet, consectetur adipiscing elit,
+    sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
