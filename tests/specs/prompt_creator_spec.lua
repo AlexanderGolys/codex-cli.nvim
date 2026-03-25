@@ -66,6 +66,17 @@ describe("clodex.ui.prompt_creator", function()
                 end
                 return buf
             end,
+            apply_theme = function(win, theme)
+                if not vim.api.nvim_win_is_valid(win) then
+                    return
+                end
+                if theme == "prompt_editor" or theme == "prompt_footer" then
+                    vim.wo[win].winhl = table.concat({
+                        "FloatBorder:ClodexPromptEditorBorder",
+                        "FloatTitle:ClodexPromptEditorTitle",
+                    }, ",")
+                end
+            end,
             open = function(opts)
                 local object = {
                     buf = opts.buf,
@@ -86,6 +97,12 @@ describe("clodex.ui.prompt_creator", function()
                 for key, value in pairs(opts.bo or {}) do
                     vim.bo[opts.buf][key] = value
                 end
+                if opts.theme == "prompt_editor" or opts.theme == "prompt_footer" then
+                    vim.wo[object.win].winhl = table.concat({
+                        "FloatBorder:ClodexPromptEditorBorder",
+                        "FloatTitle:ClodexPromptEditorTitle",
+                    }, ",")
+                end
 
                 function object:valid()
                     return vim.api.nvim_win_is_valid(self.win)
@@ -102,6 +119,12 @@ describe("clodex.ui.prompt_creator", function()
                         width = type(self.opts.width) == "function" and self.opts.width() or self.opts.width or 1,
                         height = type(self.opts.height) == "function" and self.opts.height() or self.opts.height or 1,
                     })
+                    if self.opts.theme == "prompt_editor" or self.opts.theme == "prompt_footer" then
+                        vim.wo[self.win].winhl = table.concat({
+                            "FloatBorder:ClodexPromptEditorBorder",
+                            "FloatTitle:ClodexPromptEditorTitle",
+                        }, ",")
+                    end
                 end
 
                 function object:close()
@@ -384,6 +407,8 @@ describe("clodex.ui.prompt_creator", function()
 
         assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
         assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptTodoTitle"))
+        assert.is_truthy(vim.wo[creator.layout.title_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
+        assert.is_truthy(vim.wo[creator.layout.body_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
 
         creator:switch_kind(1)
 
@@ -393,6 +418,8 @@ describe("clodex.ui.prompt_creator", function()
 
         assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptBugTitle", 1, true))
         assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptBugTitle"))
+        assert.is_truthy(vim.wo[creator.layout.title_win.win].winhl:find("FloatBorder:ClodexPromptBugTitle", 1, true))
+        assert.is_truthy(vim.wo[creator.layout.body_win.win].winhl:find("FloatBorder:ClodexPromptBugTitle", 1, true))
     end)
 
     it("supports context token highlighting and completion in the composer body", function()

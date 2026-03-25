@@ -1324,7 +1324,6 @@ end
 
 function Creator:refresh()
     self:ensure_shell_windows()
-    self:apply_prompt_theme()
     self:render_project_list()
     self:render_kind_tabs()
     self:render_variant_tabs()
@@ -1333,6 +1332,7 @@ function Creator:refresh()
         self.layout:update()
     end
     self:render_preview()
+    self:apply_prompt_theme()
 end
 
 ---@param silent? boolean
