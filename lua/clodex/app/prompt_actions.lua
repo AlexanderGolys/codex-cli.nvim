@@ -216,7 +216,7 @@ function PromptActions:pick_target(opts, callback)
 end
 
 ---@param project Clodex.Project
----@param opts? { category?: Clodex.PromptCategory, context?: Clodex.PromptContext.Capture, initial_draft?: table, submit_actions?: Clodex.UiSelect.MultilineAction[], lock_kind?: boolean, mode?: "new"|"edit", on_submit?: fun(spec: Clodex.AppPromptActions.AddTodoSpec, action?: string) }
+---@param opts? { category?: Clodex.PromptCategory, context?: Clodex.PromptContext.Capture, initial_draft?: table, submit_actions?: Clodex.UiSelect.MultilineAction[], lock_kind?: boolean, mode?: "new"|"edit", active_project_root?: string, on_submit?: fun(spec: Clodex.AppPromptActions.AddTodoSpec, action?: string, project?: Clodex.Project) }
 function PromptActions:open_creator(project, opts)
     opts = opts or {}
     local category = Prompt.categories.is_valid(opts.category) and opts.category or "todo"
@@ -224,14 +224,16 @@ function PromptActions:open_creator(project, opts)
     return PromptCreator.open({
         app = self.app,
         project = project,
+        projects = self.app.registry:list(),
+        active_project_root = opts.active_project_root or self.app:current_tab().active_project_root,
         context = opts.context,
         initial_kind = category,
         initial_draft = draft,
         submit_actions = opts.submit_actions or SUBMIT_ACTIONS,
         mode = opts.mode or "new",
         lock_kind = opts.lock_kind == true,
-        on_submit = opts.on_submit or function(spec, action)
-            return self:submit_prompt(project, spec, action)
+        on_submit = opts.on_submit or function(spec, action, selected_project)
+            return self:submit_prompt(selected_project or project, spec, action)
         end,
     })
 end

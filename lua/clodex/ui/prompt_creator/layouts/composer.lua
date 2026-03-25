@@ -28,21 +28,21 @@ function Composer:open()
             title = " Title ",
             title_pos = "center",
             width = function()
-                return self.creator:left_width()
+                return self.creator:content_width()
             end,
             height = 1,
             row = function()
                 return self.creator:title_row()
             end,
             col = function()
-                return self.creator:left_col()
+                return self.creator:content_col()
             end,
             view = "text",
             theme = "prompt_editor",
             bo = { modifiable = true },
         })
         self.creator:watch_window(self.title_win)
-        self.creator:apply_common_keymaps(self.title_buf)
+        self.creator:apply_first_slot_keymaps(self.title_buf)
         vim.keymap.set({ "n", "i" }, "<Tab>", function()
             self:focus_body()
         end, { buffer = self.title_buf, silent = true })
@@ -58,7 +58,7 @@ function Composer:open()
             title = " Details ",
             title_pos = "center",
             width = function()
-                return self.creator:left_width()
+                return self.creator:content_width()
             end,
             height = function()
                 return self.creator:body_height()
@@ -67,7 +67,7 @@ function Composer:open()
                 return self.creator:body_row()
             end,
             col = function()
-                return self.creator:left_col()
+                return self.creator:content_col()
             end,
             view = "markdown",
             theme = "prompt_editor",

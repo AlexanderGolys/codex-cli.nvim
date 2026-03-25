@@ -10,6 +10,13 @@ local function extmark_groups(buf)
     return groups
 end
 
+local function trigger_buffer_mapping(buf, lhs, mode)
+    local map = vim.fn.maparg(lhs, mode or "n", false, true)
+    assert.is_table(map)
+    assert.is_function(map.callback)
+    return map.callback()
+end
+
 describe("clodex.ui.prompt_creator", function()
     local Creator
     local creator
@@ -23,6 +30,14 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator.layouts.composer"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.clipboard_preview"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
+        package.loaded["snacks.input"] = {
+            input = function() end,
+        }
+        package.loaded["snacks.picker.select"] = {
+            select = function(_items, _opts, on_choice)
+                on_choice(nil)
+            end,
+        }
 
         original_ui_win = package.loaded["clodex.ui.win"]
         original_notify = package.loaded["clodex.util.notify"]
@@ -118,6 +133,8 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator.layouts.composer"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.clipboard_preview"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
+        package.loaded["snacks.input"] = nil
+        package.loaded["snacks.picker.select"] = nil
         package.loaded["clodex.ui.win"] = original_ui_win
         package.loaded["clodex.util.notify"] = original_notify
         vim.fn.pumvisible = original_pumvisible
@@ -426,6 +443,100 @@ describe("clodex.ui.prompt_creator", function()
         end)
 
         assert.are.equal(body_win.win, vim.api.nvim_get_current_win())
+    end)
+
+    it("defaults the target project picker to the active project", function()
+        local alpha = { name = "Alpha", root = "/tmp/alpha" }
+        local beta = { name = "Beta", root = "/tmp/beta" }
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = alpha,
+            projects = { alpha, beta },
+            active_project_root = beta.root,
+            context = {
+                file_path = "/tmp/alpha/lua/demo.lua",
+                relative_path = "lua/demo.lua",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.are.equal(beta.root, creator.project.root)
+        assert.are.equal(beta.root, creator.state.project.root)
+        assert.are.equal(beta.root, creator.state.context.project_root)
+        assert.are.equal(2, creator.project_index)
+        assert.are.equal(creator.layout.title_win.win, vim.api.nvim_get_current_win())
+    end)
+
+    it("extends title and project-list navigation to switch focus and target project", function()
+        local submitted_project
+        local alpha = { name = "Alpha", root = "/tmp/alpha" }
+        local beta = { name = "Beta", root = "/tmp/beta" }
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = alpha,
+            projects = { alpha, beta },
+            active_project_root = alpha.root,
+            context = {
+                file_path = "/tmp/alpha/lua/demo.lua",
+                relative_path = "lua/demo.lua",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Route prompt",
+                details = "Send it to another project",
+            },
+            on_submit = function(_, _, project)
+                submitted_project = project
+                return false
+            end,
+        })
+
+        vim.api.nvim_set_current_win(creator.layout.title_win.win)
+        vim.cmd.stopinsert()
+        trigger_buffer_mapping(creator.layout.title_buf, "<Left>")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.project_win.win
+        end)
+
+        trigger_buffer_mapping(creator.project_buf, "<Down>")
+
+        wait_for(function()
+            return creator.project.root == beta.root and creator.state.context.project_root == beta.root
+        end)
+
+        trigger_buffer_mapping(creator.project_buf, "<Right>")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.layout.title_win.win
+        end)
+
+        creator:submit("queue")
+
+        wait_for(function()
+            return submitted_project ~= nil
+        end)
+
+        assert.are.equal(beta.root, submitted_project.root)
     end)
 
     it("keeps the creator open when submit requests it", function()

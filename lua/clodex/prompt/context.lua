@@ -86,6 +86,8 @@ local TOKEN_SPECS = {
     },
 }
 
+---@param win integer
+---@return boolean
 local function is_editor_window(win)
     if not vim.api.nvim_win_is_valid(win) then
         return false
@@ -99,6 +101,7 @@ local function is_editor_window(win)
     return vim.bo[buf].buftype == ""
 end
 
+---@return integer?
 local function resolve_source_window()
     local current = vim.api.nvim_get_current_win()
     if is_editor_window(current) then
@@ -112,17 +115,23 @@ local function resolve_source_window()
     end
 end
 
+---@param path string
+---@param root? string
+---@return string
 local function relative_path(path, root)
     local rel = root and vim.fs.relpath(root, path) or nil
     return rel and rel ~= "" and rel or fs.basename(path)
 end
 
+---@param text string
+---@return string
 local function quote(text)
-    local normalized = vim.trim((text or ""):gsub("%s+", " "))
-    normalized = normalized:gsub("\\", "\\\\"):gsub('"', '\\"')
-    return ('"%s"'):format(normalized)
+    return '"' .. vim.trim(text):gsub('"', "'") .. '"'
 end
 
+---@param buf integer
+---@param mode string
+---@return string?, string?, integer?, integer?
 local function get_selection(buf, mode)
     local block_mode = string.char(22)
     if mode ~= "v" and mode ~= "V" and mode ~= block_mode then
@@ -153,6 +162,9 @@ local function get_selection(buf, mode)
     return table.concat(lines, "\n"), mode, start_row, end_row
 end
 
+---@param a vim.Diagnostic
+---@param b vim.Diagnostic
+---@return boolean
 local function diagnostic_sort(a, b)
     if a.lnum ~= b.lnum then
         return a.lnum < b.lnum
@@ -160,6 +172,8 @@ local function diagnostic_sort(a, b)
     return a.col < b.col
 end
 
+---@param value integer?
+---@return string
 local function severity_name(value)
     local severity = vim.diagnostic.severity
     local map = {
@@ -171,6 +185,10 @@ local function severity_name(value)
     return map[value] or "UNKNOWN"
 end
 
+---@param diags vim.Diagnostic[]
+---@param fallback_path string
+---@param root? string
+---@return string?
 local function format_diagnostics(diags, fallback_path, root)
     if #diags == 0 then
         return nil
@@ -191,10 +209,14 @@ local function format_diagnostics(diags, fallback_path, root)
     return table.concat(lines, "\n")
 end
 
+---@param context Clodex.PromptContext.Capture
+---@return vim.Diagnostic[]
 local function current_buffer_diags(context)
     return vim.diagnostic.get(context.buf)
 end
 
+---@param context Clodex.PromptContext.Capture
+---@return vim.Diagnostic[]
 local function current_line_diags(context)
     if context.buf == nil or context.cursor_row == nil then
         return {}
@@ -202,6 +224,8 @@ local function current_line_diags(context)
     return vim.diagnostic.get(context.buf, { lnum = context.cursor_row - 1 })
 end
 
+---@param context Clodex.PromptContext.Capture
+---@return vim.Diagnostic[]
 local function project_diagnostics(context)
     local diags = {} ---@type vim.Diagnostic[]
     for _, diag in ipairs(vim.diagnostic.get(nil)) do
