@@ -137,7 +137,6 @@ require("clodex").setup({
 - `refactor`
 - `idea`
 - `ask`
-- `library`
 - `notworking`
 
 Legacy queue items using `adjustment` and `explain` are still accepted and mapped to `freeform` and `ask` behavior.

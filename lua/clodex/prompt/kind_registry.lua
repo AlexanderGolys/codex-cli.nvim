@@ -7,7 +7,6 @@
 ---| "idea"
 ---| "ask"
 ---| "explain"
----| "library"
 ---| "notworking"
 
 ---@class Clodex.PromptCategoryDef
@@ -149,16 +148,6 @@ local kinds = {
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
-        },
-    },
-    {
-        id = "library",
-        label = "Library",
-        highlight = "idea_title",
-        default_title = "Use a saved prompt template",
-        default_mode = "templates",
-        modes = {
-            mode("templates", "Templates", "template_picker"),
         },
     },
     {

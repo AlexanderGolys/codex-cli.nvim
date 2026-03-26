@@ -67,7 +67,7 @@ local function selection_default_draft(category, context)
     if not context or not context.selection_text then
         return nil
     end
-    if category == "bug" or category == "library" then
+    if category == "bug" then
         return nil
     end
     local definition = Prompt.categories.get(category)

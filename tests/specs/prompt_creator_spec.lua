@@ -30,7 +30,6 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.composer"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.clipboard_preview"] = nil
-        package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
         package.loaded["snacks.input"] = {
             input = function() end,
         }
@@ -164,7 +163,6 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["clodex.ui.prompt_creator"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.composer"] = nil
         package.loaded["clodex.ui.prompt_creator.layouts.clipboard_preview"] = nil
-        package.loaded["clodex.ui.prompt_creator.layouts.template_picker"] = nil
         package.loaded["snacks.input"] = nil
         package.loaded["snacks.picker.select"] = nil
         package.loaded["snacks"] = original_snacks

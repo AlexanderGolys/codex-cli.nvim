@@ -11,7 +11,6 @@ local ui_win = require("clodex.ui.win")
 local layout_modules = {
     composer = require("clodex.ui.prompt_creator.layouts.composer"),
     clipboard_preview = require("clodex.ui.prompt_creator.layouts.clipboard_preview"),
-    template_picker = require("clodex.ui.prompt_creator.layouts.template_picker"),
 }
 
 ---@class Clodex.PromptCreator.OpenOpts
@@ -247,7 +246,7 @@ local function selection_seed(kind, context)
     if not context or not context.selection_text then
         return nil
     end
-    if kind == "bug" or kind == "library" then
+    if kind == "bug" then
         return nil
     end
     local spec = require("clodex.prompt").parse(require("clodex.prompt").render(
