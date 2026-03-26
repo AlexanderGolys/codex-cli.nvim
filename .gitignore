@@ -30,6 +30,8 @@ Thumbs.db
 /.cache/
 /build/
 /dist/
+/target/
+/rust/clodex-mcp/target/
 .nvimlog
 **.json
 STYLE_GUIDELINES.md
