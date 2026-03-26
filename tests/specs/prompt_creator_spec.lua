@@ -376,6 +376,10 @@ describe("clodex.ui.prompt_creator", function()
                 name = "Demo",
                 root = "/tmp/demo",
             },
+            projects = {
+                { name = "Demo", root = "/tmp/demo" },
+                { name = "Other", root = "/tmp/other" },
+            },
             initial_kind = "todo",
             on_submit = function() end,
         })
@@ -387,6 +391,32 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_truthy(lines[2]:find("Ctrl-←/→", 1, true))
         assert.is_nil(lines[1]:find("Left/Right", 1, true))
         assert.is_nil(lines[1]:find("Up/Down", 1, true))
+    end)
+
+    it("hides unavailable footer hints for projects and source tabs", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local lines = vim.api.nvim_buf_get_lines(creator.footer_buf, 0, -1, false)
+
+        assert.is_nil(lines[1]:find("↑/↓", 1, true))
+        assert.is_nil(lines[1]:find("j/k", 1, true))
+        assert.is_nil(lines[1]:find("[/]", 1, true))
     end)
 
     it("hides normal-mode navigation hints while editing in insert mode", function()

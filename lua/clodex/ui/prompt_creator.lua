@@ -104,7 +104,16 @@ local PROMPT_THEME_WINDOW_FIELDS = {
     { name = "layout", slots = { "title_win", "body_win", "preview_win" } },
 }
 
-local function footer_lines(insert_mode)
+---@param parts string[]
+---@return string
+local function footer_line(parts)
+    return table.concat(parts, "   ")
+end
+
+---@param insert_mode boolean
+---@param has_variants boolean
+---@param has_multiple_projects boolean
+local function footer_lines(insert_mode, has_variants, has_multiple_projects)
     if insert_mode then
         return {
             "Tab/Shift-Tab: move focus   Ctrl-V: image",
@@ -112,13 +121,27 @@ local function footer_lines(insert_mode)
         }
     end
 
+    local row_one = {
+        "←/→ or h/l: kind",
+    }
+    if has_multiple_projects then
+        row_one[#row_one + 1] = "↑/↓ or j/k: project"
+    end
+    if has_variants then
+        row_one[#row_one + 1] = "[/]: source"
+    end
+    row_one[#row_one + 1] = "Ctrl-V: image"
+
     return {
-        "←/→ or h/l: kind   ↑/↓ or j/k: project   [/]: source   Ctrl-V: image",
+        footer_line(row_one),
         "Ctrl-←/→: kind (insert)   Ctrl-S: plan   Ctrl-Q: queue   Ctrl-E: run now   Ctrl-L: chat   q: close",
     }
 end
 
-local function footer_key_labels(insert_mode)
+---@param insert_mode boolean
+---@param has_variants boolean
+---@param has_multiple_projects boolean
+local function footer_key_labels(insert_mode, has_variants, has_multiple_projects)
     if insert_mode then
         return {
             { row = 0, text = "Tab/Shift-Tab" },
@@ -135,9 +158,6 @@ local function footer_key_labels(insert_mode)
     return {
         { row = 0, text = "←/→" },
         { row = 0, text = "h/l" },
-        { row = 0, text = "↑/↓" },
-        { row = 0, text = "j/k" },
-        { row = 0, text = "[/]" },
         { row = 0, text = "Ctrl-V" },
         { row = 1, text = "Ctrl-←/→" },
         { row = 1, text = "Ctrl-S" },
@@ -1043,11 +1063,22 @@ end
 
 function Creator:render_footer()
     local insert_mode = self:in_insert_mode()
-    local lines = footer_lines(insert_mode)
+    local has_variants = #self:variants() > 0
+    local has_multiple_projects = #self.projects > 1
+    local lines = footer_lines(insert_mode, has_variants, has_multiple_projects)
     local marks = {} ---@type Clodex.Extmark[]
     local key_hl = Prompt.title_group(self.state.kind)
 
-    for _, key in ipairs(footer_key_labels(insert_mode)) do
+    local key_labels = footer_key_labels(insert_mode, has_variants, has_multiple_projects)
+    if not insert_mode and has_multiple_projects then
+        key_labels[#key_labels + 1] = { row = 0, text = "↑/↓" }
+        key_labels[#key_labels + 1] = { row = 0, text = "j/k" }
+    end
+    if not insert_mode and has_variants then
+        key_labels[#key_labels + 1] = { row = 0, text = "[/]" }
+    end
+
+    for _, key in ipairs(key_labels) do
         local start_col = lines[key.row + 1]:find(key.text, 1, true)
         if start_col then
             marks[#marks + 1] = Extmark.inline(key.row, start_col - 1, start_col - 1 + #key.text, key_hl)
