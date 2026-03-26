@@ -68,6 +68,11 @@ describe("clodex.ui.prompt_creator", function()
             is_valid = function(win)
                 return type(win) == "number" and win > 0 and vim.api.nvim_win_is_valid(win)
             end,
+            close = function(win)
+                if type(win) == "number" and win > 0 and vim.api.nvim_win_is_valid(win) then
+                    vim.api.nvim_win_close(win, true)
+                end
+            end,
             apply_theme = function(win, theme)
                 if type(win) ~= "number" or win <= 0 or not vim.api.nvim_win_is_valid(win) then
                     return
@@ -132,7 +137,7 @@ describe("clodex.ui.prompt_creator", function()
                 function object:close()
                     if self:valid() then
                         vim.api.nvim_win_close(self.win, true)
-                        self.win = vim.NIL
+                        self.win = nil
                     end
                 end
 
@@ -231,6 +236,36 @@ describe("clodex.ui.prompt_creator", function()
 
         wait_for(function()
             return creator.footer_win == nil and creator.kind_win == nil and creator.layout.title_win == nil
+        end)
+    end)
+
+    it("closes the footer even when wrapper close methods do nothing", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        creator.footer_win.close = function() end
+        creator.kind_win.close = function() end
+        creator.project_win.close = function() end
+
+        vim.api.nvim_win_close(creator.layout.title_win.win, true)
+
+        wait_for(function()
+            return creator.footer_win == nil and creator.kind_win == nil and creator.project_win == nil
         end)
     end)
 
@@ -417,6 +452,70 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_nil(lines[1]:find("[/]", 1, true))
     end)
 
+    it("keeps bordered prompt windows vertically aligned without overlap", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local title_cfg = vim.api.nvim_win_get_config(creator.layout.title_win.win)
+        local body_cfg = vim.api.nvim_win_get_config(creator.layout.body_win.win)
+        local footer_cfg = vim.api.nvim_win_get_config(creator.footer_win.win)
+
+        local title_row = tonumber(title_cfg.row) or title_cfg.row[false]
+        local body_row = tonumber(body_cfg.row) or body_cfg.row[false]
+        local footer_row = tonumber(footer_cfg.row) or footer_cfg.row[false]
+        local title_bottom = title_row + title_cfg.height + 1
+        local body_bottom = body_row + body_cfg.height + 1
+
+        assert.are.equal(title_bottom + 1, body_row)
+        assert.are.equal(body_bottom + 1, footer_row)
+    end)
+
+    it("places the title row directly below the visible tab rows", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.are.equal(creator:kind_row() + 2, creator:title_row())
+
+        creator:switch_kind(1)
+
+        wait_for(function()
+            return creator.state.kind == "bug"
+        end)
+
+        assert.are.equal(creator:variant_row(), creator:kind_row() + 2)
+        assert.are.equal(creator:title_row(), creator:variant_row() + 2)
+    end)
+
     it("hides normal-mode navigation hints while editing in insert mode", function()
         creator = Creator.open({
             app = {
@@ -447,6 +546,47 @@ describe("clodex.ui.prompt_creator", function()
         assert.is_truthy(lines[2]:find("Ctrl-←/→", 1, true))
         assert.is_nil(lines[1]:find("←/→", 1, true))
         assert.is_nil(lines[1]:find("↑/↓", 1, true))
+    end)
+
+    it("highlights the footer close shortcut without spilling into queue", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local line = vim.api.nvim_buf_get_lines(creator.footer_buf, 1, 2, false)[1]
+        local close_found = false
+        local queue_found = false
+
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(creator.footer_buf, -1, 0, -1, { details = true })) do
+            local row = mark[2]
+            local start_col = mark[3]
+            local end_col = mark[4].end_col
+            if row == 1 then
+                local text = line:sub(start_col + 1, end_col)
+                if text == "q: close" then
+                    close_found = true
+                elseif text == "q" or text == "queue" then
+                    queue_found = true
+                end
+            end
+        end
+
+        assert.is_true(close_found)
+        assert.is_false(queue_found)
     end)
 
     it("matches prompt border and footer keymap colors to the active kind", function()
@@ -609,6 +749,29 @@ describe("clodex.ui.prompt_creator", function()
             return creator.state.kind == "freeform"
                 and vim.api.nvim_get_current_win() == creator.footer_win.win
         end)
+    end)
+
+    it("places the footer below the body area", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.are.equal(creator:body_row() + creator:body_height() + 2, creator:footer_row())
+        assert.is_true(creator.footer_win.opts.row() > creator.layout.body_win.opts.row() + creator.layout.body_win.opts.height())
     end)
 
     it("does not bind insert-mode letters or arrows to project switching", function()
@@ -984,6 +1147,44 @@ describe("clodex.ui.prompt_creator", function()
         end)
     end)
 
+    it("includes the project list in the insert-mode tab cycle", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        trigger_buffer_mapping(creator.layout.title_buf, "<Tab>", "i")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.layout.body_win.win
+        end)
+
+        trigger_buffer_mapping(creator.layout.body_buf, "<Tab>", "i")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.project_win.win
+        end)
+
+        trigger_buffer_mapping(creator.project_buf, "<Tab>", "i")
+
+        wait_for(function()
+            return vim.api.nvim_get_current_win() == creator.layout.title_win.win
+        end)
+    end)
+
     it("renders stored project icons in the project picker", function()
         creator = Creator.open({
             app = {
@@ -1018,6 +1219,38 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal(" Beta", lines[2])
     end)
 
+    it("adds a plain background margin around the project picker", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = { name = "Alpha", root = "/tmp/alpha" },
+            projects = {
+                { name = "Alpha", root = "/tmp/alpha" },
+                { name = "Beta", root = "/tmp/beta" },
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local background_config = vim.api.nvim_win_get_config(creator.project_bg_win.win)
+        local picker_config = vim.api.nvim_win_get_config(creator.project_win.win)
+
+        assert.are.equal("none", creator.project_bg_win.opts.border)
+        assert.are.equal(creator:project_background_width(), background_config.width)
+        assert.are.equal(creator:project_background_height(), background_config.height)
+        assert.are.equal(background_config.row + 1, picker_config.row)
+        assert.are.equal(background_config.col + 2, picker_config.col)
+        assert.are.equal(picker_config.width, background_config.width - 4)
+        assert.are.equal(picker_config.height, background_config.height - 2)
+    end)
+
     it("limits clipboard image previews to the preview pane size", function()
         local attached_opts
         package.loaded["snacks"] = {
@@ -1028,9 +1261,18 @@ describe("clodex.ui.prompt_creator", function()
                 end,
             },
             image = {
-                buf = {
-                    attach = function(_buf, opts)
-                        attached_opts = opts
+                supports = function()
+                    return true
+                end,
+                placement = {
+                    new = function(_buf, src, opts)
+                        attached_opts = vim.tbl_extend("force", { src = src }, opts)
+                        return {
+                            ready = function()
+                                return true
+                            end,
+                            close = function() end,
+                        }
                     end,
                 },
             },
@@ -1062,6 +1304,64 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal("/tmp/demo.png", attached_opts.src)
         assert.are.equal(creator:preview_width() - 2, attached_opts.max_width)
         assert.are.equal(creator:preview_height() - 2, attached_opts.max_height)
+
+        package.loaded["snacks"] = nil
+    end)
+
+    it("falls back when image preview rendering does not become ready", function()
+        local closed = false
+        package.loaded["snacks"] = {
+            input = { input = function() end },
+            picker = {
+                select = function(_items, _opts, on_choice)
+                    on_choice(nil)
+                end,
+            },
+            image = {
+                supports = function()
+                    return true
+                end,
+                placement = {
+                    new = function()
+                        return {
+                            ready = function()
+                                return false
+                            end,
+                            close = function()
+                                closed = true
+                            end,
+                        }
+                    end,
+                },
+            },
+        }
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Todo with image",
+                image_path = "/tmp/demo.png",
+            },
+            on_submit = function() end,
+        })
+
+        assert(vim.wait(2500, function()
+            local lines = vim.api.nvim_buf_get_lines(creator.preview_buf, 0, -1, false)
+            return closed and lines[1] == "# Clipboard image"
+        end, 20), "timed out waiting for image preview fallback")
 
         package.loaded["snacks"] = nil
     end)
@@ -1182,6 +1482,44 @@ describe("clodex.ui.prompt_creator", function()
             return submitted_action == "exec"
                 and creator.footer_win == nil
                 and creator.layout.title_win == nil
+        end)
+    end)
+
+    it("still closes after submit mutates prompt windows before returning", function()
+        local submitted_action
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Queue prompt",
+                details = "Close after refresh",
+            },
+            on_submit = function(_, action)
+                submitted_action = action
+                creator:refresh()
+                return { id = "queued-item" }
+            end,
+        })
+
+        creator:submit("queue")
+
+        wait_for(function()
+            return submitted_action == "queue"
+                and creator.footer_win == nil
+                and creator.layout == nil
         end)
     end)
 end)

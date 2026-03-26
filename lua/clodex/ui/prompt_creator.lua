@@ -44,16 +44,19 @@ local layout_modules = {
 ---@field field_cache table<string, any>
 ---@field field_history table<string, any[]>
 ---@field layout any
+---@field project_bg_buf integer
 ---@field project_buf integer
 ---@field kind_buf integer
 ---@field footer_buf integer
 ---@field variant_buf? integer
 ---@field preview_buf? integer
+---@field project_bg_win? snacks.win
 ---@field project_win? snacks.win
 ---@field kind_win? snacks.win
 ---@field footer_win? snacks.win
 ---@field variant_win? snacks.win
 ---@field preview_win? snacks.win
+---@field preview_placement? any
 ---@field close_watchers table<integer, integer>
 ---@field is_closing boolean
 ---@field suppress_close_events boolean
@@ -73,6 +76,8 @@ local DEFAULT_SUBMIT_ACTIONS = {
 local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 local TAB_PADDING = 1
+local PROJECT_PICKER_MARGIN_ROWS = 1
+local PROJECT_PICKER_MARGIN_COLS = 2
 
 ---@param win? snacks.win
 ---@return boolean
@@ -82,8 +87,48 @@ end
 
 ---@param win? snacks.win
 local function close_prompt_win(win)
-    if prompt_win_valid(win) and win.close then
-        win:close()
+    if not win then
+        return
+    end
+
+    local winid = win.win
+    if win.close then
+        pcall(function()
+            win:close()
+        end)
+    else
+        ui_win.close(winid)
+    end
+    if ui_win.is_valid(winid) then
+        ui_win.close(winid)
+    end
+    if win.close then
+        win.win = nil
+    end
+end
+
+---@param bufs integer[]
+local function close_prompt_buffer_windows(bufs)
+    if not bufs or #bufs == 0 then
+        return
+    end
+
+    local targets = {}
+    for _, buf in ipairs(bufs) do
+        if type(buf) == "number" and buf > 0 and vim.api.nvim_buf_is_valid(buf) then
+            targets[buf] = true
+        end
+    end
+
+    if vim.tbl_isempty(targets) then
+        return
+    end
+
+    for _, winid in ipairs(vim.api.nvim_list_wins()) do
+        local ok, buf = pcall(vim.api.nvim_win_get_buf, winid)
+        if ok and targets[buf] then
+            ui_win.close(winid)
+        end
     end
 end
 
@@ -100,13 +145,25 @@ local PROMPT_THEME_WINDOW_FIELDS = {
     { name = "footer_win" },
     { name = "variant_win" },
     { name = "preview_win" },
-    { name = "layout", slots = { "title_win", "body_win", "preview_win" } },
+    { name = "layout", slots = { "title_win", "body_win", "preview_win", "footer_win" } }, 
 }
 
 ---@param parts string[]
 ---@return string
 local function footer_line(parts)
     return table.concat(parts, "   ")
+end
+
+---@param image_path string
+---@return string[]
+local function preview_fallback_lines(image_path)
+    return {
+        "# Clipboard image",
+        "",
+        ("`%s`"):format(image_path),
+        "",
+        "Inline preview unavailable. The prompt still keeps the attached image path.",
+    }
 end
 
 ---@param insert_mode boolean
@@ -150,7 +207,6 @@ local function footer_key_labels(insert_mode, has_variants, has_multiple_project
             { row = 1, text = "Ctrl-Q" },
             { row = 1, text = "Ctrl-E" },
             { row = 1, text = "Ctrl-L" },
-            { row = 1, text = "q" },
         }
     end
 
@@ -158,12 +214,11 @@ local function footer_key_labels(insert_mode, has_variants, has_multiple_project
         { row = 0, text = "←/→" },
         { row = 0, text = "h/l" },
         { row = 0, text = "Ctrl-V" },
-        { row = 1, text = "Ctrl-←/→" },
         { row = 1, text = "Ctrl-S" },
         { row = 1, text = "Ctrl-Q" },
         { row = 1, text = "Ctrl-E" },
         { row = 1, text = "Ctrl-L" },
-        { row = 1, text = "q" },
+        { row = 1, text = "q: close" },
     }
 end
 
@@ -317,6 +372,7 @@ function Creator.new(opts)
         drafts = DraftStore.new(),
         field_cache = {},
         field_history = {},
+        project_bg_buf = prompt_buffer("scratch"),
         project_buf = prompt_buffer("scratch"),
         kind_buf = prompt_buffer("scratch"),
         footer_buf = prompt_buffer("scratch"),
@@ -544,13 +600,21 @@ end
 
 function Creator:total_width()
     local width = self:editor_size()
-    local base_width = self.state.image_path and 150 or 108
-    return math.min(width - 6, base_width + self:project_list_width() + 2)
+    local base_width = self.state.image_path and 156 or 118
+    return math.min(width - 6, base_width + self:project_background_width() + 2)
 end
 
 function Creator:total_height()
     local _, height = self:editor_size()
-    return math.min(height - 4, 30)
+    return math.min(height - 4, 32)
+end
+
+function Creator:project_background_width()
+    return self:project_list_width() + (PROJECT_PICKER_MARGIN_COLS * 2)
+end
+
+function Creator:project_background_height()
+    return self:total_height()
 end
 
 function Creator:preview_width()
@@ -580,7 +644,7 @@ function Creator:project_list_width()
 end
 
 function Creator:content_width()
-    return math.max(self:left_width() - self:project_list_width() - 2, 36)
+    return math.max(self:left_width() - self:project_background_width() - 2, 36)
 end
 
 function Creator:left_col()
@@ -589,7 +653,7 @@ function Creator:left_col()
 end
 
 function Creator:content_col()
-    return self:left_col() + self:project_list_width() + 2
+    return self:left_col() + self:project_background_width() + 2
 end
 
 function Creator:top_row()
@@ -602,11 +666,14 @@ function Creator:kind_row()
 end
 
 function Creator:variant_row()
-    return self:kind_row() + 3
+    return self:kind_row() + 2
 end
 
 function Creator:title_row()
-    return self:variant_row() + (#self:variants() > 0 and 3 or 0)
+    if #self:variants() > 0 then
+        return self:variant_row() + 2
+    end
+    return self:kind_row() + 2
 end
 
 function Creator:body_row()
@@ -614,11 +681,11 @@ function Creator:body_row()
 end
 
 function Creator:footer_row()
-    return self:top_row() + self:total_height() - 4
+    return self:top_row() + self:total_height()
 end
 
 function Creator:body_height()
-    return math.max(self:footer_row() - self:body_row() - 1, 8)
+    return math.max(self:footer_row() - self:body_row() - 2, 8)
 end
 
 function Creator:clipboard_note_height()
@@ -630,7 +697,7 @@ function Creator:clipboard_preview_row()
 end
 
 function Creator:clipboard_preview_height()
-    return math.max(self:footer_row() - self:clipboard_preview_row() - 1, 4)
+    return math.max(self:footer_row() - self:clipboard_preview_row() - 2, 4)
 end
 
 function Creator:preview_col()
@@ -642,7 +709,7 @@ function Creator:preview_row()
 end
 
 function Creator:preview_height()
-    return math.max(self:footer_row() - self:preview_row() + 3, 8)
+    return math.max(self:footer_row() - self:preview_row() + 2, 8)
 end
 
 function Creator:preview_image_opts()
@@ -658,11 +725,19 @@ function Creator:preview_image_opts()
 end
 
 function Creator:project_row()
-    return self:top_row()
+    return self:project_background_row() + PROJECT_PICKER_MARGIN_ROWS
 end
 
 function Creator:project_height()
-    return self:total_height()
+    return math.max(self:project_background_height() - (PROJECT_PICKER_MARGIN_ROWS * 2), 1)
+end
+
+function Creator:project_background_row()
+    return self:top_row()
+end
+
+function Creator:project_background_col()
+    return self:left_col()
 end
 
 ---@param buf integer
@@ -848,12 +923,18 @@ function Creator:focus_project_list()
 end
 
 function Creator:focus_creator_default()
+    if self:in_insert_mode() then
+        vim.cmd.stopinsert()
+    end
     vim.schedule(function()
         self:focus_default()
     end)
 end
 
 function Creator:focus_creator_last_slot()
+    if self:in_insert_mode() then
+        vim.cmd.stopinsert()
+    end
     vim.schedule(function()
         if self.layout and self.layout.focus_last then
             self.layout:focus_last()
@@ -920,8 +1001,23 @@ function Creator:render_project_list()
     end
 end
 
+function Creator:render_project_background()
+    if not self.project_bg_buf or not vim.api.nvim_buf_is_valid(self.project_bg_buf) then
+        return
+    end
+
+    local lines = {}
+    for _ = 1, self:project_background_height() do
+        lines[#lines + 1] = ""
+    end
+
+    vim.bo[self.project_bg_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(self.project_bg_buf, 0, -1, false, lines)
+    vim.bo[self.project_bg_buf].modifiable = false
+end
+
 function Creator:apply_project_keymaps()
-    vim.keymap.set("n", "<Right>", function()
+    vim.keymap.set({ "n", "i" }, "<Right>", function()
         self:focus_creator_default()
         return vim.keycode("<Ignore>")
     end, { buffer = self.project_buf, silent = true, expr = true })
@@ -929,11 +1025,11 @@ function Creator:apply_project_keymaps()
         self:focus_creator_default()
         return vim.keycode("<Ignore>")
     end, { buffer = self.project_buf, silent = true, expr = true })
-    vim.keymap.set("n", "<Tab>", function()
+    vim.keymap.set({ "n", "i" }, "<Tab>", function()
         self:focus_creator_default()
         return vim.keycode("<Ignore>")
     end, { buffer = self.project_buf, silent = true, expr = true })
-    vim.keymap.set("n", "<S-Tab>", function()
+    vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
         self:focus_creator_last_slot()
         return vim.keycode("<Ignore>")
     end, { buffer = self.project_buf, silent = true, expr = true })
@@ -1176,6 +1272,32 @@ function Creator:clear_window_watchers()
 end
 
 function Creator:ensure_shell_windows()
+    self:render_project_background()
+    if not self.project_bg_win then
+        self.project_bg_win = ui_win.open({
+            buf = self.project_bg_buf,
+            enter = false,
+            border = "none",
+            width = function()
+                return self:project_background_width()
+            end,
+            height = function()
+                return self:project_background_height()
+            end,
+            row = function()
+                return self:project_background_row()
+            end,
+            col = function()
+                return self:project_background_col()
+            end,
+            view = "footer",
+            theme = "prompt_footer",
+        })
+        self:watch_window(self.project_bg_win)
+    else
+        self.project_bg_win:update()
+    end
+
     if not self.project_win then
         self.project_win = ui_win.open({
             buf = self.project_buf,
@@ -1193,7 +1315,7 @@ function Creator:ensure_shell_windows()
                 return self:project_row()
             end,
             col = function()
-                return self:left_col()
+                return self:project_background_col() + PROJECT_PICKER_MARGIN_COLS
             end,
             view = "footer",
             theme = "prompt_footer",
@@ -1215,7 +1337,7 @@ function Creator:ensure_shell_windows()
             width = function()
                 return self:content_width()
             end,
-            height = 1,
+            height = 2,
             row = function()
                 return self:kind_row()
             end,
@@ -1264,7 +1386,21 @@ function Creator:ensure_shell_windows()
 end
 
 function Creator:render_preview()
+    local function render_preview_fallback()
+        if not self.preview_buf or not vim.api.nvim_buf_is_valid(self.preview_buf) then
+            return
+        end
+        vim.bo[self.preview_buf].modifiable = true
+        vim.bo[self.preview_buf].filetype = "markdown"
+        vim.api.nvim_buf_set_lines(self.preview_buf, 0, -1, false, preview_fallback_lines(self.state.image_path))
+        vim.bo[self.preview_buf].modifiable = false
+    end
+
     if not self.state.image_path then
+        if self.preview_placement and self.preview_placement.close then
+            self.preview_placement:close()
+            self.preview_placement = nil
+        end
         if self.preview_win and self.preview_win:valid() then
             self:without_close_watchers(function()
                 self.preview_win:close()
@@ -1307,17 +1443,32 @@ function Creator:render_preview()
         self.preview_win:update()
     end
     local ok, Snacks = pcall(require, "snacks")
-    if ok and Snacks.image and Snacks.image.buf then
-        Snacks.image.buf.attach(self.preview_buf, self:preview_image_opts())
+    if self.preview_placement and self.preview_placement.close then
+        self.preview_placement:close()
+        self.preview_placement = nil
+    end
+    if ok and Snacks.image and Snacks.image.supports and Snacks.image.supports(self.state.image_path)
+        and Snacks.image.placement and Snacks.image.placement.new then
+        local placement = Snacks.image.placement.new(self.preview_buf, self.state.image_path, self:preview_image_opts())
+        self.preview_placement = placement
+        vim.defer_fn(function()
+            if self.preview_placement ~= placement or not self.preview_buf or not vim.api.nvim_buf_is_valid(self.preview_buf) then
+                return
+            end
+            if placement.ready and placement:ready() then
+                return
+            end
+            if placement.close then
+                placement:close()
+            end
+            if self.preview_placement == placement then
+                self.preview_placement = nil
+            end
+            render_preview_fallback()
+        end, 1500)
         return
     end
-    vim.bo[self.preview_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(self.preview_buf, 0, -1, false, {
-        "# Clipboard image",
-        "",
-        ("`%s`"):format(self.state.image_path),
-    })
-    vim.bo[self.preview_buf].modifiable = false
+    render_preview_fallback()
 end
 
 ---@param focus_context? { area: string, slot?: string, insert: boolean }
@@ -1470,7 +1621,11 @@ function Creator:submit(action)
         return
     end
 
-    self:close()
+    vim.schedule(function()
+        if not self.is_closing then
+            self:close()
+        end
+    end)
 end
 
 ---@param clear_layout? boolean
@@ -1481,17 +1636,39 @@ function Creator:close(clear_layout)
 
     self.is_closing = true
     self:clear_window_watchers()
+    local layout_buffers = self.layout and self.layout.buffers and self.layout:buffers() or {}
+    local lingering_buffers = {
+        self.project_bg_buf,
+        self.project_buf,
+        self.kind_buf,
+        self.variant_buf,
+        self.footer_buf,
+        self.preview_buf,
+    }
+    vim.list_extend(lingering_buffers, layout_buffers)
+    if self.preview_placement and self.preview_placement.close then
+        self.preview_placement:close()
+        self.preview_placement = nil
+    end
     if clear_layout ~= false and self.layout and self.layout.close then
-        self.layout:close()
+        self:without_close_watchers(function()
+            self.layout:close()
+        end)
     end
-    for _, win in ipairs({ self.project_win, self.kind_win, self.variant_win, self.footer_win, self.preview_win }) do
-        close_prompt_win(win)
-    end
+    self.layout = nil
+    self:without_close_watchers(function()
+        for _, win in ipairs({ self.project_bg_win, self.project_win, self.kind_win, self.variant_win, self.footer_win, self.preview_win }) do
+            close_prompt_win(win)
+        end
+        close_prompt_buffer_windows(lingering_buffers)
+    end)
+    self.project_bg_win = nil
     self.project_win = nil
     self.kind_win = nil
     self.variant_win = nil
     self.footer_win = nil
     self.preview_win = nil
+    self.is_closing = false
 end
 
 ---@param opts Clodex.PromptCreator.OpenOpts
