@@ -1,6 +1,25 @@
 local Prompt = require("clodex.prompt")
+local KindRegistry = require("clodex.prompt.kind_registry")
 
 describe("clodex.prompt", function()
+    it("keeps layout-backed modes on every prompt category", function()
+        for _, category in ipairs(KindRegistry.list()) do
+            if category.id ~= "notworking" then
+                local modes = KindRegistry.modes(category.id)
+
+                assert.is_true(#modes > 0)
+                assert.is_string(KindRegistry.default_mode(category.id))
+                for _, mode in ipairs(modes) do
+                    assert.is_string(mode.id)
+                    assert.is_true(mode.id ~= "")
+                    assert.is_string(mode.layout)
+                    assert.is_true(mode.layout ~= "")
+                    assert.is_table(KindRegistry.default_draft(category.id, mode.id))
+                end
+            end
+        end
+    end)
+
     it("resolves language-aware prompt library templates", function()
         local template = Prompt.library.get("review-current-file", { language = "lua" })
 

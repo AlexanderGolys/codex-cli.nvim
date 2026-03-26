@@ -1,5 +1,4 @@
 local PromptAssets = require("clodex.prompt.assets")
-local CreatorRegistry = require("clodex.prompt.creator_registry")
 local DraftStore = require("clodex.prompt.draft_store")
 local KindRegistry = require("clodex.prompt.kind_registry")
 local Prompt = require("clodex.prompt")
@@ -44,6 +43,7 @@ local layout_modules = {
 ---@field state table
 ---@field drafts Clodex.PromptDraftStore
 ---@field field_cache table<string, any>
+---@field field_history table<string, any[]>
 ---@field layout any
 ---@field project_buf integer
 ---@field kind_buf integer
@@ -231,7 +231,7 @@ local function normalize_projects(projects, project)
     return items
 end
 
-local function read_bug_message_register()
+local function read_clipboard_message_register()
     for _, register in ipairs({ "+", '"', "*" }) do
         local message = vim.trim((vim.fn.getreg(register) or ""):gsub("\r\n", "\n"))
         if message ~= "" then
@@ -258,21 +258,6 @@ local function selection_seed(kind, context)
         title = spec.title,
         details = spec.details or "",
     } or nil
-end
-
----@param kind Clodex.PromptCategory
----@param variant? string
----@return string
-local function layout_id_for(kind, variant)
-    local creator = CreatorRegistry.get(kind)
-    if variant then
-        for _, item in ipairs(CreatorRegistry.variants(kind)) do
-            if item.id == variant then
-                return item.layout
-            end
-        end
-    end
-    return creator.layout
 end
 
 ---@param opts Clodex.PromptCreator.OpenOpts
@@ -332,6 +317,7 @@ function Creator.new(opts)
         },
         drafts = DraftStore.new(),
         field_cache = {},
+        field_history = {},
         project_buf = prompt_buffer("scratch"),
         kind_buf = prompt_buffer("scratch"),
         footer_buf = prompt_buffer("scratch"),
@@ -350,14 +336,11 @@ end
 ---@param initial_draft? table
 function Creator:prime_drafts(initial_draft)
     for _, kind in ipairs(self.kinds) do
-        local creator = CreatorRegistry.get(kind.id)
-        local base = initial_draft and kind.id == self.state.kind and vim.deepcopy(initial_draft)
-            or selection_seed(kind.id, self.context)
-            or CreatorRegistry.default_draft(kind.id, creator.default_variant)
-        self.drafts:set(kind.id, nil, base)
-        for _, variant in ipairs(CreatorRegistry.variants(kind.id)) do
-            local draft = kind.id == self.state.kind and initial_draft and variant.id == creator.default_variant and vim.deepcopy(initial_draft)
-                or CreatorRegistry.default_draft(kind.id, variant.id)
+        local default_mode = KindRegistry.default_mode(kind.id)
+        for _, variant in ipairs(KindRegistry.modes(kind.id)) do
+            local draft = kind.id == self.state.kind and initial_draft and variant.id == default_mode and vim.deepcopy(initial_draft)
+                or (variant.id == default_mode and selection_seed(kind.id, self.context))
+                or KindRegistry.default_draft(kind.id, variant.id)
             self.drafts:set(kind.id, variant.id, draft)
         end
     end
@@ -371,31 +354,29 @@ end
 
 ---@return table[]
 function Creator:variants()
-    return CreatorRegistry.variants(self:kind())
+    local modes = KindRegistry.modes(self:kind())
+    if #modes <= 1 then
+        return {}
+    end
+    return modes
 end
 
 ---@return string?
 function Creator:variant()
-    local variants = self:variants()
+    local variants = KindRegistry.modes(self:kind())
     local current = variants[self.variant_index]
     return current and current.id or nil
 end
 
 function Creator:sync_state_from_draft()
     self.state.kind = self:kind()
-    local creator = CreatorRegistry.get(self.state.kind)
     local kind_default_title = KindRegistry.get(self.state.kind).default_title or ""
-    local variants = self:variants()
-    if #variants == 0 then
-        self.variant_index = 1
-        self.state.variant = nil
-    else
-        local max_index = math.min(math.max(self.variant_index, 1), #variants)
-        self.variant_index = max_index
-        self.state.variant = variants[self.variant_index].id
-    end
+    local variants = KindRegistry.modes(self.state.kind)
+    local max_index = math.min(math.max(self.variant_index, 1), math.max(#variants, 1))
+    self.variant_index = max_index
+    self.state.variant = variants[self.variant_index] and variants[self.variant_index].id or KindRegistry.default_mode(self.state.kind)
 
-    local default_draft = CreatorRegistry.default_draft(self.state.kind, self.state.variant)
+    local default_draft = KindRegistry.default_draft(self.state.kind, self.state.variant)
     local draft = self:merge_cached_fields(
         self.state.kind,
         self.state.variant,
@@ -414,11 +395,9 @@ function Creator:sync_state_from_draft()
     end
     self.state.project = self.project
     self.state.context = self.context
-    if self.state.variant == "clipboard_error" then
-        self.state.preview_text = read_bug_message_register() or self.state.preview_text or ""
-    end
-    if self.state.variant == "clipboard_screenshot" and not self.state.image_path then
-        self:replace_clipboard_image(true)
+    local variant = KindRegistry.mode(self.state.kind, self.state.variant)
+    if variant.on_select then
+        variant.on_select(self)
     end
 end
 
@@ -426,7 +405,7 @@ end
 ---@param variant? string
 ---@return string[]
 function Creator:draft_fields_for(kind, variant)
-    local layout = layout_modules[layout_id_for(kind, variant)]
+    local layout = layout_modules[KindRegistry.layout_id(kind, variant)]
     if layout and layout.draft_fields then
         return layout.draft_fields(layout) or {}
     end
@@ -438,7 +417,13 @@ end
 function Creator:update_field_cache(fields, draft)
     for _, field in ipairs(fields) do
         if draft[field] ~= nil then
-            self.field_cache[field] = vim.deepcopy(draft[field])
+            local value = vim.deepcopy(draft[field])
+            self.field_cache[field] = value
+            self.field_history[field] = self.field_history[field] or {}
+            local history = self.field_history[field]
+            if not vim.deep_equal(history[#history], value) then
+                history[#history + 1] = vim.deepcopy(value)
+            end
         end
     end
 end
@@ -546,6 +531,11 @@ function Creator:save_current_draft()
             }))
         end
     end
+end
+
+---@return string?
+function Creator:read_clipboard_message()
+    return read_clipboard_message_register()
 end
 
 function Creator:editor_size()
@@ -1338,21 +1328,14 @@ function Creator:activate_layout(focus_context)
             self.layout:close()
         end)
     end
-    local creator = CreatorRegistry.get(self.state.kind)
-    local layout_id = creator.layout
-    for _, variant in ipairs(self:variants()) do
-        if variant.id == self.state.variant then
-            layout_id = variant.layout
-            break
-        end
-    end
+    local layout_id = KindRegistry.layout_id(self.state.kind, self.state.variant)
     self.layout = layout_modules[layout_id].new(self)
     self.layout:open()
     self.layout:set_draft(vim.tbl_extend("force", self:merge_cached_fields(
         self.state.kind,
         self.state.variant,
         self.drafts:get(self.state.kind, self.state.variant, self.state),
-        CreatorRegistry.default_draft(self.state.kind, self.state.variant)
+        KindRegistry.default_draft(self.state.kind, self.state.variant)
     ), {
         title = self.state.title,
         details = self.state.details,

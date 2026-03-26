@@ -716,6 +716,31 @@ describe("clodex.ui.prompt_creator", function()
 
         assert.are.equal("Shared title", vim.api.nvim_buf_get_lines(creator.layout.title_buf, 0, 1, false)[1])
         assert.are.equal("Shared details", vim.api.nvim_buf_get_lines(creator.layout.body_buf, 0, 1, false)[1])
+        assert.are.same({ "Shared title" }, creator.field_history.title)
+        assert.are.same({ "Shared details" }, creator.field_history.details)
+    end)
+
+    it("tracks a hidden default mode for single-layout categories", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        assert.are.equal("custom", creator.state.variant)
+        assert.is_nil(creator.variant_win)
     end)
 
     it("caches hidden draft fields until a compatible tab is reopened", function()
