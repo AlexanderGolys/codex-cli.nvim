@@ -86,6 +86,7 @@ local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
 ---@field creator_background_margin_cols integer
 ---@field prompt_background_zindex integer
 ---@field prompt_content_zindex integer
+---@field prompt_background_margin integer
 ---@field creator_max_height integer
 ---@field creator_screen_margin_cols integer
 ---@field creator_screen_margin_rows integer
@@ -120,7 +121,8 @@ local LAYOUT = {
     creator_background_margin_rows = 1,
     creator_background_margin_cols = 1,
     prompt_background_zindex = 1,
-    prompt_content_zindex = 10,
+    prompt_content_zindex = 20,
+    prompt_background_margin = 1,
     creator_max_height = 32,
     creator_screen_margin_cols = 6,
     creator_screen_margin_rows = 4,
@@ -154,6 +156,21 @@ local LAYOUT = {
 ---@return integer
 local function clamp(value, minimum, maximum)
     return math.min(math.max(value, minimum), maximum)
+end
+
+---@param win? snacks.win
+---@return integer
+local function window_border_padding(win)
+    if not win or not win.opts then
+        return 0
+    end
+
+    local border = win.opts.border
+    if border == nil or border == "none" then
+        return 0
+    end
+
+    return 1
 end
 
 ---@param win? snacks.win
@@ -785,6 +802,10 @@ end
 ---@return integer
 -- Backdrop width: one extra column on each side so the background only shows in the gaps.
 function Creator:project_background_width()
+    local left, _, right = self:creator_frame_bounds()
+    if left and right then
+        return (right - left) + (LAYOUT.prompt_background_margin * 2)
+    end
     return self:total_width() + (LAYOUT.creator_background_margin_cols * 2)
 end
 
@@ -797,6 +818,10 @@ end
 ---@return integer
 -- Backdrop height: one extra row on each side so it frames the full creator layout.
 function Creator:project_background_height()
+    local _, top, _, bottom = self:creator_frame_bounds()
+    if top and bottom then
+        return (bottom - top) + (LAYOUT.prompt_background_margin * 2)
+    end
     return self:total_height() + (LAYOUT.creator_background_margin_rows * 2)
 end
 
@@ -957,31 +982,73 @@ function Creator:preview_image_opts()
     }
 end
 
+---@return integer?, integer?, integer?, integer?
+-- Tracks the actual outer frame occupied by the visible creator windows so the
+-- plain backdrop can wrap the full composed UI instead of approximating it.
+function Creator:creator_frame_bounds()
+    local windows = {
+        self.project_win,
+        self.kind_win,
+        self.variant_win,
+        self.footer_win,
+        self.preview_win,
+        self.layout and self.layout.title_win or nil,
+        self.layout and self.layout.body_win or nil,
+    }
+
+    local left, top, right, bottom
+    for _, win in ipairs(windows) do
+        if win and win:valid() then
+            local config = vim.api.nvim_win_get_config(win.win)
+            local border = window_border_padding(win)
+            local frame_left = config.col - border
+            local frame_top = config.row - border
+            local frame_right = config.col + config.width + border
+            local frame_bottom = config.row + config.height + border
+
+            left = left and math.min(left, frame_left) or frame_left
+            top = top and math.min(top, frame_top) or frame_top
+            right = right and math.max(right, frame_right) or frame_right
+            bottom = bottom and math.max(bottom, frame_bottom) or frame_bottom
+        end
+    end
+
+    return left, top, right, bottom
+end
+
 ---@return integer
 function Creator:project_row()
-    return self:project_background_row() + LAYOUT.project_picker_margin_rows
+    return self:top_row()
 end
 
 ---@return integer
 -- The project picker lives inside the larger backdrop: picker margin plus outer backdrop margin.
 function Creator:project_height()
-    return math.max(
-        self:project_background_height()
-            - (LAYOUT.project_picker_margin_rows * 2)
-            - (LAYOUT.creator_background_margin_rows * 2),
-        LAYOUT.min_window_offset
-    )
+    return math.max(self:total_height() - (LAYOUT.project_picker_margin_rows * 2), LAYOUT.min_window_offset)
+end
+
+---@return integer
+function Creator:project_col()
+    return self:left_col() + (LAYOUT.project_picker_margin_cols - LAYOUT.creator_background_margin_cols)
 end
 
 ---@return integer
 -- The shared backdrop starts one cell above the visible creator to create the intended outer margin.
 function Creator:project_background_row()
+    local _, top = self:creator_frame_bounds()
+    if top then
+        return top - LAYOUT.prompt_background_margin
+    end
     return self:top_row() - LAYOUT.creator_background_margin_rows
 end
 
 ---@return integer
 -- The shared backdrop starts one cell left of the visible creator to create the intended outer margin.
 function Creator:project_background_col()
+    local left = self:creator_frame_bounds()
+    if left then
+        return left - LAYOUT.prompt_background_margin
+    end
     return self:left_col() - LAYOUT.creator_background_margin_cols
 end
 
@@ -1563,7 +1630,7 @@ function Creator:ensure_shell_windows()
                 return self:project_row()
             end,
             col = function()
-                return self:project_background_col() + LAYOUT.project_picker_margin_cols
+                return self:project_col()
             end,
             view = "footer",
             theme = "prompt_footer",
