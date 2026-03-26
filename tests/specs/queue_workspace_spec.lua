@@ -781,7 +781,7 @@ describe("clodex.ui.queue_workspace", function()
             "Planned (1)",
             "  Fix parser",
             "    Adjust token handling",
-            "    Type: TODO",
+            "    Type: Improvement",
             "",
         }, lines)
 
@@ -909,7 +909,7 @@ describe("clodex.ui.queue_workspace", function()
             "Implemented (1)",
             "  Fix parser  [󰜘 abc1234]",
             "    Adjust token handling",
-            "    Type: TODO",
+            "    Type: Improvement",
             "    󰜘 abc1234",
             "",
         }, lines)
@@ -975,7 +975,7 @@ describe("clodex.ui.queue_workspace", function()
             "Implemented (1)",
             "  Fix parser  [󰜘 abc1234]",
             "    Adjust token handling",
-            "    Type: TODO",
+            "    Type: Improvement",
             "    󰜘 abc1234",
             "",
         }, lines)

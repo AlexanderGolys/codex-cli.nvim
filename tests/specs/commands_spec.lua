@@ -30,6 +30,7 @@ describe("clodex.commands", function()
             debug_reload = function() end,
             add_project = function() end,
             open_project_readme_file = function() end,
+            open_project_todo_file = function() end,
             open_project_dictionary_file = function() end,
             open_project_cheatsheet_file = function() end,
             toggle_project_cheatsheet_preview = function() end,
@@ -153,11 +154,30 @@ describe("clodex.commands", function()
         Commands.register()
 
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "ask"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "improvement"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "fix"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "feature"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "restructure"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "vision"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "clean-up"))
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "demo"))
         assert.are.same(
             { "/tmp/alpha", "/tmp/demo", "alpha", "demo", "for", "pick" },
             created.ClodexPrompt.opts.complete("", "ClodexPrompt ask ", 17)
         )
+    end)
+
+    it("dispatches project todo commands through the project action API", function()
+        Commands.register()
+
+        local called = false
+        fake_clodex.open_project_todo_file = function()
+            called = true
+        end
+
+        created.ClodexProject.handler({ args = "todo", fargs = { "todo" } })
+
+        assert.is_true(called)
     end)
 
     it("dispatches prompt kind aliases through the base prompt command", function()
@@ -216,13 +236,13 @@ describe("clodex.commands", function()
         end
 
         created.ClodexPrompt.handler({
-            args = "refactor",
-            fargs = { "refactor" },
+            args = "restructure",
+            fargs = { "restructure" },
             range = 2,
         })
 
         assert.is_not_nil(called)
-        assert.are.equal("refactor", called.category)
+        assert.are.equal("restructure", called.category)
         assert.are.same(captured_prompt_context, called.context)
     end)
 
@@ -235,13 +255,13 @@ describe("clodex.commands", function()
         end
 
         created.ClodexPromptFile.handler({
-            args = "refactor",
-            fargs = { "refactor" },
+            args = "restructure",
+            fargs = { "restructure" },
             range = 2,
         })
 
         assert.is_not_nil(called)
-        assert.are.equal("refactor", called.category)
+        assert.are.equal("restructure", called.category)
         assert.are.same(captured_prompt_context, called.context)
     end)
 

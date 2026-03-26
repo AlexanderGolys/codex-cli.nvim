@@ -29,4 +29,13 @@ describe("clodex.prompt", function()
 
         assert.is_false(vim.tbl_contains(ids, "library"))
     end)
+
+    it("maps renamed prompt kind aliases to their canonical categories", function()
+        assert.are.equal("todo", KindRegistry.get("improvement").id)
+        assert.are.equal("freeform", KindRegistry.get("fix").id)
+        assert.are.equal("refactor", KindRegistry.get("restructure").id)
+        assert.are.equal("idea", KindRegistry.get("vision").id)
+        assert.are.equal("cleanup", KindRegistry.get("clean-up").id)
+        assert.are.equal("ask", KindRegistry.get("explain").id)
+    end)
 end)

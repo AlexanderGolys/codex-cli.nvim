@@ -1893,7 +1893,7 @@ function Workspace:edit_queue_item()
     end
 
     self.app.prompt_actions:open_creator(project, {
-        category = Prompt.categories.is_valid(item.kind) and item.kind or "todo",
+        category = Prompt.categories.is_valid(item.kind) and Prompt.categories.get(item.kind).id or "todo",
         context = PromptContext.capture({ project = project }),
         active_project_root = project.root,
         mode = "edit",

@@ -148,14 +148,26 @@ local TARGET_SCOPE = enum("scope", {
 local function prompt_kind_enum()
     local choices = {} ---@type { value: string, aliases?: string[], desc: string }[]
     for _, category in ipairs(Prompt.categories.list()) do
-        local aliases = {} ---@type string[]
-        if category.id == "ask" then
-            aliases[#aliases + 1] = "explain"
+        local value = category.id
+        local aliases = vim.deepcopy(category.aliases or {})
+        if category.id == "todo" then
+            value = "improvement"
+            aliases[#aliases + 1] = "todo"
         elseif category.id == "freeform" then
-            aliases[#aliases + 1] = "adjustment"
+            value = "fix"
+            aliases[#aliases + 1] = "freeform"
+        elseif category.id == "refactor" then
+            value = "restructure"
+            aliases[#aliases + 1] = "refactor"
+        elseif category.id == "idea" then
+            value = "vision"
+            aliases[#aliases + 1] = "idea"
+        elseif category.id == "cleanup" then
+            value = "clean-up"
+            aliases[#aliases + 1] = "cleanup"
         end
         choices[#choices + 1] = {
-            value = category.id,
+            value = value,
             aliases = aliases,
             desc = category.default_title ~= "" and category.default_title or category.label,
         }

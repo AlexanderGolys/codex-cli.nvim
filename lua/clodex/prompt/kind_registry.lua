@@ -2,9 +2,11 @@
 ---| "todo"
 ---| "bug"
 ---| "freeform"
+---| "feature"
 ---| "adjustment"
 ---| "refactor"
 ---| "idea"
+---| "cleanup"
 ---| "ask"
 ---| "explain"
 ---| "notworking"
@@ -17,6 +19,7 @@
 ---@field default_title string
 ---@field picker_detail? string
 ---@field commit_policy? "required"|"skip"|"optional"
+---@field aliases? string[]
 ---@field modes? Clodex.PromptCategoryModeDef[]
 ---@field default_mode? string
 
@@ -62,9 +65,10 @@ end
 local kinds = {
     {
         id = "todo",
-        label = "TODO",
+        label = "Improvement",
         highlight = "todo_title",
-        default_title = "New todo",
+        default_title = "Improve the current implementation",
+        aliases = { "improvement" },
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
@@ -108,11 +112,22 @@ local kinds = {
     },
     {
         id = "freeform",
-        label = "Freeform",
+        label = "Fix",
         highlight = "freeform_title",
-        default_title = "",
-        picker_detail = "Send any message to the agent",
+        default_title = "Fix the current behavior",
+        picker_detail = "Send a direct fix-oriented request to the agent",
         commit_policy = "optional",
+        aliases = { "fix", "adjustment" },
+        default_mode = "custom",
+        modes = {
+            mode("custom", "Custom", "composer"),
+        },
+    },
+    {
+        id = "feature",
+        label = "Feature",
+        highlight = "feature_title",
+        default_title = "Add a new feature",
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
@@ -120,9 +135,10 @@ local kinds = {
     },
     {
         id = "refactor",
-        label = "Refactor",
+        label = "Restructure",
         highlight = "refactor_title",
-        default_title = "Refactor implementation",
+        default_title = "Restructure the implementation",
+        aliases = { "restructure" },
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
@@ -130,10 +146,22 @@ local kinds = {
     },
     {
         id = "idea",
-        label = "Idea",
+        label = "Vision",
         highlight = "idea_title",
-        default_title = "Explore an idea",
+        default_title = "Explore a product vision",
         commit_policy = "skip",
+        aliases = { "vision" },
+        default_mode = "custom",
+        modes = {
+            mode("custom", "Custom", "composer"),
+        },
+    },
+    {
+        id = "cleanup",
+        label = "Clean-up",
+        highlight = "cleanup_title",
+        default_title = "Clean up the implementation",
+        aliases = { "clean-up", "clean_up" },
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
@@ -145,6 +173,7 @@ local kinds = {
         highlight = "explain_title",
         default_title = "Ask about the current behavior",
         commit_policy = "skip",
+        aliases = { "explain" },
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),
@@ -165,9 +194,10 @@ local kinds = {
 local by_id = {} ---@type table<string, Clodex.PromptCategoryDef>
 for _, kind in ipairs(kinds) do
     by_id[kind.id] = kind
+    for _, alias in ipairs(kind.aliases or {}) do
+        by_id[alias] = kind
+    end
 end
-by_id.adjustment = by_id.freeform
-by_id.explain = by_id.ask
 
 ---@return Clodex.PromptCategoryDef[]
 function M.list()

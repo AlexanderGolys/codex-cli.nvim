@@ -131,7 +131,7 @@ local function normalize_item(item)
     if not has_item_id(item) then
         item.id = util.uuid_v4()
     end
-    item.kind = Prompt.categories.is_valid(item.kind) and item.kind or "todo"
+    item.kind = Prompt.categories.is_valid(item.kind) and Prompt.categories.get(item.kind).id or "todo"
     sanitize_history_metadata(item)
     if type(item.execution_instructions) ~= "string" or vim.trim(item.execution_instructions) == "" then
         item.execution_instructions = nil
@@ -304,7 +304,7 @@ function Queue:add_todo(project, spec)
     local details = spec.details and vim.trim(spec.details) or nil
 
     local item = normalize_item({
-        kind = Prompt.categories.is_valid(spec.kind) and spec.kind or "todo",
+        kind = Prompt.categories.is_valid(spec.kind) and Prompt.categories.get(spec.kind).id or "todo",
         title = title,
         details = details,
         prompt = title .. (details and ("\n\n" .. details) or ""),

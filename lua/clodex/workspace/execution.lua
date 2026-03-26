@@ -81,10 +81,11 @@ end
 ---@param _config Clodex.Config.Values
 ---@return string[]
 local function completion_instruction_lines(item, _config)
+    local plan_only = Prompt.categories.get(item.kind).id == "idea"
     local lines = {
         "Use the clodex MCP task loop for queued work in this repository.",
         ("Start by calling `get_task` for this repository root to claim or resume the active queued task. The current queued item id is `%s`."):format(item.id),
-        item.kind == "idea"
+        plan_only
                 and "Implement the returned `work_prompt` by generating follow-up prompts only. Do not change code or create a git commit for this kind; then call `close_task` with `success`, `comment`, and `commit_id = \"\"`."
             or "Implement the returned `work_prompt`, create the required git commit for a successful result, then call `close_task` with `success`, `comment`, and `commit_id`.",
         "If the task is blocked or unfinished, call `close_task` with `success = false` and use `comment` as the failure note that should be appended before retrying.",

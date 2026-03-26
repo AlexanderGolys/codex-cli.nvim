@@ -169,7 +169,7 @@ end
 ---@param callback fun(project: Clodex.Project, category: Clodex.PromptCategory)
 function PromptActions:pick_target(opts, callback)
     opts = opts or {}
-    local category = Prompt.categories.is_valid(opts.category) and opts.category or "todo"
+    local category = Prompt.categories.is_valid(opts.category) and Prompt.categories.get(opts.category).id or "todo"
     local project = self:resolve_project(opts)
     if project then
         callback(project, category)
@@ -190,7 +190,7 @@ end
 ---@param opts? { category?: Clodex.PromptCategory, context?: Clodex.PromptContext.Capture, initial_draft?: table, submit_actions?: Clodex.UiSelect.MultilineAction[], lock_kind?: boolean, mode?: "new"|"edit", active_project_root?: string, on_submit?: fun(spec: Clodex.AppPromptActions.AddTodoSpec, action?: string, project?: Clodex.Project) }
 function PromptActions:open_creator(project, opts)
     opts = opts or {}
-    local category = Prompt.categories.is_valid(opts.category) and opts.category or "todo"
+    local category = Prompt.categories.is_valid(opts.category) and Prompt.categories.get(opts.category).id or "todo"
     local draft = opts.initial_draft or selection_default_draft(category, opts.context)
     local current_tab = self.app.current_tab and self.app:current_tab() or nil
     local projects = self.app.registry and self.app.registry.list and self.app.registry:list() or nil

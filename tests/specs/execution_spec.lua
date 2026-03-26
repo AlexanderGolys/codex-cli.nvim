@@ -81,9 +81,9 @@ describe("clodex.workspace.execution", function()
             prompt = "Fix the traceback",
             completion_target = "history",
         })
-        local idea_prompt = execution:dispatch_prompt(project, {
+        local vision_prompt = execution:dispatch_prompt(project, {
             id = "idea-1",
-            kind = "idea",
+            kind = "vision",
             prompt = "Plan the feature",
         })
 
@@ -93,9 +93,9 @@ describe("clodex.workspace.execution", function()
         assert.matches("%$prompt%-nvim%-clodex", todo_prompt)
 
         assert.matches("close directly to `history`", bug_prompt)
-        assert.matches("generating follow%-up prompts only", idea_prompt)
-        assert.matches("Do not change code or create a git commit", idea_prompt)
-        assert.matches("commit_id = \"\"", idea_prompt)
+        assert.matches("generating follow%-up prompts only", vision_prompt)
+        assert.matches("Do not change code or create a git commit", vision_prompt)
+        assert.matches("commit_id = \"\"", vision_prompt)
 
         fs.remove(root)
     end)

@@ -67,7 +67,7 @@ describe("clodex.app.prompt_actions", function()
             relative_path = "lua/demo.lua",
         }
 
-        actions:prompt_for_category_kind(project, "refactor", {
+        actions:prompt_for_category_kind(project, "restructure", {
             context = context,
         })
 
@@ -76,7 +76,7 @@ describe("clodex.app.prompt_actions", function()
         assert.are.equal("refactor", creator_calls[1].initial_kind)
         assert.are.same(context, creator_calls[1].context)
         assert.are.same({
-            title = "Refactor implementation",
+            title = "Restructure the implementation",
             details = "&selection",
         }, creator_calls[1].initial_draft)
     end)
