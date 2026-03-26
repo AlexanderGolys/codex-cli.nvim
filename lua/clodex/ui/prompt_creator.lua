@@ -57,6 +57,7 @@ local layout_modules = {
 ---@field variant_win? snacks.win
 ---@field preview_win? snacks.win
 ---@field preview_placement? any
+---@field anchor_win? integer
 ---@field close_watchers table<integer, integer>
 ---@field is_closing boolean
 ---@field suppress_close_events boolean
@@ -105,6 +106,16 @@ local function close_prompt_win(win)
     if win.close then
         win.win = nil
     end
+end
+
+---@param win? integer
+---@return boolean
+local function is_layout_anchor_win(win)
+    if type(win) ~= "number" or win <= 0 or not vim.api.nvim_win_is_valid(win) then
+        return false
+    end
+
+    return vim.api.nvim_win_get_config(win).relative == ""
 end
 
 ---@param bufs integer[]
@@ -376,6 +387,7 @@ function Creator.new(opts)
         project_buf = prompt_buffer("scratch"),
         kind_buf = prompt_buffer("scratch"),
         footer_buf = prompt_buffer("scratch"),
+        anchor_win = is_layout_anchor_win(vim.api.nvim_get_current_win()) and vim.api.nvim_get_current_win() or nil,
         close_watchers = {},
         is_closing = false,
         suppress_close_events = false,
@@ -588,12 +600,32 @@ function Creator:save_current_draft()
     end
 end
 
+---@return integer?, integer?, integer?, integer?
+function Creator:anchor_rect()
+    local win = is_layout_anchor_win(self.anchor_win) and self.anchor_win or nil
+    if not win then
+        local current_win = vim.api.nvim_get_current_win()
+        win = is_layout_anchor_win(current_win) and current_win or nil
+    end
+    if not win then
+        return nil, nil, nil, nil
+    end
+
+    local position = vim.api.nvim_win_get_position(win)
+    return position[2], position[1], vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win)
+end
+
 ---@return string?
 function Creator:read_clipboard_message()
     return read_clipboard_message_register()
 end
 
 function Creator:editor_size()
+    local _, _, width, height = self:anchor_rect()
+    if width and height then
+        return width, height
+    end
+
     local ui = vim.api.nvim_list_uis()[1]
     return ui and ui.width or vim.o.columns, ui and ui.height or vim.o.lines
 end
@@ -648,8 +680,9 @@ function Creator:content_width()
 end
 
 function Creator:left_col()
-    local width = self:editor_size()
-    return math.max(math.floor((width - self:total_width()) / 2), 1)
+    local anchor_col, _, width = self:anchor_rect()
+    width = width or self:editor_size()
+    return math.max((anchor_col or 0) + math.floor((width - self:total_width()) / 2), 1)
 end
 
 function Creator:content_col()
@@ -657,8 +690,9 @@ function Creator:content_col()
 end
 
 function Creator:top_row()
-    local _, height = self:editor_size()
-    return math.max(math.floor((height - self:total_height()) / 2), 1)
+    local _, anchor_row, _, height = self:anchor_rect()
+    local resolved_height = height or select(2, self:editor_size())
+    return math.max((anchor_row or 0) + math.floor((resolved_height - self:total_height()) / 2), 1)
 end
 
 function Creator:kind_row()
