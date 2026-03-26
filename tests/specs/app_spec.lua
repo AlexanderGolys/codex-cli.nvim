@@ -206,6 +206,7 @@ describe("clodex.app", function()
         })
 
         assert.is_true(vim.tbl_contains(command_names, "Clodex backend"))
+        assert.is_true(vim.tbl_contains(command_names, "ClodexProject todo"))
         assert.is_true(vim.tbl_contains(command_names, "ClodexPromptFile"))
         assert.is_true(vim.tbl_contains(
             vim.tbl_map(function(item)

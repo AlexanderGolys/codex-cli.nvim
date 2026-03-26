@@ -120,18 +120,34 @@ local DEBUG_ACTION = enum("action", {
     { value = "reload", desc = "Reload clodex modules" },
 })
 
-local PROJECT_ACTION = enum("action", {
-    { value = "add", desc = "Register the current workspace as a project" },
-    { value = "readme", desc = "Open the current project's README" },
-    { value = "dictionary", aliases = { "dict" }, desc = "Open the current project's dictionary" },
-    { value = "cheatsheet", desc = "Open the current project's cheatsheet file" },
-    { value = "cheatsheet-panel", aliases = { "cheatsheet_panel", "cheatsheet-preview", "cheatsheet_preview" }, desc = "Toggle the project cheatsheet preview" },
-    { value = "cheatsheet-add", aliases = { "cheatsheet_add" }, desc = "Add a cheatsheet item" },
-    { value = "notes", desc = "Open the current project's notes picker" },
-    { value = "note-add", aliases = { "note_add" }, desc = "Create a project note" },
-    { value = "bookmarks", desc = "Open the current project's bookmarks picker" },
-    { value = "bookmark-add", aliases = { "bookmark_add" }, desc = "Add a bookmark at the current line" },
-})
+local PROJECT_ACTIONS = {
+    { value = "add", desc = "Register the current workspace as a project", invoke = "ClodexProject add" },
+    { value = "readme", desc = "Open the current project's README", invoke = "ClodexProject readme", method = "open_project_readme_file" },
+    { value = "todo", desc = "Open the current project's TODO list", invoke = "ClodexProject todo", method = "open_project_todo_file" },
+    { value = "dictionary", aliases = { "dict" }, desc = "Open the current project's dictionary", invoke = "ClodexProject dictionary", method = "open_project_dictionary_file" },
+    { value = "cheatsheet", desc = "Open the current project's cheatsheet file", invoke = "ClodexProject cheatsheet", method = "open_project_cheatsheet_file" },
+    { value = "cheatsheet-panel", aliases = { "cheatsheet_panel", "cheatsheet-preview", "cheatsheet_preview" }, desc = "Toggle the project cheatsheet preview", invoke = "ClodexProject cheatsheet-panel", method = "toggle_project_cheatsheet_preview" },
+    { value = "cheatsheet-add", aliases = { "cheatsheet_add" }, desc = "Add a cheatsheet item", invoke = "ClodexProject cheatsheet-add", method = "add_project_cheatsheet_item" },
+    { value = "notes", desc = "Open the current project's notes picker", invoke = "ClodexProject notes", method = "open_project_notes_picker" },
+    { value = "note-add", aliases = { "note_add" }, desc = "Create a project note", invoke = "ClodexProject note-add", method = "create_project_note" },
+    { value = "bookmarks", desc = "Open the current project's bookmarks picker", invoke = "ClodexProject bookmarks", method = "open_project_bookmarks_picker" },
+    { value = "bookmark-add", aliases = { "bookmark_add" }, desc = "Add a bookmark at the current line", invoke = "ClodexProject bookmark-add", method = "add_project_bookmark" },
+}
+
+local PROJECT_ACTION_HANDLERS = {} ---@type table<string, string>
+for _, action in ipairs(PROJECT_ACTIONS) do
+    if action.method then
+        PROJECT_ACTION_HANDLERS[action.value] = action.method
+    end
+end
+
+local PROJECT_ACTION = enum("action", vim.tbl_map(function(action)
+    return {
+        value = action.value,
+        aliases = action.aliases,
+        desc = action.desc,
+    }
+end, PROJECT_ACTIONS))
 
 local TODO_ACTION = enum("action", {
     { value = "add", desc = "Add a todo prompt" },
@@ -513,7 +529,7 @@ local function prompt_command_opts(command, category)
 end
 
 local function top_level_palette_specs()
-    return {
+    local specs = {
         { name = "Clodex", desc = "Toggle the queue workspace panel", invoke = "Clodex" },
         { name = "Clodex panel", desc = "Toggle the queue workspace panel", invoke = "Clodex panel" },
         { name = "Clodex cli", desc = "Toggle the project terminal", invoke = "Clodex cli" },
@@ -525,22 +541,22 @@ local function top_level_palette_specs()
         { name = "ClodexDebug panel", desc = "Toggle the debug state panel", invoke = "ClodexDebug panel", keep_open = true },
         { name = "ClodexDebug mini", desc = "Toggle the compact debug panel", invoke = "ClodexDebug mini" },
         { name = "ClodexDebug reload", desc = "Reload clodex modules", invoke = "ClodexDebug reload" },
-        { name = "ClodexProject add", desc = "Register the current workspace as a project", invoke = "ClodexProject add" },
-        { name = "ClodexProject readme", desc = "Open the current project's README", invoke = "ClodexProject readme" },
-        { name = "ClodexProject dictionary", desc = "Open the current project's dictionary", invoke = "ClodexProject dictionary" },
-        { name = "ClodexProject cheatsheet", desc = "Open the current project's cheatsheet file", invoke = "ClodexProject cheatsheet" },
-        { name = "ClodexProject cheatsheet-panel", desc = "Toggle the project cheatsheet preview", invoke = "ClodexProject cheatsheet-panel" },
-        { name = "ClodexProject cheatsheet-add", desc = "Add a cheatsheet item", invoke = "ClodexProject cheatsheet-add" },
-        { name = "ClodexProject notes", desc = "Open the current project's notes picker", invoke = "ClodexProject notes" },
-        { name = "ClodexProject note-add", desc = "Create a project note", invoke = "ClodexProject note-add" },
-        { name = "ClodexProject bookmarks", desc = "Open the current project's bookmarks picker", invoke = "ClodexProject bookmarks" },
-        { name = "ClodexProject bookmark-add", desc = "Add a bookmark at the current line", invoke = "ClodexProject bookmark-add" },
         { name = "ClodexTodo", desc = "Add a todo prompt", invoke = "ClodexTodo" },
         { name = "ClodexTodo bug", desc = "Add a bug-investigation prompt", invoke = "ClodexTodo bug" },
         { name = "ClodexTodo implement", desc = "Implement the next queued item", invoke = "ClodexTodo implement" },
         { name = "ClodexTodo all", desc = "Implement all queued items", invoke = "ClodexTodo all" },
         { name = "ClodexPromptFile", desc = "Add a prompt for the current file's project", invoke = "ClodexPromptFile" },
     } ---@type Clodex.CommandSpec[]
+
+    for _, action in ipairs(PROJECT_ACTIONS) do
+        specs[#specs + 1] = {
+            name = action.invoke,
+            desc = action.desc,
+            invoke = action.invoke,
+        }
+    end
+
+    return specs
 end
 
 ---@return Clodex.CommandSpec[]
@@ -665,24 +681,9 @@ local function registered_command_specs()
                 if not check_extra_args("ClodexProject", trailing, "only an optional name for 'add'") then
                     return
                 end
-                if action == "readme" then
-                    clodex.open_project_readme_file()
-                elseif action == "dictionary" then
-                    clodex.open_project_dictionary_file()
-                elseif action == "cheatsheet" then
-                    clodex.open_project_cheatsheet_file()
-                elseif action == "cheatsheet-panel" then
-                    clodex.toggle_project_cheatsheet_preview()
-                elseif action == "cheatsheet-add" then
-                    clodex.add_project_cheatsheet_item()
-                elseif action == "notes" then
-                    clodex.open_project_notes_picker()
-                elseif action == "note-add" then
-                    clodex.create_project_note()
-                elseif action == "bookmarks" then
-                    clodex.open_project_bookmarks_picker()
-                elseif action == "bookmark-add" then
-                    clodex.add_project_bookmark()
+                local method = PROJECT_ACTION_HANDLERS[action]
+                if method then
+                    clodex[method]()
                 end
             end,
         },
