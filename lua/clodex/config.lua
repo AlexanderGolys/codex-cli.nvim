@@ -98,10 +98,6 @@ local fs = require("clodex.util.fs")
 ---@field mini_state_preview string|Clodex.Config.KeymapConfig|false
 ---@field backend_toggle string|Clodex.Config.KeymapConfig|false
 
---- Legacy manual-history settings kept for compatibility.
----@class Clodex.Config.ManualHistory
----@field model_instructions_file string # Deprecated and ignored.
-
 --- Runtime-config data structure consumed across managers and UI modules.
 ---@class Clodex.Config.Values
 ---@field backend Clodex.Backend.Name
@@ -118,7 +114,6 @@ local fs = require("clodex.util.fs")
 ---@field session Clodex.Config.Session
 ---@field mcp Clodex.Config.Mcp
 ---@field keymaps Clodex.Config.Keymaps
----@field manual_history Clodex.Config.ManualHistory
 
 --- Root config object exported by `require("clodex.config")`.
 ---@class Clodex.Config
@@ -175,7 +170,7 @@ local function defaults()
                 width = 42,
                 height = 11,
                 col = 2,
-                winblend = 28,
+                winblend = 0,
             },
         },
 
@@ -227,28 +222,7 @@ local function defaults()
                 lhs = "<leader>pb",
             },
         },
-        manual_history = {
-            model_instructions_file = "",
-        },
     }
-end
-
----@param values Clodex.Config.Values
----@param opts table
----@return boolean
-local function option_provided(values, opts, ...)
-    local current = opts
-    for index = 1, select("#", ...) do
-        local key = select(index, ...)
-        if type(current) ~= "table" then
-            return false
-        end
-        current = current[key]
-        if current == nil then
-            return false
-        end
-    end
-    return true
 end
 
 ---@param provider string?
@@ -261,8 +235,7 @@ local function normalize_terminal_provider(provider)
 end
 
 ---@param values Clodex.Config.Values
----@param opts table
-local function apply_backend_defaults(values, opts)
+local function apply_backend_defaults(values)
     values.backend = Backend.normalize(values.backend)
     values.terminal.provider = normalize_terminal_provider(values.terminal.provider)
 end
@@ -426,7 +399,7 @@ end
 ---@return Clodex.Config.Values
 function Config:setup(opts)
     self.values = Config.merge(defaults(), opts or {})
-    apply_backend_defaults(self.values, opts or {})
+    apply_backend_defaults(self.values)
     return self.values
 end
 

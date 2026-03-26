@@ -26,9 +26,8 @@ local function trim_block(text)
     return text
 end
 
----@param project_label string
 ---@param lines string[]
-local function append_block(project_label, lines)
+local function append_block(lines)
     local body = table.concat(lines, "\n")
     if body == "" then
         return
@@ -39,9 +38,8 @@ end
 
 ---@param project_name string
 ---@param title string
----@param details? string
 ---@param kind? string
-function M.append_prompt_added(project_name, title, details, kind)
+function M.append_prompt_added(project_name, title, kind)
     title = vim.trim(title or "")
     if title == "" then
         return
@@ -51,7 +49,7 @@ function M.append_prompt_added(project_name, title, details, kind)
         ("--- Added new%s prompt: %s ---"):format(kind and (" " .. kind) or "", title),
         ("Project: %s"):format(project_name),
     }
-    append_block(project_name, lines)
+    append_block(lines)
 end
 
 ---@param project_name string
@@ -71,7 +69,7 @@ function M.append_prompt_resolved(project_name, title, summary)
     if body ~= "" then
         lines[#lines + 1] = body
     end
-    append_block(project_name, lines)
+    append_block(lines)
 end
 
 ---@param project_label string
@@ -97,7 +95,7 @@ function M.append_conversation(project_label, lines, kind)
     end
     local body = { header, "" }
     vim.list_extend(body, chunks)
-    append_block(project_label, body)
+    append_block(body)
 end
 
 function M.open()
