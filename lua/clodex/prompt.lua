@@ -1,24 +1,5 @@
 --- Shared prompt definitions and formatting helpers used across prompt actions and UI.
----@alias Clodex.PromptCategory
----| "todo"
----| "bug"
----| "visual"
----| "freeform"
----| "adjustment"
----| "refactor"
----| "idea"
----| "ask"
----| "explain"
----| "notworking"
-
----@class Clodex.PromptCategoryDef
----@field id Clodex.PromptCategory
----@field label string
----@field title_prefix? string
----@field highlight string
----@field default_title string
----@field picker_detail? string
----@field commit_policy? "required"|"skip"|"optional"
+local KindRegistry = require("clodex.prompt.kind_registry")
 
 ---@class Clodex.PromptComposer.Spec
 ---@field title string
@@ -36,80 +17,19 @@ local M = {}
 local WHITESPACE_SUFFIX = " [...]"
 local MIDWORD_SUFFIX = "-[...]"
 local TITLE_GROUP_SUFFIX = {
-    todo = "TodoTitle",
+    todo = "ImprovementTitle",
     bug = "BugTitle",
-    visual = "VisualTitle",
-    freeform = "FreeformTitle",
-    adjustment = "FreeformTitle",
-    refactor = "RefactorTitle",
-    idea = "IdeaTitle",
+    freeform = "FixTitle",
+    adjustment = "FixTitle",
+    feature = "FeatureTitle",
+    refactor = "RestructureTitle",
+    idea = "VisionTitle",
+    cleanup = "CleanupTitle",
+    docs = "DocsTitle",
     ask = "ExplainTitle",
     explain = "ExplainTitle",
     notworking = "NotWorkingTitle",
 }
-
----@type Clodex.PromptCategoryDef[]
-local categories = {
-    {
-        id = "todo",
-        label = "TODO",
-        highlight = "todo_title",
-        default_title = "New todo",
-    },
-    {
-        id = "bug",
-        label = "Bug",
-        highlight = "bug_title",
-        default_title = "Investigate runtime error",
-        title_prefix = "Investigate runtime error",
-    },
-    {
-        id = "visual",
-        label = "Visual",
-        highlight = "visual_title",
-        default_title = "Review image and implement requested changes",
-    },
-    {
-        id = "freeform",
-        label = "Freeform",
-        highlight = "freeform_title",
-        default_title = "",
-        picker_detail = "Send any message to the agent",
-        commit_policy = "optional",
-    },
-    {
-        id = "refactor",
-        label = "Refactor",
-        highlight = "refactor_title",
-        default_title = "Refactor implementation",
-    },
-    {
-        id = "idea",
-        label = "Idea",
-        highlight = "idea_title",
-        default_title = "Explore an idea",
-    },
-    {
-        id = "ask",
-        label = "Ask",
-        highlight = "explain_title",
-        default_title = "Ask about the current behavior",
-        commit_policy = "skip",
-    },
-    {
-        id = "notworking",
-        label = "Not Working",
-        highlight = "notworking_title",
-        default_title = "Fix a previously implemented feature that is not working",
-    },
-}
-
-local categories_by_id = {} ---@type table<Clodex.PromptCategory, Clodex.PromptCategoryDef>
-for _, category in ipairs(categories) do
-    categories_by_id[category.id] = category
-end
-categories_by_id.explain = categories_by_id.ask
-categories_by_id.adjustment = categories_by_id.freeform
 
 local function prepend_details(title, details)
     local parts = {} ---@type string[]
@@ -128,31 +48,31 @@ M.categories = {}
 
 ---@return Clodex.PromptCategoryDef[]
 function M.categories.list()
-    return vim.deepcopy(categories)
+    return KindRegistry.list()
 end
 
 ---@param id? string
 ---@return Clodex.PromptCategoryDef
 function M.categories.get(id)
-    return categories_by_id[id] or categories_by_id.todo
+    return KindRegistry.get(id)
 end
 
 ---@param id? string
 ---@return boolean
 function M.categories.is_valid(id)
-    return categories_by_id[id] ~= nil
+    return KindRegistry.is_valid(id)
 end
 
 ---@param id? string
 ---@return boolean
 function M.categories.requires_commit(id)
-    return (M.categories.get(id).commit_policy or "required") == "required"
+    return KindRegistry.requires_commit(id)
 end
 
 ---@param id? string
 ---@return "required"|"skip"|"optional"
 function M.categories.commit_policy(id)
-    return M.categories.get(id).commit_policy or "required"
+    return KindRegistry.commit_policy(id)
 end
 
 ---@param title string
@@ -221,7 +141,7 @@ end
 ---@return string
 function M.preview_group_for(kind)
     if M.categories.get(kind).id == "freeform" then
-        return "ClodexPromptFreeformPreviewText"
+        return "ClodexPromptFixPreviewText"
     end
     return M.preview_group()
 end

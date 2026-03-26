@@ -160,6 +160,7 @@ describe("clodex.commands", function()
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "restructure"))
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "vision"))
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "clean-up"))
+        assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "missing-docs"))
         assert.is_true(vim.tbl_contains(created.ClodexPrompt.opts.complete("", "ClodexPrompt ", 13), "demo"))
         assert.are.same(
             { "/tmp/alpha", "/tmp/demo", "alpha", "demo", "for", "pick" },

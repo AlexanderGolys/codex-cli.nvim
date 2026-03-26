@@ -7,6 +7,7 @@
 ---| "refactor"
 ---| "idea"
 ---| "cleanup"
+---| "docs"
 ---| "ask"
 ---| "explain"
 ---| "notworking"
@@ -162,6 +163,17 @@ local kinds = {
         highlight = "cleanup_title",
         default_title = "Clean up the implementation",
         aliases = { "clean-up", "clean_up" },
+        default_mode = "custom",
+        modes = {
+            mode("custom", "Custom", "composer"),
+        },
+    },
+    {
+        id = "docs",
+        label = "Missing Docs",
+        highlight = "docs_title",
+        default_title = "Document the missing behavior",
+        aliases = { "missing-docs", "missing_docs" },
         default_mode = "custom",
         modes = {
             mode("custom", "Custom", "composer"),

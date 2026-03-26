@@ -49,16 +49,6 @@ local M = {
       bg = { from = { "NormalFloat", "Normal" }, attr = "bg" },
       blend = 0,
     },
-    ClodexQueueCursorActive = {
-      fg = { from = "ClodexQueueFocusActive", attr = "bg" },
-      bg = { from = "ClodexQueueFocusActive", attr = "bg" },
-      blend = 100,
-    },
-    ClodexQueueCursorInactive = {
-      fg = { from = "ClodexQueueFocusInactive", attr = "bg" },
-      bg = { from = "ClodexQueueFocusInactive", attr = "bg" },
-      blend = 100,
-    },
     ClodexPickerProject = {
       fg = { from = { "DiagnosticError", "ErrorMsg" } },
       bold = true,
@@ -67,9 +57,19 @@ local M = {
       fg = { from = "Directory" },
       italic = true,
     },
-    ClodexPromptTodoTitle = {
+    ClodexPromptImprovementTitle = {
+      fg = { from = "@constructor" },
+      bold = false,
+    },
+    ClodexPromptImprovementKindName = {
       fg = { from = "@constructor" },
       bold = true,
+    },
+    ClodexPromptTodoTitle = {
+      link = "ClodexPromptImprovementTitle",
+    },
+    ClodexPromptTodoKindName = {
+      link = "ClodexPromptImprovementKindName",
     },
     ClodexPromptBugTitle = {
       fg = { from = "DiagnosticError" },
@@ -79,29 +79,53 @@ local M = {
       fg = { from = "DiagnosticError", adjust = 0.18 },
       bold = true,
     },
-    ClodexPromptFreeformTitle = {
+    ClodexPromptFixTitle = {
       fg = { from = { "Normal", "NormalFloat" } },
       bold = true,
     },
-    ClodexPromptAdjustmentTitle = {
-      link = "ClodexPromptFreeformTitle",
+    ClodexPromptFreeformTitle = {
+      link = "ClodexPromptFixTitle",
     },
-    ClodexPromptRefactorTitle = {
+    ClodexPromptAdjustmentTitle = {
+      link = "ClodexPromptFixTitle",
+    },
+    ClodexPromptFeatureTitle = {
+      fg = { from = "Function" },
+      bold = true,
+    },
+    ClodexPromptRestructureTitle = {
       fg = { from = "String" },
       bold = true,
     },
-    ClodexPromptIdeaTitle = {
+    ClodexPromptRefactorTitle = {
+      link = "ClodexPromptRestructureTitle",
+    },
+    ClodexPromptVisionTitle = {
       fg = { from = "PreProc" },
+      bold = true,
+    },
+    ClodexPromptIdeaTitle = {
+      link = "ClodexPromptVisionTitle",
+    },
+    ClodexPromptCleanupTitle = {
+      fg = { from = "Comment" },
+      bold = true,
+    },
+    ClodexPromptDocsTitle = {
+      fg = { from = "Special" },
       bold = true,
     },
     ClodexPromptExplainTitle = {
       fg = { from = "Type" },
       bold = true,
     },
-    ClodexPromptTodoTitleActive = {
+    ClodexPromptImprovementTitleActive = {
       fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
-      bg = { from = "ClodexPromptTodoTitle", attr = "fg" },
+      bg = { from = "ClodexPromptImprovementTitle", attr = "fg" },
       bold = true,
+    },
+    ClodexPromptTodoTitleActive = {
+      link = "ClodexPromptImprovementTitleActive",
     },
     ClodexPromptBugTitleActive = {
       fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
@@ -113,19 +137,43 @@ local M = {
       bg = { from = "ClodexPromptNotWorkingTitle", attr = "fg" },
       bold = true,
     },
-    ClodexPromptFreeformTitleActive = {
+    ClodexPromptFixTitleActive = {
       fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
-      bg = { from = "ClodexPromptFreeformTitle", attr = "fg" },
+      bg = { from = "ClodexPromptFixTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptFreeformTitleActive = {
+      link = "ClodexPromptFixTitleActive",
+    },
+    ClodexPromptFeatureTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptFeatureTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptRestructureTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptRestructureTitle", attr = "fg" },
       bold = true,
     },
     ClodexPromptRefactorTitleActive = {
+      link = "ClodexPromptRestructureTitleActive",
+    },
+    ClodexPromptVisionTitleActive = {
       fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
-      bg = { from = "ClodexPromptRefactorTitle", attr = "fg" },
+      bg = { from = "ClodexPromptVisionTitle", attr = "fg" },
       bold = true,
     },
     ClodexPromptIdeaTitleActive = {
+      link = "ClodexPromptVisionTitleActive",
+    },
+    ClodexPromptCleanupTitleActive = {
       fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
-      bg = { from = "ClodexPromptIdeaTitle", attr = "fg" },
+      bg = { from = "ClodexPromptCleanupTitle", attr = "fg" },
+      bold = true,
+    },
+    ClodexPromptDocsTitleActive = {
+      fg = { from = { "NormalFloat", "Pmenu", "Normal" }, attr = "bg" },
+      bg = { from = "ClodexPromptDocsTitle", attr = "fg" },
       bold = true,
     },
     ClodexPromptExplainTitleActive = {
@@ -146,8 +194,11 @@ local M = {
     ClodexPromptPreviewText = {
       fg = { from = "Directory" },
     },
-    ClodexPromptFreeformPreviewText = {
+    ClodexPromptFixPreviewText = {
       fg = { from = { "Comment", "LineNr", "Normal" } },
+    },
+    ClodexPromptFreeformPreviewText = {
+      link = "ClodexPromptFixPreviewText",
     },
     ClodexBookmarkLine = {
       bg = { from = { "CursorLine", "Visual" }, attr = "bg" },

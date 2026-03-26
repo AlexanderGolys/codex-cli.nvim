@@ -1,18 +1,17 @@
 # clodex.nvim
 
-Project-aware Codex/OpenCode workflows for Neovim.
+Project-aware Codex and OpenCode workflows for Neovim.
 
-`clodex.nvim` keeps one persistent terminal session per registered project, one shared free session outside projects, and a project-local `.clodex/` workspace for queued prompts, notes, bookmarks, and execution metadata.
+`clodex.nvim` keeps one persistent terminal session per registered project root, one shared free session outside registered projects, and a project-local `.clodex/` workspace for queue data, notes, bookmarks, and execution metadata.
 
 ## What it does
 
-- Keeps long-lived terminal buffers for `codex` or `opencode` instead of spawning disposable shells.
-- Tracks the active project per tab while reusing the same backing session for the same project root.
-- Stores queue state per project in `.clodex/{planned,queued,implemented,history}.json`.
-- Builds prompts from editor context such as the current file, line, selection, and diagnostics.
-- Opens a queue workspace for moving, editing, dispatching, and reviewing prompts.
-- Surfaces hidden sessions that are waiting for user input in a floating terminal.
-- Ships a local Rust MCP helper in `rust/clodex-mcp/` for queue-aware prompt completion.
+- Reuses long-lived `codex` and `opencode` terminal sessions instead of disposable shells.
+- Tracks an active project per tab while sharing the same session for the same project root.
+- Builds prompts from editor context such as the current file, selection, line, and diagnostics.
+- Opens a queue workspace for planning, queuing, dispatching, and reviewing project work.
+- Shows hidden sessions that are waiting for input in a floating blocked-input window.
+- Ships a local Rust MCP helper in `rust/clodex-mcp/` for queue-aware task loops.
 
 ## Requirements
 
@@ -88,7 +87,7 @@ require("clodex").setup({
             width = 42,
             height = 11,
             col = 2,
-            winblend = 28,
+            winblend = 0,
         },
     },
     queue_workspace = {
@@ -131,30 +130,28 @@ require("clodex").setup({
 
 ## Prompt kinds
 
-- `todo`
+- `improvement` (`todo`)
 - `bug`
-- `freeform`
-- `refactor`
-- `idea`
+- `fix` (`freeform`)
+- `feature`
+- `restructure` (`refactor`)
+- `vision` (`idea`)
+- `clean-up` (`cleanup`)
+- `missing-docs` (`docs`)
 - `ask`
 - `notworking`
 
-Legacy queue items using `adjustment` and `explain` are still accepted and mapped to `freeform` and `ask` behavior.
+Legacy queue items and command aliases using `todo`, `freeform`, `adjustment`, `refactor`, `idea`, `cleanup`, `docs`, and `explain` are still accepted and mapped to the current prompt kinds.
 
-`idea` prompts are planning-only: they should generate follow-up prompts or implementation plans without changing repository code.
+`vision` prompts are planning-only and should produce plans or follow-up prompts instead of repository changes.
 
 ## Commands
 
-- `:Clodex` or `:Clodex panel`
-- `:Clodex cli`
-- `:Clodex history`
-- `:Clodex backend [codex|opencode]`
-- `:Clodex header`
-- `:ClodexDebug panel`
-- `:ClodexDebug mini`
-- `:ClodexDebug reload`
+- `:Clodex[ panel|cli|term|chat|history|backend [codex|opencode]|header]`
+- `:ClodexDebug[ panel|mini|reload]`
 - `:ClodexProject add [name]`
 - `:ClodexProject readme`
+- `:ClodexProject todo`
 - `:ClodexProject dictionary`
 - `:ClodexProject cheatsheet`
 - `:ClodexProject cheatsheet-panel`
@@ -163,10 +160,7 @@ Legacy queue items using `adjustment` and `explain` are still accepted and mappe
 - `:ClodexProject note-add`
 - `:ClodexProject bookmarks`
 - `:ClodexProject bookmark-add`
-- `:ClodexTodo [for|project]`
-- `:ClodexTodo bug [for|project]`
-- `:ClodexTodo implement [for|project]`
-- `:ClodexTodo all [for|project]`
+- `:ClodexTodo [bug|implement|all] [for|project]`
 - `:ClodexPrompt [kind] [for|project]`
 - `:ClodexPromptFile [kind]`
 
@@ -177,18 +171,20 @@ Use `:'<,'>ClodexPrompt ...` from visual mode to seed prompt context from the se
 - `planned`: captured work not ready to run yet
 - `queued`: ready to dispatch
 - `implemented`: dispatched and finished, waiting for review unless completion goes straight to history
-- `history`: verified or directly completed work with summary/commit metadata
+- `history`: verified or directly completed work with summary and commit metadata
 
-Queued execution uses project-local skills under `.clodex/skills/` and the bundled `prompt-nvim-clodex` workflow instructions. When the MCP helper is available, queued work runs through the local `get_task` / `close_task` loop so the agent can keep claiming the next queued item until the project queue is exhausted; the same helper also exposes `create_prompt` for dropping new planned or queued follow-up prompts straight into `.clodex/*.json` after a planning discussion. Otherwise it falls back to editing the same `.clodex/*.json` files directly.
+Queued execution uses project-local skills under `.clodex/skills/` together with the checked-in `prompt-nvim-clodex` workflow in `.codex/skills/prompt-nvim-clodex/SKILL.md`. When the MCP helper is available, queued work runs through the local `get_task` / `close_task` loop, runs compaction before starting each newly returned task, and can also create follow-up prompts through `create_prompt`. If MCP is unavailable, the workflow falls back to editing the same `.clodex/*.json` files directly.
 
-The unified prompt creator keeps footer actions visible at all times. A target-project picker now stays docked on the left and defaults to the active project for the current tab; use `Up`/`Down` there to change the target, `Right` to jump back into the editor, and `Left` or `Shift-Tab` from the first input to move back to the project list. Use `</>` to switch prompt kinds, `[/]` to switch bug-source tabs, `Ctrl-V` to replace the attached clipboard image, and `Ctrl-S`, `Ctrl-Q`, `Ctrl-E`, or `Ctrl-L` to plan, queue, run immediately, or send straight to the live project chat. Draft text now follows you across kind and bug-source tabs whenever the destination exposes the same input, and hidden fields are cached until you return to a compatible editor. Attached clipboard images are previewed in a separate pane docked to the right of the creator. Closing the queue workspace also clears any project or prompt filters so the next open starts from the full list again. Immediate direct execution currently works only with the Codex backend.
+The prompt creator keeps footer actions visible, docks the target-project picker on the left, preserves compatible drafts across kind switches, and can preview attached clipboard images in a separate pane. `Ctrl-S`, `Ctrl-Q`, `Ctrl-E`, and `Ctrl-L` plan, queue, run immediately, or send straight to the live chat. Immediate direct execution currently works only with the Codex backend.
 
-In the queue workspace project panel, press `I` to set, change, or remove a custom project icon through `snacks.picker.icons()`. The chosen icon is then shown next to that project in left-side project lists.
+In the queue workspace project panel, press `I` to set, change, or remove a custom project icon through `snacks.picker.icons()`.
 
 ## Project files
 
 Clodex keeps durable project data inside each repository:
 
+- `README.md`
+- `TODO.md`
 - `.clodex/planned.json`
 - `.clodex/queued.json`
 - `.clodex/implemented.json`
@@ -249,17 +245,11 @@ nvim --headless "+lua require('clodex').setup()" +qa
 nvim --headless "+lua print(vim.inspect(require('clodex')))" +qa
 nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedFile tests/specs/config_spec.lua" +qa
 bash bin/clodex-nvim-test
+cargo build --release --manifest-path rust/clodex-mcp/Cargo.toml
 ```
 
-Core runtime code lives under `lua/clodex/` and `plugin/clodex.lua`. The bundled MCP helper lives under `rust/clodex-mcp/`. Tests live under `tests/specs/`.
+Core runtime code lives under `lua/clodex/` and `plugin/clodex.lua`. The bundled MCP helper lives under `rust/clodex-mcp/`. Checked-in workflow instructions live under `.codex/skills/`. Tests live under `tests/specs/`.
 
 ## License
 
 MIT. See `LICENSE`.
-
- &&&ClodexPromptTodoTitleActive&&&  TODO  &&&  &&&DiagnosticVirtualTextWarn&&&Prompt title
-a&&&Lorem ipsum dolor sit amet, consectetur adipiscing elit,
-    sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
- &&&ClodexPromptTodoTitleActive&&&  TODO  &&&  &&&@constructor&&&Prompt title&&&
-    Lorem ipsum dolor sit amet, consectetur adipiscing elit,
-    sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
