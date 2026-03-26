@@ -205,6 +205,26 @@ local function apply_win_options(win, opts)
   end
 end
 
+---@param win any
+---@return boolean
+local function winid_is_valid(win)
+  return type(win) == "number" and win > 0 and vim.api.nvim_win_is_valid(win)
+end
+
+---@param win snacks.win
+---@return snacks.win
+local function harden_snacks_window(win)
+  function win:win_valid()
+    return winid_is_valid(self.win)
+  end
+
+  function win:valid()
+    return self:win_valid() and self:buf_valid() and vim.api.nvim_win_get_buf(self.win) == self.buf
+  end
+
+  return win
+end
+
 ---@param opts? { preset?: Clodex.UiWin.BufferPreset|table<string, any>, name?: string, listed?: boolean, scratch?: boolean, bo?: table<string, any> }
 ---@return integer
 function M.create_buffer(opts)
@@ -240,7 +260,10 @@ function M.open(opts)
     fixbuf = false,
   }, style, opts)
   local win = Snacks.win(resolved)
-  if win and win.win and vim.api.nvim_win_is_valid(win.win) then
+  if win then
+    win = harden_snacks_window(win)
+  end
+  if win and winid_is_valid(win.win) then
     M.configure(win.win, {
       view = view,
       theme = theme,
@@ -255,7 +278,7 @@ end
 ---@param win? integer
 ---@return boolean
 function M.is_valid(win)
-  return win ~= nil and vim.api.nvim_win_is_valid(win)
+  return winid_is_valid(win)
 end
 
 --- Closes or deactivates ui win behavior for the current context.

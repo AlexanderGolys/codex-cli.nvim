@@ -1,9 +1,32 @@
 local ui_win = require("clodex.ui.win")
+local PROMPT_CONTENT_ZINDEX = 10
 
 ---@param win? snacks.win
 ---@return boolean
 local function prompt_win_valid(win)
     return win ~= nil and ui_win.is_valid(win.win)
+end
+
+---@param win? snacks.win
+local function close_prompt_win(win)
+    if not win then
+        return
+    end
+
+    local winid = win.win
+    if win.close then
+        pcall(function()
+            win:close()
+        end)
+    else
+        ui_win.close(winid)
+    end
+    if ui_win.is_valid(winid) then
+        ui_win.close(winid)
+    end
+    if win.close then
+        win.win = nil
+    end
 end
 
 ---@class Clodex.PromptCreator.LayoutComposer
@@ -31,6 +54,7 @@ function Composer:open()
             buf = self.title_buf,
             enter = true,
             border = "rounded",
+            zindex = PROMPT_CONTENT_ZINDEX,
             title = " Title ",
             title_pos = "center",
             width = function()
@@ -61,6 +85,7 @@ function Composer:open()
             buf = self.body_buf,
             enter = false,
             border = "rounded",
+            zindex = PROMPT_CONTENT_ZINDEX,
             title = " Details ",
             title_pos = "center",
             width = function()
@@ -201,12 +226,8 @@ function Composer:focus_slot(slot, insert_mode)
 end
 
 function Composer:close()
-    if prompt_win_valid(self.title_win) then
-        self.title_win:close()
-    end
-    if prompt_win_valid(self.body_win) then
-        self.body_win:close()
-    end
+    close_prompt_win(self.title_win)
+    close_prompt_win(self.body_win)
     self.title_win = nil
     self.body_win = nil
 end

@@ -6,6 +6,28 @@ local function prompt_win_valid(win)
     return win ~= nil and ui_win.is_valid(win.win)
 end
 
+---@param win? snacks.win
+local function close_prompt_win(win)
+    if not win then
+        return
+    end
+
+    local winid = win.win
+    if win.close then
+        pcall(function()
+            win:close()
+        end)
+    else
+        ui_win.close(winid)
+    end
+    if ui_win.is_valid(winid) then
+        ui_win.close(winid)
+    end
+    if win.close then
+        win.win = nil
+    end
+end
+
 ---@class Clodex.PromptCreator.LayoutClipboardPreview
 ---@field creator Clodex.PromptCreator
 ---@field title_buf integer
@@ -176,9 +198,7 @@ end
 
 function ClipboardPreview:close()
     for _, win in ipairs({ self.title_win, self.preview_win }) do
-        if prompt_win_valid(win) then
-            win:close()
-        end
+        close_prompt_win(win)
     end
     self.title_win = nil
     self.preview_win = nil
