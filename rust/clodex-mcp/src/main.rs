@@ -128,26 +128,6 @@ struct ProjectRootArgs {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct CompleteArgs {
-    project_root: String,
-    #[serde(default)]
-    summary: Option<String>,
-    #[serde(default)]
-    commit: Option<String>,
-    #[serde(default)]
-    commits: Option<Vec<String>>,
-    #[serde(default)]
-    completion_target: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct FailArgs {
-    project_root: String,
-    #[serde(default)]
-    note: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
 struct CloseTaskArgs {
     project_root: String,
     success: bool,
@@ -179,7 +159,6 @@ struct Server {
 
 enum TaskClaim {
     Task {
-        active: ActiveItem,
         item: QueueItem,
         active_exists: bool,
     },
@@ -270,11 +249,6 @@ impl Server {
             "close_task" => tool_result(close_task(parse_args(arguments)?)?),
             "create_prompt" => tool_result(create_prompt(parse_args(arguments)?)?),
             "queue_status" => tool_result(queue_status(parse_args(arguments)?)?),
-            "queue_claim_next" => tool_result(queue_claim_next(parse_args(arguments)?)?),
-            "queue_complete_current" => {
-                tool_result(queue_complete_current(parse_args(arguments)?)?)
-            }
-            "queue_fail_current" => tool_result(queue_fail_current(parse_args(arguments)?)?),
             _ => tool_error(format!("Unknown tool: {name}")),
         };
         Ok(Some(result))
@@ -455,58 +429,11 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "queue_status",
-            "description": "Inspect queue counts and active work for one Clodex project.",
+            "description": "Inspect queue counts and active work for UI or debugging surfaces, not for the normal task-execution loop.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "project_root": { "type": "string" }
-                },
-                "required": ["project_root"],
-                "additionalProperties": false,
-            },
-        }),
-        json!({
-            "name": "queue_claim_next",
-            "description": "Claim the next queued item, move it into implemented, and mark it active.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_root": { "type": "string" }
-                },
-                "required": ["project_root"],
-                "additionalProperties": false,
-            },
-        }),
-        json!({
-            "name": "queue_complete_current",
-            "description": "Record completion metadata for the active item and optionally move it to history.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_root": { "type": "string" },
-                    "summary": { "type": "string" },
-                    "commit": { "type": "string" },
-                    "commits": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "completion_target": {
-                        "type": "string",
-                        "enum": ["implemented", "history"]
-                    }
-                },
-                "required": ["project_root"],
-                "additionalProperties": false,
-            },
-        }),
-        json!({
-            "name": "queue_fail_current",
-            "description": "Return the active item to queued and optionally append a failure note.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_root": { "type": "string" },
-                    "note": { "type": "string" }
                 },
                 "required": ["project_root"],
                 "additionalProperties": false,
@@ -527,83 +454,6 @@ fn queue_status(args: ProjectRootArgs) -> AppResult<Value> {
 fn get_task(args: ProjectRootArgs) -> AppResult<Value> {
     let project_root = normalize_project_root(&args.project_root)?;
     claim_or_resume_task(&project_root)
-}
-
-fn queue_claim_next(args: ProjectRootArgs) -> AppResult<Value> {
-    let project_root = normalize_project_root(&args.project_root)?;
-    let claimed = claim_or_resume_item(&project_root)?;
-    Ok(match claimed {
-        TaskClaim::Task {
-            active,
-            item,
-            active_exists,
-        } => {
-            let status = if active_exists {
-                "already_active"
-            } else {
-                "claimed"
-            };
-            json!({
-                "project_root": project_root,
-                "status": status,
-                "active": active,
-                "item": item,
-            })
-        }
-        TaskClaim::Done => json!({
-            "project_root": project_root,
-            "status": "empty",
-        }),
-    })
-}
-
-fn queue_complete_current(args: CompleteArgs) -> AppResult<Value> {
-    let project_root = normalize_project_root(&args.project_root)?;
-    let active =
-        load_active_state(&project_root)?.ok_or_else(|| AppError::new("No active queue item"))?;
-    let mut implemented = load_queue(&project_root, "implemented")?;
-    let index = implemented
-        .iter()
-        .position(|item| item.id == active.item_id)
-        .ok_or_else(|| AppError::new("Active item not found in implemented queue"))?;
-
-    let mut item = implemented[index].clone();
-    item.updated_at = timestamp();
-    item.history_summary = normalize_optional_string(args.summary);
-    item.history_completed_at = Some(timestamp());
-    item.history_commits = extend_commits(item.history_commits.clone(), args.commit, args.commits);
-
-    let target =
-        normalize_completion_target(args.completion_target, item.completion_target.clone());
-    let final_queue = if target == "history" {
-        implemented.remove(index);
-        save_queue(&project_root, "implemented", &implemented)?;
-        let mut history = load_queue(&project_root, "history")?;
-        history.insert(0, item.clone());
-        save_queue(&project_root, "history", &history)?;
-        "history"
-    } else {
-        implemented[index] = item.clone();
-        save_queue(&project_root, "implemented", &implemented)?;
-        "implemented"
-    };
-
-    clear_active_state(&project_root)?;
-    append_event(
-        &project_root,
-        "complete_current",
-        json!({
-            "item_id": item.id,
-            "final_queue": final_queue,
-        }),
-    )?;
-
-    Ok(json!({
-        "project_root": project_root,
-        "status": "completed",
-        "final_queue": final_queue,
-        "item": item,
-    }))
 }
 
 fn close_task(args: CloseTaskArgs) -> AppResult<Value> {
@@ -664,45 +514,6 @@ fn create_prompt(args: CreatePromptArgs) -> AppResult<Value> {
         "project_root": project_root,
         "status": "created",
         "queue": queue_name,
-        "item": item,
-    }))
-}
-
-fn queue_fail_current(args: FailArgs) -> AppResult<Value> {
-    let project_root = normalize_project_root(&args.project_root)?;
-    let active =
-        load_active_state(&project_root)?.ok_or_else(|| AppError::new("No active queue item"))?;
-    let mut implemented = load_queue(&project_root, "implemented")?;
-    let index = implemented
-        .iter()
-        .position(|item| item.id == active.item_id)
-        .ok_or_else(|| AppError::new("Active item not found in implemented queue"))?;
-
-    let mut item = implemented.remove(index);
-    save_queue(&project_root, "implemented", &implemented)?;
-    item.updated_at = timestamp();
-    if let Some(note) = normalize_optional_string(args.note) {
-        append_failure_note(&mut item, &note);
-    }
-
-    let mut queued = load_queue(&project_root, "queued")?;
-    queued.insert(0, item.clone());
-    save_queue(&project_root, "queued", &queued)?;
-
-    clear_active_state(&project_root)?;
-    append_event(
-        &project_root,
-        "fail_current",
-        json!({
-            "item_id": item.id,
-            "returned_queue": "queued",
-        }),
-    )?;
-
-    Ok(json!({
-        "project_root": project_root,
-        "status": "failed",
-        "returned_queue": "queued",
         "item": item,
     }))
 }
@@ -900,7 +711,6 @@ fn claim_or_resume_item(project_root: &str) -> AppResult<TaskClaim> {
     if let Some(current) = load_active_state(project_root)? {
         if let Some(item) = find_item(project_root, "implemented", &current.item_id)? {
             return Ok(TaskClaim::Task {
-                active: current,
                 item,
                 active_exists: true,
             });
@@ -937,7 +747,6 @@ fn claim_or_resume_item(project_root: &str) -> AppResult<TaskClaim> {
     )?;
 
     Ok(TaskClaim::Task {
-        active,
         item,
         active_exists: false,
     })
@@ -1270,13 +1079,15 @@ mod tests {
     #[test]
     fn claim_and_complete_to_history() {
         let (_dir, root) = project_root();
-        save_queue(&root, "queued", &[sample_item("item-1", "first")]).expect("save queued");
+        let mut item = sample_item("item-1", "first");
+        item.completion_target = Some("history".to_string());
+        save_queue(&root, "queued", &[item]).expect("save queued");
 
-        let claimed = queue_claim_next(ProjectRootArgs {
+        let claimed = get_task(ProjectRootArgs {
             project_root: root.clone(),
         })
-        .expect("claim next");
-        assert_eq!(claimed["status"], "claimed");
+        .expect("get task");
+        assert_eq!(claimed["status"], "task");
         assert_eq!(load_queue(&root, "queued").expect("queued len").len(), 0);
         assert_eq!(
             load_queue(&root, "implemented")
@@ -1285,16 +1096,16 @@ mod tests {
             1
         );
 
-        let completed = queue_complete_current(CompleteArgs {
+        let completed = close_task(CloseTaskArgs {
             project_root: root.clone(),
-            summary: Some("done".to_string()),
-            commit: Some("abc123".to_string()),
-            commits: None,
-            completion_target: Some("history".to_string()),
+            success: true,
+            comment: Some("done".to_string()),
+            commit_id: Some("abc123".to_string()),
         })
-        .expect("complete current");
+        .expect("close task");
 
-        assert_eq!(completed["final_queue"], "history");
+        assert_eq!(completed["status"], "done");
+        assert_eq!(completed["closed_task"]["final_queue"], "history");
         assert_eq!(
             load_queue(&root, "implemented")
                 .expect("implemented len")
@@ -1306,6 +1117,43 @@ mod tests {
         assert_eq!(history[0].history_summary.as_deref(), Some("done"));
         assert_eq!(history[0].history_commits, vec!["abc123".to_string()]);
         assert!(load_active_state(&root).expect("active state").is_none());
+    }
+
+    #[test]
+    fn tools_list_only_exposes_loop_facing_queue_tools() {
+        let names = tool_definitions()
+            .into_iter()
+            .filter_map(|tool| {
+                tool.get("name")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            })
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"get_task".to_string()));
+        assert!(names.contains(&"close_task".to_string()));
+        assert!(names.contains(&"create_prompt".to_string()));
+        assert!(names.contains(&"queue_status".to_string()));
+        assert!(!names.contains(&"queue_claim_next".to_string()));
+        assert!(!names.contains(&"queue_complete_current".to_string()));
+        assert!(!names.contains(&"queue_fail_current".to_string()));
+    }
+
+    #[test]
+    fn low_level_queue_mutators_are_not_callable_as_public_tools() {
+        let mut server = Server::new();
+
+        let response = server
+            .handle_tool_call(Some(json!({
+                "name": "queue_claim_next",
+                "arguments": { "project_root": "/tmp/demo" }
+            })))
+            .expect("handle tool call")
+            .expect("tool response");
+
+        assert_eq!(response["isError"], json!(true));
+        let message = response["content"][0]["text"].as_str().expect("error text");
+        assert!(message.contains("Unknown tool: queue_claim_next"));
     }
 
     #[test]
@@ -1495,31 +1343,36 @@ mod tests {
     fn fail_returns_active_item_to_queue() {
         let (_dir, root) = project_root();
         save_queue(&root, "queued", &[sample_item("item-1", "first")]).expect("save queued");
-        queue_claim_next(ProjectRootArgs {
+        get_task(ProjectRootArgs {
             project_root: root.clone(),
         })
-        .expect("claim next");
+        .expect("get task");
 
-        let failed = queue_fail_current(FailArgs {
+        let failed = close_task(CloseTaskArgs {
             project_root: root.clone(),
-            note: Some("tests failed".to_string()),
+            success: false,
+            comment: Some("tests failed".to_string()),
+            commit_id: None,
         })
-        .expect("fail current");
+        .expect("close failed task");
 
-        assert_eq!(failed["returned_queue"], "queued");
+        assert_eq!(failed["status"], "task");
+        assert_eq!(failed["closed_task"]["final_queue"], "queued");
+        assert_eq!(failed["task"]["id"], "item-1");
         assert_eq!(
             load_queue(&root, "implemented")
                 .expect("implemented len")
                 .len(),
-            0
+            1
         );
         let queued = load_queue(&root, "queued").expect("queued len");
-        assert_eq!(queued.len(), 1);
-        assert!(queued[0]
+        assert_eq!(queued.len(), 0);
+        let implemented = load_queue(&root, "implemented").expect("implemented queue");
+        assert!(implemented[0]
             .details
             .as_deref()
             .expect("details")
             .contains("## Failure Note"));
-        assert!(load_active_state(&root).expect("active state").is_none());
+        assert!(load_active_state(&root).expect("active state").is_some());
     }
 }

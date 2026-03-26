@@ -17,6 +17,7 @@
 - Project sessions always start with `cwd = project.root`; the free session always starts with `cwd = session.free_root`.
 - Keep queue and workspace summaries focused on durable repository facts plus queue contents; do not reintroduce inferred live task tracking.
 - Keep queued workflow behavior centered on project-local queue files and the local MCP helper.
+- Treat the public queued MCP contract as loop-based: use `get_task`, `close_task`, and `create_prompt`; keep queue mutation internals out of the exposed agent workflow.
 - Default queued git workflow stays commit-based unless a task explicitly needs branch-and-PR behavior.
 
 ## Style Guidelines
@@ -39,6 +40,7 @@
 - Keep `README.md` aligned with the real command set, config defaults, queue workflow, and shipped files.
 - Keep `AGENTS.md` aligned with the current module layout, project files, and maintenance rules.
 - When queued workflow behavior changes, update both `README.md` and `.codex/skills/prompt-nvim-clodex/SKILL.md`.
+- Keep MCP tool documentation aligned with the actually exposed helper API; do not document removed internal helpers as supported workflow steps.
 - Remove stale docs and obsolete private workflow references instead of documenting dead paths.
 
 ## Build, Test, and Development Commands

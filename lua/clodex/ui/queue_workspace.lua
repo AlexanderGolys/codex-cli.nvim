@@ -193,6 +193,23 @@ local function open_workspace_confirm(self, prompt, on_confirm)
     end)
 end
 
+---@param self Clodex.QueueWorkspace
+---@param prompt string
+---@param default string
+---@param apply_search fun(value: string)
+local function prompt_workspace_search(self, prompt, default, apply_search)
+    open_workspace_input(self, {
+        prompt = prompt,
+        default = default,
+        changed = apply_search,
+    }, function(value)
+        if value == nil then
+            return
+        end
+        apply_search(value)
+    end)
+end
+
 ---@param text string
 ---@param max_width integer
 ---@return string
@@ -2204,16 +2221,7 @@ function Workspace:prompt_project_search()
         self:refresh()
     end
 
-    open_workspace_input(self, {
-        prompt = "Project filter",
-        default = self.project_search,
-        changed = apply_search,
-    }, function(value)
-        if value == nil then
-            return
-        end
-        apply_search(value)
-    end)
+    prompt_workspace_search(self, "Project filter", self.project_search, apply_search)
 end
 
 function Workspace:clear_project_search()
@@ -2234,16 +2242,7 @@ function Workspace:prompt_queue_search()
         self:refresh()
     end
 
-    open_workspace_input(self, {
-        prompt = "Prompt filter",
-        default = self.queue_search,
-        changed = apply_search,
-    }, function(value)
-        if value == nil then
-            return
-        end
-        apply_search(value)
-    end)
+    prompt_workspace_search(self, "Prompt filter", self.queue_search, apply_search)
 end
 
 function Workspace:clear_queue_search()

@@ -175,6 +175,20 @@ Use `:'<,'>ClodexPrompt ...` from visual mode to seed prompt context from the se
 
 Queued execution uses project-local skills under `.clodex/skills/` together with the checked-in `prompt-nvim-clodex` workflow in `.codex/skills/prompt-nvim-clodex/SKILL.md`. When the MCP helper is available, queued work runs through the local `get_task` / `close_task` loop, runs compaction before starting each newly returned task, and can also create follow-up prompts through `create_prompt`. If MCP is unavailable, the workflow falls back to editing the same `.clodex/*.json` files directly.
 
+### MCP tools
+
+- `get_task`: high-level queued-work entrypoint; claims or resumes the active item and returns the next `work_prompt`
+- `close_task`: high-level queued-work closer; records success or failure and advances the loop when another queued item exists
+- `create_prompt`: creates a follow-up prompt item, usually when an `ask` or planning task turns into actionable work
+- `queue_status`: read-only queue inspection for UI/debug surfaces that need queue counts or active-state visibility, not for normal prompt-by-prompt task execution
+
+Typical patterns:
+
+- normal queued loop: `get_task` -> implement -> commit -> `close_task(success = true, comment, commit_id)`
+- blocked queued loop: `get_task` -> investigate -> `close_task(success = false, comment)`
+- MCP-driven delegation loop: `get_task` -> implement -> `close_task` -> MCP either returns the next task or reports that no queued work remains
+- planning follow-up: finish an `ask`/discussion item, then use `create_prompt` to queue the next concrete task
+
 The prompt creator keeps footer actions visible, docks the target-project picker on the left, preserves compatible drafts across kind switches, and can preview attached clipboard images in a separate pane. `Ctrl-S`, `Ctrl-Q`, `Ctrl-E`, and `Ctrl-L` plan, queue, run immediately, or send straight to the live chat. Immediate direct execution currently works only with the Codex backend.
 
 In the queue workspace project panel, press `I` to set, change, or remove a custom project icon through `snacks.picker.icons()`.

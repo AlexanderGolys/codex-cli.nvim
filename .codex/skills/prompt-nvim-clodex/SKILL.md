@@ -23,7 +23,8 @@ When the prompt provides a queue item id or tells you to use the Clodex queued-w
 8. If `close_task` returns another task, run compaction before continuing with that task in the same loop.
 9. If `close_task` returns `status = done`, stop; queued work is finished.
 10. When a conversation in planning mode should produce a new follow-up prompt instead of immediate code changes, prefer the `create_prompt` MCP tool to add the new prompt directly to the project queue.
-11. Only fall back to editing `.clodex/*.json` queue files directly when the `clodex` MCP server is unavailable in the session.
+11. Do not rely on internal queue-mutating helpers as part of the public workflow; the MCP loop itself owns task claiming, requeueing, completion, and exhaustion.
+12. Only fall back to editing `.clodex/*.json` queue files directly when the `clodex` MCP server is unavailable in the session.
 
 # Manual History
 
