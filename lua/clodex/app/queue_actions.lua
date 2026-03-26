@@ -39,7 +39,7 @@ local PREVIOUS_QUEUE = {
 ---@param value any
 ---@return string
 local function trimmed_text(value)
-    if value == nil then
+    if value == nil or value == vim.NIL then
         return ""
     end
     if type(value) == "string" then

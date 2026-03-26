@@ -171,6 +171,33 @@ describe("clodex.app.queue_actions", function()
         assert.is_true(moved.details:find("uv_timer") ~= nil)
     end)
 
+    it("does not leak vim.NIL into not-working prompt details", function()
+        local item = queue:add_todo(project, {
+            title = "fix prompt flow",
+            details = "",
+            queue = "queued",
+            kind = "todo",
+        })
+        queue:advance(project, item.id)
+        queue:update_implemented_item(project, item.id, {
+            summary = "implemented",
+            completed_at = "2026-01-01T00:00:00Z",
+        })
+        local _, _, implemented = queue:find_item(project, item.id)
+        implemented.details = vim.NIL
+
+        actions:rewind_queue_item(project, item.id, {
+            queue = "implemented",
+            mark_not_working = true,
+        })
+
+        local queue_name, _, moved = queue:find_item(project, item.id)
+
+        assert.are.equal("queued", queue_name)
+        assert.are.equal("notworking", moved.kind)
+        assert.is_nil(moved.details:match("vim%.NIL"))
+    end)
+
     it("moves a history item to another project when the source queue is specified", function()
         local item = queue:add_todo(project, {
             title = "share prompt",
