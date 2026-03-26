@@ -185,8 +185,8 @@ end
 local function open_workspace_confirm(self, prompt, on_confirm)
     -- Confirmation pickers are modal too. Mark them as such so workspace focus
     -- restoration does not immediately pull the cursor back out of the picker.
-    self.modal_input_open = true
     ui.close_active_input()
+    self.modal_input_open = true
     return ui.confirm(prompt, function(confirmed)
         self.modal_input_open = false
         on_confirm(confirmed)

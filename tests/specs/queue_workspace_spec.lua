@@ -490,6 +490,52 @@ describe("clodex.ui.queue_workspace", function()
         end)
     end)
 
+    it("keeps confirmation modal even when closing the previous input clears the modal flag", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Delete prompt",
+        }
+        local workspace = {
+            queue_index = 1,
+            focus = "queue",
+            projects = { project },
+            modal_input_open = true,
+            app = {
+                queue_actions = {
+                    delete_queue_item = function() end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "queued"
+            end,
+            close = function() end,
+            refresh = function() end,
+        }
+
+        package.loaded["clodex.ui.select"].close_active_input = function()
+            close_active_input_calls = close_active_input_calls + 1
+            workspace.modal_input_open = false
+            active_input_open = false
+        end
+
+        active_input_open = true
+        Workspace.delete_queue_item(workspace)
+
+        vim.wait(100, function()
+            return #confirm_callbacks == 1
+        end)
+
+        assert.are.equal(1, close_active_input_calls)
+        assert.is_true(workspace.modal_input_open)
+    end)
+
     it("clears project and queue filters when the workspace closes", function()
         local workspace = Workspace.new({}, {
             queue_workspace = {},
