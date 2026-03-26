@@ -179,6 +179,20 @@ local function open_workspace_input(self, opts, on_confirm)
     return ui.input(opts, on_confirm)
 end
 
+---@param self Clodex.QueueWorkspace
+---@param prompt string
+---@param on_confirm fun(confirmed: boolean)
+local function open_workspace_confirm(self, prompt, on_confirm)
+    -- Confirmation pickers are modal too. Mark them as such so workspace focus
+    -- restoration does not immediately pull the cursor back out of the picker.
+    self.modal_input_open = true
+    ui.close_active_input()
+    return ui.confirm(prompt, function(confirmed)
+        self.modal_input_open = false
+        on_confirm(confirmed)
+    end)
+end
+
 ---@param text string
 ---@param max_width integer
 ---@return string
@@ -2128,7 +2142,7 @@ function Workspace:delete_queue_item()
     -- workspace Enter mapping and opening the selected project.
     self.suppress_open_until = now_ms() + 500
     vim.schedule(function()
-        ui.confirm(("Delete '%s'?"):format(item.title), function(confirmed)
+        open_workspace_confirm(self, ("Delete '%s'?"):format(item.title), function(confirmed)
             if not confirmed then
                 clear_open_suppression_later(self)
                 return
@@ -2152,7 +2166,7 @@ function Workspace:delete_project()
     -- workspace Enter mapping and opening the selected project.
     self.suppress_open_until = now_ms() + 500
     vim.schedule(function()
-        ui.confirm(("Remove project %s?"):format(project.name), function(confirmed)
+        open_workspace_confirm(self, ("Remove project %s?"):format(project.name), function(confirmed)
             if not confirmed then
                 clear_open_suppression_later(self)
                 return

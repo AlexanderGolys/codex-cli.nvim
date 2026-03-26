@@ -5,6 +5,7 @@ describe("clodex.ui.queue_workspace", function()
     local active_input_open
     local input_callbacks
     local open_creator_calls
+    local close_active_input_calls
 
     local function extmark_rows(buf, hl_group)
         local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
@@ -23,6 +24,7 @@ describe("clodex.ui.queue_workspace", function()
         confirm_callbacks = {}
         input_callbacks = {}
         open_creator_calls = {}
+        close_active_input_calls = 0
         package.loaded["snacks.input"] = {
             input = function() end,
         }
@@ -41,7 +43,10 @@ describe("clodex.ui.queue_workspace", function()
                     on_confirm = on_confirm,
                 }
             end,
-            close_active_input = function() end,
+            close_active_input = function()
+                close_active_input_calls = close_active_input_calls + 1
+                active_input_open = false
+            end,
             has_active_input = function()
                 return active_input_open
             end,
@@ -437,6 +442,52 @@ describe("clodex.ui.queue_workspace", function()
         assert.are.equal(item.id, deleted_item_id)
         assert.are.equal(1, workspace.queue_index)
         assert.are.equal("queue", workspace.focus)
+    end)
+
+    it("treats queue deletion confirmation as a modal picker and closes active inputs first", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local item = {
+            id = "item-1",
+            title = "Delete prompt",
+        }
+        active_input_open = true
+
+        local workspace = {
+            queue_index = 1,
+            focus = "queue",
+            projects = { project },
+            app = {
+                queue_actions = {
+                    delete_queue_item = function() end,
+                },
+            },
+            selected_project = function()
+                return project
+            end,
+            selected_queue_item = function()
+                return item, "queued"
+            end,
+            close = function() end,
+            refresh = function() end,
+        }
+
+        Workspace.delete_queue_item(workspace)
+
+        vim.wait(100, function()
+            return #confirm_callbacks == 1
+        end)
+
+        assert.are.equal(1, close_active_input_calls)
+        assert.is_true(workspace.modal_input_open)
+
+        confirm_callbacks[1](false)
+
+        vim.wait(100, function()
+            return workspace.modal_input_open == false
+        end)
     end)
 
     it("clears project and queue filters when the workspace closes", function()
