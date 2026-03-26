@@ -76,9 +76,85 @@ local DEFAULT_SUBMIT_ACTIONS = {
 
 local TAB_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-tabs")
 local FOOTER_NS = vim.api.nvim_create_namespace("clodex-prompt-creator-footer")
-local TAB_PADDING = 1
-local PROJECT_PICKER_MARGIN_ROWS = 1
-local PROJECT_PICKER_MARGIN_COLS = 2
+
+---@class Clodex.PromptCreatorLayoutConfig
+---@field tab_padding integer
+---@field min_window_offset integer
+---@field project_picker_margin_rows integer
+---@field project_picker_margin_cols integer
+---@field creator_background_margin_rows integer
+---@field creator_background_margin_cols integer
+---@field prompt_background_zindex integer
+---@field prompt_content_zindex integer
+---@field creator_max_height integer
+---@field creator_screen_margin_cols integer
+---@field creator_screen_margin_rows integer
+---@field creator_panel_gap_cols integer
+---@field tab_row_height integer
+---@field title_gap_rows integer
+---@field body_gap_rows integer
+---@field footer_gap_rows integer
+---@field preview_width_ratio number
+---@field preview_min_width integer
+---@field preview_max_width integer
+---@field preview_min_height integer
+---@field preview_image_inset integer
+---@field project_list_min_width integer
+---@field project_list_max_width integer
+---@field project_name_padding integer
+---@field content_min_width integer
+---@field body_min_height integer
+---@field clipboard_note_min_height integer
+---@field clipboard_note_max_height integer
+---@field clipboard_note_reserved_rows integer
+---@field clipboard_preview_gap_rows integer
+---@field clipboard_preview_min_height integer
+---@field base_width_with_image integer
+---@field base_width_without_image integer
+---@type Clodex.PromptCreatorLayoutConfig
+local LAYOUT = {
+    tab_padding = 1,
+    min_window_offset = 1,
+    project_picker_margin_rows = 1,
+    project_picker_margin_cols = 2,
+    creator_background_margin_rows = 1,
+    creator_background_margin_cols = 1,
+    prompt_background_zindex = 1,
+    prompt_content_zindex = 10,
+    creator_max_height = 32,
+    creator_screen_margin_cols = 6,
+    creator_screen_margin_rows = 4,
+    creator_panel_gap_cols = 2,
+    tab_row_height = 2,
+    title_gap_rows = 2,
+    body_gap_rows = 3,
+    footer_gap_rows = 2,
+    preview_width_ratio = 0.3,
+    preview_min_width = 28,
+    preview_max_width = 42,
+    preview_min_height = 8,
+    preview_image_inset = 2,
+    project_list_min_width = 18,
+    project_list_max_width = 28,
+    project_name_padding = 2,
+    content_min_width = 36,
+    body_min_height = 8,
+    clipboard_note_min_height = 4,
+    clipboard_note_max_height = 6,
+    clipboard_note_reserved_rows = 5,
+    clipboard_preview_gap_rows = 3,
+    clipboard_preview_min_height = 4,
+    base_width_with_image = 156,
+    base_width_without_image = 118,
+}
+
+---@param value integer
+---@param minimum integer
+---@param maximum integer
+---@return integer
+local function clamp(value, minimum, maximum)
+    return math.min(math.max(value, minimum), maximum)
+end
 
 ---@param win? snacks.win
 ---@return boolean
@@ -116,6 +192,31 @@ local function is_layout_anchor_win(win)
     end
 
     return vim.api.nvim_win_get_config(win).relative == ""
+end
+
+---@param buf integer
+---@return string?
+local function prompt_context_base_at_cursor(buf)
+    if not vim.api.nvim_buf_is_valid(buf) or vim.api.nvim_get_current_buf() ~= buf then
+        return nil
+    end
+
+    local cursor_col = vim.api.nvim_win_get_cursor(0)[2]
+    local line = vim.api.nvim_get_current_line()
+    local start_col = cursor_col
+    while start_col > 0 do
+        local char = line:sub(start_col, start_col)
+        if char:match("[%w_&]") == nil then
+            break
+        end
+        start_col = start_col - 1
+    end
+
+    local base = line:sub(start_col + 1, cursor_col)
+    if base == "" or not vim.startswith(base, "&") then
+        return nil
+    end
+    return base
 end
 
 ---@param bufs integer[]
@@ -523,6 +624,25 @@ function Creator:refresh_prompt_context(buf)
     ui_select.refresh_prompt_context(buf, self:prompt_context())
 end
 
+---@param buf integer
+function Creator:maybe_trigger_prompt_context_completion(buf)
+    local base = prompt_context_base_at_cursor(buf)
+    if not base or vim.fn.pumvisible() == 1 then
+        return
+    end
+
+    if #ui_select.prompt_context_complete(0, base) == 0 then
+        return
+    end
+
+    vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(buf) or vim.api.nvim_get_current_buf() ~= buf or vim.fn.pumvisible() == 1 then
+            return
+        end
+        vim.api.nvim_feedkeys(vim.keycode("<C-x><C-u>"), "n", false)
+    end)
+end
+
 function Creator:refresh_layout_prompt_contexts()
     if not self.layout or not self.layout.buffers then
         return
@@ -558,6 +678,9 @@ function Creator:attach_prompt_context(buf)
         buffer = buf,
         callback = function()
             self:refresh_prompt_context(buf)
+            if vim.api.nvim_get_current_buf() == buf and vim.api.nvim_get_mode().mode:sub(1, 1) == "i" then
+                self:maybe_trigger_prompt_context_completion(buf)
+            end
         end,
     })
     vim.api.nvim_create_autocmd("BufWipeout", {
@@ -580,7 +703,7 @@ function Creator:attach_prompt_context(buf)
     end, { buffer = buf, silent = true })
     vim.keymap.set("i", "&", function()
         self:refresh_prompt_context(buf)
-        return "&" .. vim.keycode("<C-x><C-u>")
+        return "&"
     end, { buffer = buf, silent = true, expr = true })
 end
 
@@ -601,6 +724,8 @@ function Creator:save_current_draft()
 end
 
 ---@return integer?, integer?, integer?, integer?
+-- Uses the source split as the layout frame when the creator is opened from a normal window.
+-- This keeps the whole prompt UI centered inside that split instead of the full editor grid.
 function Creator:anchor_rect()
     local win = is_layout_anchor_win(self.anchor_win) and self.anchor_win or nil
     if not win then
@@ -620,6 +745,7 @@ function Creator:read_clipboard_message()
     return read_clipboard_message_register()
 end
 
+---@return integer, integer
 function Creator:editor_size()
     local _, _, width, height = self:anchor_rect()
     if width and height then
@@ -630,125 +756,176 @@ function Creator:editor_size()
     return ui and ui.width or vim.o.columns, ui and ui.height or vim.o.lines
 end
 
+---@return integer
+-- Total combined width of the creator content before the outer background margin is applied.
 function Creator:total_width()
     local width = self:editor_size()
-    local base_width = self.state.image_path and 156 or 118
-    return math.min(width - 6, base_width + self:project_background_width() + 2)
+    local base_width = self.state.image_path and LAYOUT.base_width_with_image or LAYOUT.base_width_without_image
+    return math.min(width - LAYOUT.creator_screen_margin_cols, base_width + self:project_panel_width() + LAYOUT.creator_panel_gap_cols)
 end
 
+---@return integer
+-- Total combined height of the creator content before the outer background margin is applied.
 function Creator:total_height()
     local _, height = self:editor_size()
-    return math.min(height - 4, 32)
+    return math.min(height - LAYOUT.creator_screen_margin_rows, LAYOUT.creator_max_height)
 end
 
+---@return integer
+-- Backdrop width: one extra column on each side so the background only shows in the gaps.
 function Creator:project_background_width()
-    return self:project_list_width() + (PROJECT_PICKER_MARGIN_COLS * 2)
+    return self:total_width() + (LAYOUT.creator_background_margin_cols * 2)
 end
 
+---@return integer
+-- Left-side project column width including its inner padding inside the shared backdrop.
+function Creator:project_panel_width()
+    return self:project_list_width() + (LAYOUT.project_picker_margin_cols * 2)
+end
+
+---@return integer
+-- Backdrop height: one extra row on each side so it frames the full creator layout.
 function Creator:project_background_height()
-    return self:total_height()
+    return self:total_height() + (LAYOUT.creator_background_margin_rows * 2)
 end
 
+---@return integer
 function Creator:preview_width()
     if not self.state.image_path then
         return 0
     end
-    return math.min(42, math.max(28, math.floor(self:total_width() * 0.3)))
+    return clamp(
+        math.floor(self:total_width() * LAYOUT.preview_width_ratio),
+        LAYOUT.preview_min_width,
+        LAYOUT.preview_max_width
+    )
 end
 
+---@return integer
 function Creator:left_width()
     local preview_width = self:preview_width()
     local width = self:total_width() - preview_width
     if preview_width > 0 then
-        width = width - 2
+        width = width - LAYOUT.creator_panel_gap_cols
     end
     return width
 end
 
+---@return integer
 function Creator:project_list_width()
-    local width = 18
+    local width = LAYOUT.project_list_min_width
     for _, project in ipairs(self.projects) do
         local details = self.app.project_details_store and self.app.project_details_store:get_cached(project) or nil
         local icon = details and details.project_icon and (details.project_icon .. " ") or ""
-        width = math.max(width, vim.fn.strdisplaywidth(icon .. project.name) + 2)
+        width = math.max(width, vim.fn.strdisplaywidth(icon .. project.name) + LAYOUT.project_name_padding)
     end
-    return math.min(width, 28)
+    return math.min(width, LAYOUT.project_list_max_width)
 end
 
+---@return integer
+-- The main content area gets whatever remains after reserving project and preview columns.
 function Creator:content_width()
-    return math.max(self:left_width() - self:project_background_width() - 2, 36)
+    return math.max(self:left_width() - self:project_panel_width() - LAYOUT.creator_panel_gap_cols, LAYOUT.content_min_width)
 end
 
+---@return integer
 function Creator:left_col()
     local anchor_col, _, width = self:anchor_rect()
     width = width or self:editor_size()
-    return math.max((anchor_col or 0) + math.floor((width - self:total_width()) / 2), 1)
+    return math.max((anchor_col or 0) + math.floor((width - self:total_width()) / 2), LAYOUT.min_window_offset)
 end
 
+---@return integer
+-- Content starts after the project column plus the fixed gap between the two panels.
 function Creator:content_col()
-    return self:left_col() + self:project_background_width() + 2
+    return self:left_col() + self:project_panel_width() + LAYOUT.creator_panel_gap_cols
 end
 
+---@return integer
 function Creator:top_row()
     local _, anchor_row, _, height = self:anchor_rect()
     local resolved_height = height or select(2, self:editor_size())
-    return math.max((anchor_row or 0) + math.floor((resolved_height - self:total_height()) / 2), 1)
+    return math.max((anchor_row or 0) + math.floor((resolved_height - self:total_height()) / 2), LAYOUT.min_window_offset)
 end
 
+---@return integer
 function Creator:kind_row()
     return self:top_row()
 end
 
+---@return integer
+-- Variant tabs, when present, occupy their own row between kind tabs and the title field.
 function Creator:variant_row()
-    return self:kind_row() + 2
+    return self:kind_row() + LAYOUT.tab_row_height
 end
 
+---@return integer
+-- The title moves down when variant tabs are visible so the stacked tab rows never overlap.
 function Creator:title_row()
     if #self:variants() > 0 then
-        return self:variant_row() + 2
+        return self:variant_row() + LAYOUT.title_gap_rows
     end
-    return self:kind_row() + 2
+    return self:kind_row() + LAYOUT.title_gap_rows
 end
 
+---@return integer
 function Creator:body_row()
-    return self:title_row() + 3
+    return self:title_row() + LAYOUT.body_gap_rows
 end
 
+---@return integer
 function Creator:footer_row()
     return self:top_row() + self:total_height()
 end
 
+---@return integer
+-- Body height is derived from the space left between the title field and footer, not a fixed size.
 function Creator:body_height()
-    return math.max(self:footer_row() - self:body_row() - 2, 8)
+    return math.max(self:footer_row() - self:body_row() - LAYOUT.footer_gap_rows, LAYOUT.body_min_height)
 end
 
+---@return integer
 function Creator:clipboard_note_height()
-    return math.max(math.min(6, self:body_height() - 5), 4)
+    return clamp(
+        self:body_height() - LAYOUT.clipboard_note_reserved_rows,
+        LAYOUT.clipboard_note_min_height,
+        LAYOUT.clipboard_note_max_height
+    )
 end
 
+---@return integer
 function Creator:clipboard_preview_row()
-    return self:body_row() + self:clipboard_note_height() + 3
+    return self:body_row() + self:clipboard_note_height() + LAYOUT.clipboard_preview_gap_rows
 end
 
+---@return integer
 function Creator:clipboard_preview_height()
-    return math.max(self:footer_row() - self:clipboard_preview_row() - 2, 4)
+    return math.max(
+        self:footer_row() - self:clipboard_preview_row() - LAYOUT.footer_gap_rows,
+        LAYOUT.clipboard_preview_min_height
+    )
 end
 
+---@return integer
 function Creator:preview_col()
-    return self:left_col() + self:left_width() + 2
+    return self:left_col() + self:left_width() + LAYOUT.creator_panel_gap_cols
 end
 
+---@return integer
 function Creator:preview_row()
     return self:title_row()
 end
 
+---@return integer
+-- The preview shares the vertical span from title through footer and uses the same gutter as the main panels.
 function Creator:preview_height()
-    return math.max(self:footer_row() - self:preview_row() + 2, 8)
+    return math.max(self:footer_row() - self:preview_row() + LAYOUT.creator_panel_gap_cols, LAYOUT.preview_min_height)
 end
 
+---@return snacks.image.Opts
 function Creator:preview_image_opts()
-    local width = math.max(self:preview_width() - 2, 1)
-    local height = math.max(self:preview_height() - 2, 1)
+    local width = math.max(self:preview_width() - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
+    local height = math.max(self:preview_height() - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
     return {
         src = self.state.image_path,
         width = width,
@@ -758,20 +935,32 @@ function Creator:preview_image_opts()
     }
 end
 
+---@return integer
 function Creator:project_row()
-    return self:project_background_row() + PROJECT_PICKER_MARGIN_ROWS
+    return self:project_background_row() + LAYOUT.project_picker_margin_rows
 end
 
+---@return integer
+-- The project picker lives inside the larger backdrop: picker margin plus outer backdrop margin.
 function Creator:project_height()
-    return math.max(self:project_background_height() - (PROJECT_PICKER_MARGIN_ROWS * 2), 1)
+    return math.max(
+        self:project_background_height()
+            - (LAYOUT.project_picker_margin_rows * 2)
+            - (LAYOUT.creator_background_margin_rows * 2),
+        LAYOUT.min_window_offset
+    )
 end
 
+---@return integer
+-- The shared backdrop starts one cell above the visible creator to create the intended outer margin.
 function Creator:project_background_row()
-    return self:top_row()
+    return self:top_row() - LAYOUT.creator_background_margin_rows
 end
 
+---@return integer
+-- The shared backdrop starts one cell left of the visible creator to create the intended outer margin.
 function Creator:project_background_col()
-    return self:left_col()
+    return self:left_col() - LAYOUT.creator_background_margin_cols
 end
 
 ---@param buf integer
@@ -791,7 +980,7 @@ function Creator:render_tab_line(buf, labels, active_index, total_width)
             col = col + 1
         end
 
-        local text = string.rep(" ", TAB_PADDING) .. entry.label .. string.rep(" ", TAB_PADDING)
+            local text = string.rep(" ", LAYOUT.tab_padding) .. entry.label .. string.rep(" ", LAYOUT.tab_padding)
         local start_col = col
         local end_col = start_col + #text
         parts[#parts + 1] = text
@@ -1161,6 +1350,7 @@ function Creator:render_variant_tabs()
             buf = self.variant_buf,
             enter = false,
             border = "none",
+            zindex = LAYOUT.prompt_content_zindex,
             width = function()
                 return self:content_width()
             end,
@@ -1312,6 +1502,7 @@ function Creator:ensure_shell_windows()
             buf = self.project_bg_buf,
             enter = false,
             border = "none",
+            zindex = LAYOUT.prompt_background_zindex,
             width = function()
                 return self:project_background_width()
             end,
@@ -1337,6 +1528,7 @@ function Creator:ensure_shell_windows()
             buf = self.project_buf,
             enter = false,
             border = "rounded",
+            zindex = LAYOUT.prompt_content_zindex,
             title = " Target Project ",
             title_pos = "center",
             width = function()
@@ -1349,7 +1541,7 @@ function Creator:ensure_shell_windows()
                 return self:project_row()
             end,
             col = function()
-                return self:project_background_col() + PROJECT_PICKER_MARGIN_COLS
+                return self:project_background_col() + LAYOUT.project_picker_margin_cols
             end,
             view = "footer",
             theme = "prompt_footer",
@@ -1368,6 +1560,7 @@ function Creator:ensure_shell_windows()
             buf = self.kind_buf,
             enter = false,
             border = "none",
+            zindex = LAYOUT.prompt_content_zindex,
             width = function()
                 return self:content_width()
             end,
@@ -1394,6 +1587,7 @@ function Creator:ensure_shell_windows()
             buf = self.footer_buf,
             enter = false,
             border = "rounded",
+            zindex = LAYOUT.prompt_content_zindex,
             title = " Actions ",
             title_pos = "center",
             width = function()
@@ -1451,6 +1645,7 @@ function Creator:render_preview()
             buf = self.preview_buf,
             enter = false,
             border = "rounded",
+            zindex = LAYOUT.prompt_content_zindex,
             title = " Clipboard Image ",
             title_pos = "center",
             width = function()

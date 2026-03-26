@@ -424,7 +424,10 @@ describe("clodex.ui.select", function()
             return submitted ~= nil
         end)
 
-        assert.are.equal('Title\n\n@example.lua\n\n"value" under the cursor in @example.lua: line 3', submitted)
+        assert.are.equal(
+            'Title\n\n@example.lua ([Inserted context from &file])\n\n"value" under the cursor in @example.lua: line 3 ([Inserted context from &word])',
+            submitted
+        )
     end)
 
     it("highlights only valid prompt context tokens in the details buffer", function()

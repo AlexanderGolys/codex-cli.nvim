@@ -10,6 +10,8 @@ local unpack_values = require("clodex.util").unpack_values
 ---@field detail string
 ---@field disabled? boolean
 
+---@class Clodex.PromptContext.TokenSpec: Clodex.PromptContext.Token
+
 --- Captures editor state used for prompt expansion.
 --- The prompt UI keeps one snapshot so completion stays stable while the prompt buffer is open.
 ---@class Clodex.PromptContext.Capture
@@ -41,7 +43,10 @@ local unpack_values = require("clodex.util").unpack_values
 --- This annotation documents structured state so modules can pass data with consistent expectations.
 ---@class Clodex.PromptContext
 local M = {}
-local PROJECT_DIAGNOSTICS_DISABLED = "Disabled in this session"
+local CONTEXT_NOTE_PREFIX = "[Inserted context from %s]"
+local current_buffer_diags
+local current_line_diags
+local project_diagnostics
 
 local TOKEN_SPECS = {
     {
@@ -85,6 +90,58 @@ local TOKEN_SPECS = {
         detail = "Insert every diagnostic from the current project.",
     },
 }
+
+---@param token string
+---@return boolean
+local function is_prompt_token(token)
+    for _, spec in ipairs(TOKEN_SPECS) do
+        if spec.token == token then
+            return true
+        end
+    end
+    return false
+end
+
+---@param token string
+---@param context Clodex.PromptContext.Capture
+---@return boolean
+local function token_available(token, context)
+    if token == "&file" then
+        return context.relative_path ~= nil and context.relative_path ~= ""
+    end
+    if token == "&line" then
+        return context.relative_path ~= nil and context.relative_path ~= "" and context.cursor_row ~= nil
+    end
+    if token == "&selection" then
+        return context.selection_text ~= nil and vim.trim(context.selection_text) ~= ""
+    end
+    if token == "&visible_buff" then
+        return context.relative_path ~= nil and context.relative_path ~= "" and context.visible_start ~= nil and context.visible_end ~= nil
+    end
+    if token == "&word" then
+        return context.relative_path ~= nil and context.relative_path ~= "" and context.cursor_row ~= nil and context.current_word ~= ""
+    end
+    if token == "&diagnostic" then
+        return #current_line_diags(context) > 0
+    end
+    if token == "&buff_diagnostics" then
+        return #current_buffer_diags(context) > 0
+    end
+    if token == "&all_diagnostics" then
+        return context.project_root ~= nil and #project_diagnostics(context) > 0
+    end
+    return false
+end
+
+---@param token string
+---@param replacement string
+---@return string
+local function annotate_replacement(token, replacement)
+    if replacement:find("\n", 1, true) then
+        return string.format("%s\n%s", CONTEXT_NOTE_PREFIX:format(token), replacement)
+    end
+    return string.format("%s (%s)", replacement, CONTEXT_NOTE_PREFIX:format(token))
+end
 
 ---@param win integer
 ---@return boolean
@@ -211,13 +268,13 @@ end
 
 ---@param context Clodex.PromptContext.Capture
 ---@return vim.Diagnostic[]
-local function current_buffer_diags(context)
+current_buffer_diags = function(context)
     return vim.diagnostic.get(context.buf)
 end
 
 ---@param context Clodex.PromptContext.Capture
 ---@return vim.Diagnostic[]
-local function current_line_diags(context)
+current_line_diags = function(context)
     if context.buf == nil or context.cursor_row == nil then
         return {}
     end
@@ -226,7 +283,7 @@ end
 
 ---@param context Clodex.PromptContext.Capture
 ---@return vim.Diagnostic[]
-local function project_diagnostics(context)
+project_diagnostics = function(context)
     local diags = {} ---@type vim.Diagnostic[]
     for _, diag in ipairs(vim.diagnostic.get(nil)) do
         local path = diag.bufnr and vim.api.nvim_buf_get_name(diag.bufnr) or ""
@@ -301,18 +358,7 @@ function M.tokens(context)
     local items = {}
     for _, spec in ipairs(TOKEN_SPECS) do
         local item = vim.deepcopy(spec)
-        local available = true
-        if spec.token == "&selection" and not context.selection_text then
-            available = false
-        end
-        if spec.token == "&diagnostic" and #current_line_diags(context) == 0 then
-            available = false
-        end
-        if spec.token == "&all_diagnostics" and not context.project_root then
-            item.disabled = true
-            item.detail = ("%s (%s)"):format(item.detail, PROJECT_DIAGNOSTICS_DISABLED)
-        end
-        if available then
+        if token_available(spec.token, context) then
             items[#items + 1] = item
         end
     end
@@ -325,7 +371,7 @@ end
 ---@param context Clodex.PromptContext.Capture?
 ---@return string?
 function M.expand_token(token, context)
-    if not context then
+    if not context or not is_prompt_token(token) or not token_available(token, context) then
         return nil
     end
 
@@ -404,20 +450,27 @@ function M.expand_token(token, context)
     end
 end
 
+---@param token string
+---@param context Clodex.PromptContext.Capture?
+---@return string?
+function M.expand_token_with_note(token, context)
+    local replacement = M.expand_token(token, context)
+    if not replacement then
+        return nil
+    end
+    return annotate_replacement(token, replacement)
+end
+
 --- Expands all supported `&token` occurrences inside prompt text.
 --- Quick prompt templates use this so generated prompts include live editor context immediately.
 ---@param text string
 ---@param context Clodex.PromptContext.Capture?
 ---@return string
 function M.expand_text(text, context)
-    local expanded = text
-    for _, spec in ipairs(TOKEN_SPECS) do
-        local replacement = M.expand_token(spec.token, context)
-        if replacement then
-            expanded = expanded:gsub(vim.pesc(spec.token), replacement)
-        end
-    end
-    return expanded
+    return (text:gsub("&[%a_][%w_]*", function(token)
+        local replacement = M.expand_token_with_note(token, context)
+        return replacement or token
+    end))
 end
 
 --- Returns canned prompt bodies that keep context tokens until submit time.

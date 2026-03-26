@@ -290,7 +290,7 @@ describe("clodex.ui.prompt_creator", function()
 
         local groups = extmark_groups(creator.kind_buf)
 
-        assert.is_true(vim.tbl_contains(groups, "ClodexPromptTodoTitleActive"))
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptImprovementTitleActive"))
         assert.is_true(vim.tbl_contains(groups, "ClodexPromptBugTitle"))
     end)
 
@@ -391,7 +391,7 @@ describe("clodex.ui.prompt_creator", function()
 
         local groups = extmark_groups(creator.footer_buf)
 
-        assert.is_true(vim.tbl_contains(groups, "ClodexPromptTodoTitle"))
+        assert.is_true(vim.tbl_contains(groups, "ClodexPromptImprovementTitle"))
     end)
 
     it("renders arrow icons in footer hints", function()
@@ -608,10 +608,10 @@ describe("clodex.ui.prompt_creator", function()
             on_submit = function() end,
         })
 
-        assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
-        assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptTodoTitle"))
-        assert.is_truthy(vim.wo[creator.layout.title_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
-        assert.is_truthy(vim.wo[creator.layout.body_win.win].winhl:find("FloatBorder:ClodexPromptTodoTitle", 1, true))
+        assert.is_truthy(vim.wo[creator.footer_win.win].winhl:find("FloatBorder:ClodexPromptImprovementTitle", 1, true))
+        assert.is_truthy(vim.tbl_contains(extmark_groups(creator.footer_buf), "ClodexPromptImprovementTitle"))
+        assert.is_truthy(vim.wo[creator.layout.title_win.win].winhl:find("FloatBorder:ClodexPromptImprovementTitle", 1, true))
+        assert.is_truthy(vim.wo[creator.layout.body_win.win].winhl:find("FloatBorder:ClodexPromptImprovementTitle", 1, true))
 
         creator:switch_kind(1)
 
@@ -666,6 +666,9 @@ describe("clodex.ui.prompt_creator", function()
         local items = require("clodex.ui.select").prompt_context_complete(0, "&f")
         assert.is_true(#items > 0)
         assert.are.equal("&file", items[1].word)
+
+        local diagnostic_items = require("clodex.ui.select").prompt_context_complete(0, "&d")
+        assert.are.same({}, diagnostic_items)
     end)
 
     it("changes kind tabs from the footer and keeps normal-mode focus in the editor", function()
@@ -1241,14 +1244,20 @@ describe("clodex.ui.prompt_creator", function()
 
         local background_config = vim.api.nvim_win_get_config(creator.project_bg_win.win)
         local picker_config = vim.api.nvim_win_get_config(creator.project_win.win)
+        local footer_config = vim.api.nvim_win_get_config(creator.footer_win.win)
 
         assert.are.equal("none", creator.project_bg_win.opts.border)
         assert.are.equal(creator:project_background_width(), background_config.width)
         assert.are.equal(creator:project_background_height(), background_config.height)
-        assert.are.equal(background_config.row + 1, picker_config.row)
-        assert.are.equal(background_config.col + 2, picker_config.col)
-        assert.are.equal(picker_config.width, background_config.width - 4)
-        assert.are.equal(picker_config.height, background_config.height - 2)
+        assert.are.equal(creator:total_width() + 2, background_config.width)
+        assert.are.equal(creator:total_height() + 2, background_config.height)
+        assert.are.equal(1, background_config.zindex)
+        assert.are.equal(10, picker_config.zindex)
+        assert.are.equal(10, footer_config.zindex)
+        assert.are.equal(background_config.row + 2, picker_config.row)
+        assert.are.equal(background_config.col + 3, picker_config.col)
+        assert.are.equal(picker_config.height, background_config.height - 4)
+        assert.is_true(footer_config.col + footer_config.width <= background_config.col + background_config.width)
     end)
 
     it("limits clipboard image previews to the preview pane size", function()
