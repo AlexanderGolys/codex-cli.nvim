@@ -1317,6 +1317,67 @@ describe("clodex.ui.prompt_creator", function()
         package.loaded["snacks"] = nil
     end)
 
+    it("uses the live preview window size when constraining image placement", function()
+        local attached_opts
+        package.loaded["snacks"] = {
+            input = { input = function() end },
+            picker = {
+                select = function(_items, _opts, on_choice)
+                    on_choice(nil)
+                end,
+            },
+            image = {
+                supports = function()
+                    return true
+                end,
+                placement = {
+                    new = function(_buf, src, opts)
+                        attached_opts = vim.tbl_extend("force", { src = src }, opts)
+                        return {
+                            ready = function()
+                                return true
+                            end,
+                            close = function() end,
+                        }
+                    end,
+                },
+            },
+        }
+
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+            },
+            project = {
+                name = "Demo",
+                root = "/tmp/demo",
+            },
+            initial_kind = "todo",
+            initial_draft = {
+                title = "Todo with image",
+                image_path = "/tmp/demo.png",
+            },
+            on_submit = function() end,
+        })
+
+        vim.api.nvim_win_set_width(creator.preview_win.win, 24)
+        vim.api.nvim_win_set_height(creator.preview_win.win, 10)
+        creator:render_preview()
+
+        assert.is_not_nil(attached_opts)
+        assert.are.equal("/tmp/demo.png", attached_opts.src)
+        assert.are.equal(22, attached_opts.max_width)
+        assert.are.equal(8, attached_opts.max_height)
+
+        package.loaded["snacks"] = nil
+    end)
+
     it("falls back when image preview rendering does not become ready", function()
         local closed = false
         package.loaded["snacks"] = {

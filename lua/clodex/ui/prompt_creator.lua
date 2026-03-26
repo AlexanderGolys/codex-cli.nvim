@@ -924,8 +924,19 @@ end
 
 ---@return snacks.image.Opts
 function Creator:preview_image_opts()
-    local width = math.max(self:preview_width() - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
-    local height = math.max(self:preview_height() - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
+    local width = self:preview_width()
+    local height = self:preview_height()
+
+    -- Constrain image rendering to the real preview window whenever it already
+    -- exists. That keeps large screenshots inside the visible pane even if the
+    -- floating window was clamped smaller than the ideal layout math.
+    if self.preview_win and self.preview_win:valid() then
+        width = vim.api.nvim_win_get_width(self.preview_win.win)
+        height = vim.api.nvim_win_get_height(self.preview_win.win)
+    end
+
+    width = math.max(width - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
+    height = math.max(height - LAYOUT.preview_image_inset, LAYOUT.min_window_offset)
     return {
         src = self.state.image_path,
         width = width,
