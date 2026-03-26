@@ -89,6 +89,7 @@ local function completion_instruction_lines(item, _config)
                 and "Implement the returned `work_prompt` by generating follow-up prompts only. Do not change code or create a git commit for this kind; then call `close_task` with `success`, `comment`, and `commit_id = \"\"`."
             or "Implement the returned `work_prompt`, create the required git commit for a successful result, then call `close_task` with `success`, `comment`, and `commit_id`.",
         "If the task is blocked or unfinished, call `close_task` with `success = false` and use `comment` as the failure note that should be appended before retrying.",
+        "Before taking any newly returned queued task, run compaction to reset context.",
         "Keep using the same loop until `get_task` or `close_task` returns `status = done`.",
     }
     if item.completion_target == "history" then

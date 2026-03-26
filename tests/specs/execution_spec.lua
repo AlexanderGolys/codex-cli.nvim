@@ -90,6 +90,7 @@ describe("clodex.workspace.execution", function()
         assert.matches("current queued item id is `todo%-1`", todo_prompt)
         assert.matches("calling `get_task`", todo_prompt)
         assert.matches("call `close_task` with `success`, `comment`, and `commit_id`", todo_prompt)
+        assert.matches("run compaction", todo_prompt)
         assert.matches("%$prompt%-nvim%-clodex", todo_prompt)
 
         assert.matches("close directly to `history`", bug_prompt)
