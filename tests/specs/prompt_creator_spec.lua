@@ -1222,6 +1222,43 @@ describe("clodex.ui.prompt_creator", function()
         assert.are.equal(" Beta", lines[2])
     end)
 
+    it("loads project icons when they are not already cached", function()
+        creator = Creator.open({
+            app = {
+                config = {
+                    get = function()
+                        return {
+                            storage = { workspaces_dir = "/tmp" },
+                        }
+                    end,
+                },
+                project_details_store = {
+                    get_cached = function()
+                        return nil
+                    end,
+                    get = function(_, project)
+                        if project.root == "/tmp/alpha" then
+                            return { project_icon = "★" }
+                        end
+                    end,
+                },
+            },
+            project = { name = "Alpha", root = "/tmp/alpha" },
+            projects = {
+                { name = "Alpha", root = "/tmp/alpha" },
+                { name = "Beta", root = "/tmp/beta" },
+            },
+            active_project_root = "/tmp/alpha",
+            initial_kind = "todo",
+            on_submit = function() end,
+        })
+
+        local lines = vim.api.nvim_buf_get_lines(creator.project_buf, 0, -1, false)
+
+        assert.are.equal(" ★ Alpha", lines[1])
+        assert.are.equal(" Beta", lines[2])
+    end)
+
     it("adds a plain background margin around the project picker", function()
         creator = Creator.open({
             app = {

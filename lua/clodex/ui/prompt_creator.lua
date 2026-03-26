@@ -219,6 +219,17 @@ local function prompt_context_base_at_cursor(buf)
     return base
 end
 
+---@param app? Clodex.App
+---@param project Clodex.Project
+---@return Clodex.ProjectDetails.Snapshot?
+local function project_details(app, project)
+    local store = app and app.project_details_store or nil
+    if not store then
+        return nil
+    end
+    return store:get_cached(project) or (store.get and store:get(project)) or nil
+end
+
 ---@param bufs integer[]
 local function close_prompt_buffer_windows(bufs)
     if not bufs or #bufs == 0 then
@@ -815,7 +826,7 @@ end
 function Creator:project_list_width()
     local width = LAYOUT.project_list_min_width
     for _, project in ipairs(self.projects) do
-        local details = self.app.project_details_store and self.app.project_details_store:get_cached(project) or nil
+        local details = project_details(self.app, project)
         local icon = details and details.project_icon and (details.project_icon .. " ") or ""
         width = math.max(width, vim.fn.strdisplaywidth(icon .. project.name) + LAYOUT.project_name_padding)
     end
@@ -1209,7 +1220,7 @@ function Creator:render_project_list()
 
     self.project_line_map = {}
     for index, project in ipairs(self.projects) do
-        local details = self.app.project_details_store and self.app.project_details_store:get_cached(project) or nil
+        local details = project_details(self.app, project)
         local icon = details and details.project_icon and (details.project_icon .. " ") or ""
         local line = " " .. icon .. project.name
         lines[#lines + 1] = line

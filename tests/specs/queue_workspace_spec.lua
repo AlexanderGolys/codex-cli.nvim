@@ -765,6 +765,58 @@ describe("clodex.ui.queue_workspace", function()
         assert.is_truthy(lines[1]:find("★ Test Project", 1, true))
     end)
 
+    it("loads stored project icons for the project list when the cache is cold", function()
+        local project = {
+            name = "Test Project",
+            root = "/tmp/test-project",
+        }
+        local workspace = Workspace.new({
+            current_tab = function()
+                return {
+                    active_project_root = project.root,
+                }
+            end,
+            queue_summary = function()
+                return {
+                    project = project,
+                    counts = {
+                        planned = 0,
+                        queued = 0,
+                        implemented = 0,
+                        history = 0,
+                    },
+                    queues = {
+                        planned = {},
+                        queued = {},
+                        implemented = {},
+                        history = {},
+                    },
+                }
+            end,
+            project_details_store = {
+                get = function()
+                    return { project_icon = "★", languages = {}, file_count = 0 }
+                end,
+                get_cached = function()
+                    return nil
+                end,
+            },
+        }, {
+            queue_workspace = {
+                preview_max_lines = 3,
+                fold_preview = true,
+            },
+        })
+        workspace.projects = { project }
+        workspace.project_index = 1
+        workspace.project_buf = vim.api.nvim_create_buf(false, true)
+
+        workspace:render_projects()
+
+        local lines = vim.api.nvim_buf_get_lines(workspace.project_buf, 0, 1, false)
+        assert.is_truthy(lines[1]:find("★ Test Project", 1, true))
+    end)
+
     it("filters queue items by prompt search text", function()
         local project = {
             name = "Test Project",

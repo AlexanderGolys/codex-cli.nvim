@@ -281,6 +281,21 @@ local function project_name_prefix(details)
     return ""
 end
 
+---@param app Clodex.AppQueueWorkspace.Host
+---@param project Clodex.Project
+---@param force_load? boolean
+---@return Clodex.ProjectDetails.Snapshot?
+local function project_details(app, project, force_load)
+    local store = app.project_details_store
+    if not store then
+        return nil
+    end
+    if force_load and store.get then
+        return store:get(project)
+    end
+    return store:get_cached(project) or (store.get and store:get(project)) or nil
+end
+
 ---@param project Clodex.Project
 ---@param summary Clodex.ProjectQueueSummary
 ---@param details? Clodex.ProjectDetails.Snapshot
@@ -359,7 +374,7 @@ local function project_target_width(self)
 
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
-        local details = self.app.project_details_store:get_cached(project)
+        local details = project_details(self.app, project)
         width = math.max(width, project_title_width(project, summary, details) + PROJECT_LAYOUT_PADDING)
 
         for _, detail in ipairs(project_detail_lines(self.config, self.app, summary, details)) do
@@ -800,7 +815,7 @@ project_detail_lines = function(config, app, summary, details, max_width)
     end
 
     local lines = {} ---@type string[]
-    details = details or app.project_details_store:get_cached(summary.project)
+    details = details or project_details(app, summary.project)
     if not details then
         lines[#lines + 1] = fit_project_detail("    -", {
             "  " .. FILE_ICON .. "-",
@@ -876,7 +891,7 @@ function Workspace:filtered_projects()
 
     local filtered = {} ---@type Clodex.Project[]
     for _, project in ipairs(projects) do
-        local details = self.app.project_details_store:get_cached(project)
+        local details = project_details(self.app, project)
         if project_matches_search(project, details, query, self.config) then
             filtered[#filtered + 1] = project
         end
@@ -1550,8 +1565,7 @@ function Workspace:render_projects()
 
     for _, project in ipairs(self.projects) do
         local summary = self.app:queue_summary(project)
-        local details = project.root == selected_root and self.app.project_details_store:get(project)
-            or self.app.project_details_store:get_cached(project)
+        local details = project_details(self.app, project, project.root == selected_root)
         local title, count_spans = project_title_text(project, summary, details, max_width)
         local count_suffix = project_count_suffix(summary)
         self.project_rows[#self.project_rows + 1] = {
